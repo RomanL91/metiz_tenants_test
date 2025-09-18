@@ -28,27 +28,6 @@ DEBUG = True
 ALLOWED_HOSTS = []
 
 
-# Application definition
-
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-]
-
-MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-]
-
 ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
@@ -67,17 +46,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "core.wsgi.application"
-
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
 
 
 # Password validation
@@ -120,3 +88,74 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# ===========================================================================
+# МОИ НАСТРОКИ ==============================================================
+# ===========================================================================
+import os
+
+
+def env(name, default=None, cast=str):
+    v = os.environ.get(name, default)
+    if cast is int and v is not None:
+        try:
+            return int(v)
+        except ValueError:
+            return default
+    return v
+
+
+# DATABASES ================================================================
+DATABASES = {
+    "default": {
+        "ENGINE": "django_tenants.postgresql_backend",  # важно!
+        "NAME": env("POSTGRES_DB", "MyMetizBD"),
+        "USER": env("POSTGRES_USER", "MyMetizUser"),
+        "PASSWORD": env("POSTGRES_PASSWORD", "MyMetizPassword"),
+        "HOST": env("POSTGRES_HOST", "localhost"),
+        "PORT": env("POSTGRES_PORT", 3333, cast=int),
+        "CONN_MAX_AGE": env("DB_CONN_MAX_AGE", 60, cast=int),
+    }
+}
+
+# Роутер миграций shared/tenant
+DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
+
+# DATABASES ============================================================= END
+
+# INSTALLED_APPS ============================================================
+INSTALLED_APPS = [
+    "django_tenants",  # долно стоять первым
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+]
+# INSTALLED_APPS ======================================================== END
+
+# MIDDLEWARE ================================================================
+
+MIDDLEWARE = [
+    "django_tenants.middleware.main.TenantMainMiddleware",  # долно стоять первым
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+# MIDDLEWARE ============================================================ END
+
+# django-tenants ============================================================
+BASE_DOMAIN = "localhost"
+PUBLIC_SCHEMA_NAME = "public"
+# django-tenants ======================================================== END
+
+
+# ===========================================================================
+# ===========================================================================
+# ===========================================================================
