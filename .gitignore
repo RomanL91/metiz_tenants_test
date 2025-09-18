@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Bytecode cache
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+.env/
+.env.*
+
+# Django
+*.log
+*.pot
+*.pyc
+db.sqlite3
+db.sqlite3-journal
+
+# Media & static (если генерируется)
+media/
+staticfiles/
+static_root/
+static/
+
+# Migrations (опционально, если ты не коммитишь их)
+**/migrations/
+!*/migrations/__init__.py
+
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pytest
+.cache/
+
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+
+# Docker (если используешь)
+*.pid
+*.seed
+*.pid.lock
+*.swp
+.dockerignore
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Redis dump
+dump.rdb
+
+# Systemd service files (optional)
+*.service
+
+# Gitignore itself
+!.gitignore
+
+.env
