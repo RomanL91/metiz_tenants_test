@@ -25,10 +25,6 @@ SECRET_KEY = "django-insecure-p777z(q@8*(3pvh+et&!b%xk==qm@%$b1o%r&ld9&!e#(e=p9@
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
-
-ROOT_URLCONF = "core.urls"
 
 TEMPLATES = [
     {
@@ -125,15 +121,31 @@ DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 # DATABASES ============================================================= END
 
 # INSTALLED_APPS ============================================================
-INSTALLED_APPS = [
-    "django_tenants",  # долно стоять первым
-    "django.contrib.admin",
-    "django.contrib.auth",
+# Приложения, которые будут синхронизированы с общей схемой
+# Разделяем приложения
+SHARED_APPS = [
+    "django_tenants",
     "django.contrib.contenttypes",
+    "django.contrib.auth",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "django.contrib.admin",
     "django.contrib.staticfiles",
+    "app_tenants",  # где лежат Tenant/Domain
+    "app_users",  # где лежит кастомная User-модель
 ]
+
+TENANT_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",  # изолированный auth арендатора
+    "app_users",  # изолированная копия таблиц пользователя
+    "app_outlay",
+]
+
+INSTALLED_APPS = list(
+    dict.fromkeys(SHARED_APPS + [a for a in TENANT_APPS if a not in SHARED_APPS])
+)
+
 # INSTALLED_APPS ======================================================== END
 
 # MIDDLEWARE ================================================================
@@ -153,7 +165,25 @@ MIDDLEWARE = [
 # django-tenants ============================================================
 BASE_DOMAIN = "localhost"
 PUBLIC_SCHEMA_NAME = "public"
+AUTH_USER_MODEL = "app_users.User"
+TENANT_MODEL = "app_tenants.Tenant"
+TENANT_DOMAIN_MODEL = "app_tenants.Domain"
+# TENANT_USERS_DOMAIN = BASE_DOMAIN
+# AUTHENTICATION_BACKENDS = [
+#     "tenant_users.permissions.backend.UserBackend",
+# ]
+PUBLIC_SCHEMA_URLCONF = "core.urls_public"
+ROOT_URLCONF = "core.urls"
 # django-tenants ======================================================== END
+
+
+ALLOWED_HOSTS = ["localhost", ".localhost"]
+# STATICFILES_DIRS = [BASE_DIR / "static"]  # твои исходники статики (опц.)
+
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 
 # ===========================================================================

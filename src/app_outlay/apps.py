@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class TenantsConfig(AppConfig):
+class AppOutlayConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "tenants"
+    name = "app_outlay"
