@@ -124,21 +124,19 @@ DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 # Приложения, которые будут синхронизированы с общей схемой
 # Разделяем приложения
 SHARED_APPS = [
-    "django_tenants",
-    "django.contrib.contenttypes",
-    "django.contrib.auth",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.admin",
-    "django.contrib.staticfiles",
-    "app_tenants",  # где лежат Tenant/Domain
-    "app_users",  # где лежит кастомная User-модель
+    "django_tenants",  # ядро мульти-аренды
+    "django.contrib.contenttypes",  # нужен в public (и в tenant), допускается в обоих списках
+    "django.contrib.staticfiles",  # статика для публичной зоны (опционально)
+    "app_tenants",
 ]
 
 TENANT_APPS = [
     "django.contrib.contenttypes",
-    "django.contrib.auth",  # изолированный auth арендатора
-    "app_users",  # изолированная копия таблиц пользователя
+    "django.contrib.auth",  # изолированные пользователи/группы/permissions
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.admin",  # админка внутри каждого арендатора
+    "app_users",  # кастомная пользовательская модель (AUTH_USER_MODEL указывает сюда)
     "app_outlay",
 ]
 
