@@ -138,6 +138,10 @@ TENANT_APPS = [
     "django.contrib.admin",  # админка внутри каждого арендатора
     "app_users",  # кастомная пользовательская модель (AUTH_USER_MODEL указывает сюда)
     "app_outlay",
+    "app_technical_cards",
+    "app_materials",
+    "app_works",
+    "app_estimate_imports",
 ]
 
 INSTALLED_APPS = list(

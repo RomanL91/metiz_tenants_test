@@ -11,6 +11,7 @@ django = "^5.2.6"
 django-tenants = "^3.9.0"
 django-tenant-users = "^2.1.2"
 psycopg = {extras = ["binary"], version = "^3.2.10"}
+openpyxl = "^3.1.5"
 
 
 [build-system]

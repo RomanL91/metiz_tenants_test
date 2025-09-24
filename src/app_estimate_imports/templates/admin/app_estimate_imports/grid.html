@@ -1,0 +1,198 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% load grid_extras %}
+
+{% block extrastyle %}
+<style>
+  .grid-toolbar { margin: 0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+  table.grid { width:100%; border-collapse: collapse; font-size:13px; }
+  table.grid th, table.grid td { border:1px solid #e0e0e0; padding:4px 6px; vertical-align: top; }
+  table.grid thead th { position: sticky; top: 0; background:#f8f8f8; z-index: 2; }
+  .role-select { width: 120px; }
+  .head-role { font-size: 11px; color:#666; }
+  .head-caption { font-size: 11px; color:#333; margin-top:4px; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Управление видимостью */
+  .hidden-col { display:none; }
+  .hidden-row { display:none; }
+  .control-col { width: 36px; position: sticky; left: 0; background: #f8f8f8; z-index: 3; }
+  .control-cell { position: sticky; left: 0; background: #fff; z-index: 2; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="module">
+  <h2>{{ title }}</h2>
+
+  <div class="grid-toolbar">
+    <a class="button" href="../change/">Назад</a>
+
+    <label>Лист:&nbsp;
+      <select id="sheet">
+        {% for name in sheet_names %}
+          <option value="{{ forloop.counter0 }}" {% if forloop.counter0 == sheet_index %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <a class="button" id="btn-save">Сохранить схему</a>
+    <a class="button" id="btn-extract">Сформировать разметку из таблицы</a>
+
+    <!-- Управление шумом -->
+    <a class="button" id="btn-hide-rows">Скрыть выбранные строки</a>
+    <a class="button" id="btn-hide-cols">Скрыть отмеченные колонки</a>
+    <a class="button" id="btn-show-all">Показать всё</a>
+
+    <span style="margin-left:auto;color:#666;">Всего строк: {{ rows|length }}</span>
+  </div>
+
+  <div style="overflow:auto; max-height: calc(100vh - 260px); border:1px solid #e0e0e0;">
+    <table class="grid" id="grid">
+      <thead>
+        <tr>
+          <!-- Левая управляющая колонка (чекбоксы строк) -->
+          <th class="control-col"></th>
+
+          {% for col in cols %}
+            <th data-col="{{ col }}">
+              <div><input type="checkbox" class="col-check" data-col="{{ col }}" title="Отметить колонку для скрытия"></div>
+
+              <select class="role-select" data-col="{{ col }}">
+                {% for role in role_choices %}
+                  <option value="{{ role }}" {% if col_roles|index:col == role %}selected{% endif %}>{{ role }}</option>
+                {% endfor %}
+              </select>
+
+              <div class="head-role">Колонка {{ col|excel_col }}</div>
+              {% if col_headers|index:col %}
+                <div class="head-caption">{{ col_headers|index:col }}</div>
+              {% endif %}
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for r in rows %}
+        <tr data-row="{{ r.row_index }}" class="row">
+          <!-- Чекбокс строки -->
+          <td class="control-cell">
+            <input type="checkbox" class="row-check" title="Отметить строку для скрытия">
+          </td>
+
+          {% for col in cols %}
+            {% with val=r.cells|index:col %}
+              <td data-col="{{ col }}">{{ val }}</td>
+            {% endwith %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p style="margin-top:8px;color:#666;">
+    Назначьте роли колонкам (GROUP-N / TECH_CARD / WORK / MATERIAL / UNIT / QTY).<br>
+    Можно визуально скрывать шумные строки и колонки (данные при этом не удаляются).
+  </p>
+</div>
+{% endblock %}
+
+{% block footer %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // --- helpers ---
+  function getCookie(name){const m=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():'';}
+  const CSRF = getCookie('csrftoken');
+
+  function getSheetIndex(){
+    const el = document.getElementById('sheet');
+    return parseInt(el && el.value ? el.value : '{{ sheet_index }}', 10) || 0;
+  }
+
+  // Эндпоинты
+  const SAVE_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
+  const EXTRACT_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/extract-from-grid/");
+
+  // --- переключение листа ---
+  const sheetSel = document.getElementById('sheet');
+  if (sheetSel) {
+    sheetSel.addEventListener('change', (e)=>{
+      const i = e.target.value;
+      const base = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      params.set('sheet', i);
+      const qs = params.toString();
+      window.location.assign(qs ? (base + '?' + qs) : base);
+    });
+  }
+
+  // --- собрать роли колонок ---
+  function collectRoles(){
+    const roles = [];
+    document.querySelectorAll('.role-select').forEach(sel=>{
+      roles[parseInt(sel.dataset.col,10)] = sel.value;
+    });
+    return roles;
+  }
+
+  // --- сохранить схему (для выбранного листа) ---
+  const btnSave = document.getElementById('btn-save');
+  if (btnSave) btnSave.onclick = async ()=>{
+    const col_roles = collectRoles();
+    const sheet_index = getSheetIndex();
+    const resp = await fetch(SAVE_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({col_roles, sheet_index})
+    });
+    const data = await resp.json();
+    if (!data.ok) alert('Ошибка сохранения: '+(data.error||'unknown')); else alert('Схема сохранена для листа #' + sheet_index);
+  };
+
+  // --- извлечь разметку из таблицы (для выбранного листа) ---
+  const btnExtract = document.getElementById('btn-extract');
+  if (btnExtract) btnExtract.onclick = async ()=>{
+    const col_roles = collectRoles();
+    const sheet_index = getSheetIndex();
+    const resp = await fetch(EXTRACT_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({col_roles, sheet_index})
+    });
+    const data = await resp.json();
+    if (!data.ok) alert('Ошибка извлечения: '+(data.error||'unknown')); else alert('Разметка построена (лист #' + sheet_index + '). Открой «Граф» или «Разметить».');
+  };
+
+  // --- скрыть отмеченные строки ---
+  const btnHideRows = document.getElementById('btn-hide-rows');
+  if (btnHideRows) btnHideRows.onclick = ()=>{
+    document.querySelectorAll('.row-check:checked').forEach(cb=>{
+      const tr = cb.closest('tr');
+      if (tr) tr.classList.add('hidden-row');
+    });
+  };
+
+  // --- скрыть отмеченные колонки ---
+  const btnHideCols = document.getElementById('btn-hide-cols');
+  if (btnHideCols) btnHideCols.onclick = ()=>{
+    document.querySelectorAll('.col-check:checked').forEach(cb=>{
+      const col = parseInt(cb.dataset.col, 10);
+      // скрыть header колонки
+      const th = document.querySelector(`#grid thead th[data-col="${col}"]`);
+      if (th) th.classList.add('hidden-col');
+      // скрыть все ячейки этой колонки
+      document.querySelectorAll(`#grid tbody td[data-col="${col}"]`).forEach(td=> td.classList.add('hidden-col'));
+    });
+  };
+
+  // --- показать всё ---
+  const btnShowAll = document.getElementById('btn-show-all');
+  if (btnShowAll) btnShowAll.onclick = ()=>{
+    document.querySelectorAll('.hidden-row').forEach(el=> el.classList.remove('hidden-row'));
+    document.querySelectorAll('.hidden-col').forEach(el=> el.classList.remove('hidden-col'));
+    document.querySelectorAll('.row-check, .col-check').forEach(cb=> cb.checked = false);
+  };
+});
+</script>
+{% endblock %}
