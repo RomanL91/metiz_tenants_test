@@ -14,22 +14,31 @@ from .services_markup import build_markup_skeleton
 from app_estimate_imports.utils_markup import ensure_uids_in_tree
 
 from app_outlay.services_materialize import materialize_estimate_from_markup
+from app_estimate_imports.utils_excel import load_sheet_rows_full
 
-ROLE_CHOICES = [
-    "NONE",
-    "GROUP-1",
-    "GROUP-2",
-    "GROUP-3",
-    "GROUP-4",
-    "GROUP-5",
-    "GROUP-6",
-    "TECH_CARD",
-    "WORK",
-    "MATERIAL",
-    "UNIT",
-    "QTY",
+
+# --- Роли колонок (код, заголовок, цвет, обязательность) ---
+ROLE_DEFS = [
+    ("NONE", "—", None, False),
+    # обязательные для «захвата» ТК/работ
+    ("NAME_OF_WORK", "НАИМЕНОВАНИЕ РАБОТ/ТК", "#E3F2FD", True),
+    ("UNIT", "ЕД. ИЗМ.", "#FFF8E1", True),
+    ("QTY", "КОЛ-ВО", "#E8F5E9", True),
+    # опциональные стоимости
+    ("UNIT_PRICE_OF_MATERIAL", "ЦЕНА МАТ/ЕД", "#F3E5F5", False),
+    ("UNIT_PRICE_OF_WORK", "ЦЕНА РАБОТЫ/ЕД", "#EDE7F6", False),
+    ("UNIT_PRICE_OF_MATERIALS_AND_WORKS", "ЦЕНА МАТ+РАБ/ЕД", "#E1F5FE", False),
+    ("PRICE_FOR_ALL_MATERIAL", "ИТОГО МАТЕРИАЛ", "#FBE9E7", False),
+    ("PRICE_FOR_ALL_WORK", "ИТОГО РАБОТА", "#FFF3E0", False),
+    ("TOTAL_PRICE", "ОБЩАЯ ЦЕНА", "#FFEBEE", False),
 ]
-
+# удобные представления
+ROLE_DEFS = [
+    {"id": rid, "title": title, "color": color or "#ffffff", "required": required}
+    for (rid, title, color, required) in ROLE_DEFS
+]
+ROLE_IDS = [r["id"] for r in ROLE_DEFS]
+REQUIRED_ROLE_IDS = [r["id"] for r in ROLE_DEFS if r["required"]]
 
 # ----- Инлайн для просмотра JSON прямо на карточке файла -----
 
@@ -691,7 +700,6 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             self.message_user(request, "Нет ParseResult", level=messages.ERROR)
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
-        # какой лист смотрим
         pr = obj.parse_result
         sheets = pr.data.get("sheets") or []
         sheet_i = int(request.GET.get("sheet") or 0)
@@ -699,29 +707,48 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             sheet_i = 0
         sheet = sheets[sheet_i] if sheets else {"name": "Лист1", "rows": []}
         rows = sheet.get("rows") or []
-        preview_rows = rows[:200]
+
+        # показать все строки?
+        show_all = request.GET.get("all") == "1"
+        if show_all:
+            # если используете загрузку полного листа из файла — оставьте этот блок;
+            # иначе просто rows остаются как есть
+            from app_estimate_imports.utils_excel import load_sheet_rows_full
+
+            xlsx_path = getattr(obj.file, "path", None) or (
+                pr.data.get("file") or {}
+            ).get("path")
+            if xlsx_path:
+                try:
+                    rows = load_sheet_rows_full(xlsx_path, sheet_index=sheet_i)
+                except Exception as e:
+                    self.message_user(
+                        request,
+                        f"Не удалось загрузить полный лист: {e!r}",
+                        level=messages.WARNING,
+                    )
+
+        preview_rows = rows
         max_cols = max((len(r.get("cells") or []) for r in preview_rows), default=0)
         cols = list(range(max_cols))
         sheet_names = [s.get("name") or f"Лист {i+1}" for i, s in enumerate(sheets)]
 
-        # текущая схема по листу
+        # загружаем сохранённую схему (если была); иначе — ВСЕ NONE
         markup = self._ensure_markup(obj)
         schema = (markup.annotation or {}).get("schema") or {}
         sheets_schema = schema.get("sheets") or {}
-        col_roles = (sheets_schema.get(str(sheet_i)) or {}).get("col_roles") or []
+        sheet_cfg = sheets_schema.get(str(sheet_i)) or {}
 
+        col_roles = (sheets_schema.get(str(sheet_i)) or {}).get("col_roles") or []
         if len(col_roles) < max_cols:
             col_roles = (col_roles + ["NONE"] * (max_cols - len(col_roles)))[:max_cols]
 
-        # авто-угадывание, если схемы нет
-        if not sheets_schema.get(str(sheet_i)):
-            guess = self._guess_schema(preview_rows)
-            col_roles = (guess + ["NONE"] * (max_cols - len(guess)))[:max_cols]
-            schema.setdefault("sheets", {})[str(sheet_i)] = {"col_roles": col_roles}
-            markup.annotation["schema"] = schema
-            markup.save(update_fields=["annotation"])
+        # 🔹 новые поля с дефолтами
+        unit_allow_raw = sheet_cfg.get("unit_allow_raw") or "м2, м3, шт, пм"
+        require_qty = sheet_cfg.get("require_qty")
+        require_qty = True if require_qty is None else bool(require_qty)
 
-        # авто-шапки колонок: первая небустая среди верхних N
+        # авто-шапки колонок из первых строк отображаемой выборки
         col_headers = []
         for ci in range(max_cols):
             header = ""
@@ -742,9 +769,14 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             sheet_names=sheet_names,
             rows=preview_rows,
             cols=cols,
-            role_choices=ROLE_CHOICES,
+            role_defs=ROLE_DEFS,
             col_roles=col_roles,
             col_headers=col_headers,
+            show_all=show_all,
+            total_rows=len(rows),
+            # 🔹 отдаём в шаблон
+            unit_allow_raw=unit_allow_raw,
+            require_qty=require_qty,
         )
         return TemplateResponse(request, "admin/app_estimate_imports/grid.html", ctx)
 
@@ -760,11 +792,24 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             payload = json.loads(request.body.decode("utf-8"))
             col_roles = payload.get("col_roles") or []
             sheet_i = str(payload.get("sheet_index") or "0")
+
+            # 🔹 новые поля из payload
+            unit_allow_raw = (
+                payload.get("unit_allow_raw") or payload.get("unit_allow") or ""
+            )
+            require_qty = bool(payload.get("require_qty"))
+
             markup = self._ensure_markup(obj)
             ann = markup.annotation or {}
             schema = ann.get("schema") or {}
             sheets_schema = schema.get("sheets") or {}
-            sheets_schema[sheet_i] = {"col_roles": col_roles}
+
+            sheet_cfg = sheets_schema.get(sheet_i) or {}
+            sheet_cfg["col_roles"] = col_roles
+            sheet_cfg["unit_allow_raw"] = unit_allow_raw
+            sheet_cfg["require_qty"] = require_qty
+
+            sheets_schema[sheet_i] = sheet_cfg
             schema["sheets"] = sheets_schema
             ann["schema"] = schema
             markup.annotation = ann
@@ -792,6 +837,11 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             col_roles = payload.get("col_roles") or []
             sheet_i = int(payload.get("sheet_index") or 0)
 
+            unit_allow_raw = (
+                payload.get("unit_allow_raw") or payload.get("unit_allow") or ""
+            )
+            require_qty = bool(payload.get("require_qty"))
+
             from app_estimate_imports.services_markup import build_annotation_from_grid
 
             markup = self._ensure_markup(obj)
@@ -801,10 +851,17 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 sheet_index=sheet_i,
                 existing=markup.annotation,
             )
-            # параллельно сохраним схему у листа
+
+            # параллельно обновим схему листа
             ann = annotation
             schema = ann.get("schema") or {}
-            schema.setdefault("sheets", {})[str(sheet_i)] = {"col_roles": col_roles}
+            sheets_schema = schema.get("sheets") or {}
+            sheet_cfg = sheets_schema.get(str(sheet_i)) or {}
+            sheet_cfg["col_roles"] = col_roles
+            sheet_cfg["unit_allow_raw"] = unit_allow_raw
+            sheet_cfg["require_qty"] = require_qty
+            sheets_schema[str(sheet_i)] = sheet_cfg
+            schema["sheets"] = sheets_schema
             ann["schema"] = schema
 
             markup.annotation = ann

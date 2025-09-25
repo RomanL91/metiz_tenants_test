@@ -8,7 +8,7 @@
   table.grid { width:100%; border-collapse: collapse; font-size:13px; }
   table.grid th, table.grid td { border:1px solid #e0e0e0; padding:4px 6px; vertical-align: top; }
   table.grid thead th { position: sticky; top: 0; background:#f8f8f8; z-index: 2; }
-  .role-select { width: 120px; }
+  .role-select { width: 220px; } /* шире, чтобы влезали русские заголовки */
   .head-role { font-size: 11px; color:#666; }
   .head-caption { font-size: 11px; color:#333; margin-top:4px; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
@@ -17,6 +17,12 @@
   .hidden-row { display:none; }
   .control-col { width: 36px; position: sticky; left: 0; background: #f8f8f8; z-index: 3; }
   .control-cell { position: sticky; left: 0; background: #fff; z-index: 2; }
+
+  /* Подсветка кандидатов (NAME_OF_WORK + UNIT (+QTY)) */
+  .tc-row td { background: rgba(121, 174, 200, 0.18) !important; }
+
+  /* Неучтённые UNIT */
+  td.unit-bad { background: rgba(220, 20, 60, 0.14) !important; }
 </style>
 {% endblock %}
 
@@ -35,31 +41,55 @@
       </select>
     </label>
 
+    <label style="display:flex;gap:6px;align-items:center">
+      <input id="toggle-all" type="checkbox" {% if show_all %}checked{% endif %}>
+      Показать все строки
+    </label>
+
     <a class="button" id="btn-save">Сохранить схему</a>
     <a class="button" id="btn-extract">Сформировать разметку из таблицы</a>
 
-    <!-- Управление шумом -->
     <a class="button" id="btn-hide-rows">Скрыть выбранные строки</a>
     <a class="button" id="btn-hide-cols">Скрыть отмеченные колонки</a>
     <a class="button" id="btn-show-all">Показать всё</a>
 
-    <span style="margin-left:auto;color:#666;">Всего строк: {{ rows|length }}</span>
+    <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
+      <label style="display:flex;gap:6px;align-items:center">
+        Юниты:&nbsp;
+        <input id="unit-allow" type="text" value="{{ unit_allow_raw }}" style="width:180px"
+               title="Список допустимых единиц через запятую">
+      </label>
+      <label style="display:flex;gap:6px;align-items:center">
+        <input id="require-qty" type="checkbox" {% if require_qty %}checked{% endif %}>
+        Требовать КОЛ-ВО &gt; 0
+      </label>
+    </span>
+  </div>
+
+  <div style="margin:-8px 0 10px 0;color:#666;">
+    Показано строк: <strong>{{ rows|length }}</strong> из <strong>{{ total_rows }}</strong>.
+    &nbsp; Кандидатов: <strong id="tc-counter">0</strong>.
+    &nbsp; Неучтённых UNIT: <strong id="unit-bad-counter">0</strong>
+    <span id="unit-bad-list" style="margin-left:8px;"></span>
   </div>
 
   <div style="overflow:auto; max-height: calc(100vh - 260px); border:1px solid #e0e0e0;">
     <table class="grid" id="grid">
       <thead>
         <tr>
-          <!-- Левая управляющая колонка (чекбоксы строк) -->
           <th class="control-col"></th>
-
           {% for col in cols %}
             <th data-col="{{ col }}">
               <div><input type="checkbox" class="col-check" data-col="{{ col }}" title="Отметить колонку для скрытия"></div>
 
               <select class="role-select" data-col="{{ col }}">
-                {% for role in role_choices %}
-                  <option value="{{ role }}" {% if col_roles|index:col == role %}selected{% endif %}>{{ role }}</option>
+                {% for r in role_defs %}
+                  <option value="{{ r.id }}"
+                          data-color="{{ r.color }}"
+                          data-required="{{ r.required|yesno:'1,0' }}"
+                          {% if col_roles|index:col == r.id %}selected{% endif %}>
+                    {{ r.title }}
+                  </option>
                 {% endfor %}
               </select>
 
@@ -75,11 +105,9 @@
       <tbody>
         {% for r in rows %}
         <tr data-row="{{ r.row_index }}" class="row">
-          <!-- Чекбокс строки -->
           <td class="control-cell">
             <input type="checkbox" class="row-check" title="Отметить строку для скрытия">
           </td>
-
           {% for col in cols %}
             {% with val=r.cells|index:col %}
               <td data-col="{{ col }}">{{ val }}</td>
@@ -92,8 +120,8 @@
   </div>
 
   <p style="margin-top:8px;color:#666;">
-    Назначьте роли колонкам (GROUP-N / TECH_CARD / WORK / MATERIAL / UNIT / QTY).<br>
-    Можно визуально скрывать шумные строки и колонки (данные при этом не удаляются).
+    Обязательные роли: <strong>НАИМЕНОВАНИЕ РАБОТ/ТК</strong>, <strong>ЕД. ИЗМ.</strong>, <strong>КОЛ-ВО</strong>.<br>
+    До тех пор, пока они не назначены хотя бы по одной колонке, извлечение разметки будет недоступно.
   </p>
 </div>
 {% endblock %}
@@ -101,33 +129,28 @@
 {% block footer %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-  // --- helpers ---
+  // helpers
   function getCookie(name){const m=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():'';}
   const CSRF = getCookie('csrftoken');
 
-  function getSheetIndex(){
-    const el = document.getElementById('sheet');
-    return parseInt(el && el.value ? el.value : '{{ sheet_index }}', 10) || 0;
+  function navigateWith(params){
+    const base = window.location.pathname;
+    const p = new URLSearchParams(window.location.search);
+    if (params.sheet != null) p.set('sheet', params.sheet);
+    if (params.all != null)   p.set('all', params.all ? '1' : '0');
+    const qs = p.toString();
+    window.location.assign(qs ? (base + '?' + qs) : base);
   }
 
-  // Эндпоинты
+  // endpoints
   const SAVE_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
   const EXTRACT_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/extract-from-grid/");
 
-  // --- переключение листа ---
-  const sheetSel = document.getElementById('sheet');
-  if (sheetSel) {
-    sheetSel.addEventListener('change', (e)=>{
-      const i = e.target.value;
-      const base = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-      params.set('sheet', i);
-      const qs = params.toString();
-      window.location.assign(qs ? (base + '?' + qs) : base);
-    });
-  }
+  // sheet + show_all controls
+  document.getElementById('sheet')?.addEventListener('change', (e)=> navigateWith({sheet: e.target.value}));
+  document.getElementById('toggle-all')?.addEventListener('change', (e)=> navigateWith({all: e.target.checked}));
 
-  // --- собрать роли колонок ---
+  // roles helpers
   function collectRoles(){
     const roles = [];
     document.querySelectorAll('.role-select').forEach(sel=>{
@@ -135,64 +158,212 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     return roles;
   }
+  function getColsByRole(roleId){
+    return Array.from(document.querySelectorAll('.role-select'))
+      .filter(sel => sel.value === roleId)
+      .map(sel => parseInt(sel.dataset.col, 10));
+  }
 
-  // --- сохранить схему (для выбранного листа) ---
-  const btnSave = document.getElementById('btn-save');
-  if (btnSave) btnSave.onclick = async ()=>{
+  // colorize headers by selected role color
+  function applyHeaderColors(){
+    document.querySelectorAll('.role-select').forEach(sel=>{
+      const th = sel.closest('th');
+      const opt = sel.selectedOptions[0];
+      const color = opt?.dataset?.color || '#ffffff';
+      if (th) th.style.background = color;
+    });
+  }
+
+  // --- Units normalization & hints (как в прошлой версии) ---
+  function normalizeUnit(u) {
+    if (!u) return "";
+    let s = (u || "").toLowerCase().trim();
+    s = s.replaceAll('\u00B2', '2').replaceAll('\u00B3', '3').replace(/\s+/g, ' ').trim();
+    const compact = s.replace(/\s|\.|\,/g, '');
+    if (/^(м\^?2|м2|квм|мкв|квадратн\w*метр\w*)$/.test(compact)) return 'м2';
+    if (/^(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)$/.test(compact)) return 'м3';
+    if (/^(шт|штука|штуки|штук)$/.test(compact)) return 'шт';
+    if (/^(пм|погм|погонныйметр|погонныхметров)$/.test(compact)) return 'пм';
+    if (/^(компл|комплект|комплекта|комплектов)$/.test(compact)) return 'компл';
+    return compact;
+  }
+  function getAllowedUnitSet() {
+    const raw = (document.getElementById('unit-allow')?.value || "").split(',');
+    const set = new Set();
+    for (const x of raw) {
+      const norm = normalizeUnit(x);
+      if (norm) set.add(norm);
+    }
+    return set;
+  }
+  function firstNonEmptyCellText(tr, cols) {
+    for (const c of cols) {
+      const td = tr.querySelector(`td[data-col="${c}"]`);
+      if (!td) continue;
+      const t = (td.textContent || '').trim();
+      if (t) return t;
+    }
+    return "";
+  }
+  function anyNonEmpty(tr, cols) {
+    return cols.some(c => {
+      const td = tr.querySelector(`td[data-col="${c}"]`);
+      return td && (td.textContent || '').trim() !== '';
+    });
+  }
+  function qtyValue(tr, cols) {
+    for (const c of cols) {
+      const td = tr.querySelector(`td[data-col="${c}"]`);
+      if (!td) continue;
+      const raw = (td.textContent || '').replace(/\s/g, '').replace(',', '.');
+      const num = parseFloat(raw);
+      if (!isNaN(num)) return num;
+    }
+    return NaN;
+  }
+
+  // dynamic row hints: NAME_OF_WORK + UNIT (+ QTY)
+  function applyRowHints(){
+    const nameCols = getColsByRole('NAME_OF_WORK');
+    const unitCols = getColsByRole('UNIT');
+    const qtyCols  = getColsByRole('QTY');
+    const requireQty = !!document.getElementById('require-qty')?.checked;
+    const allowedUnits = getAllowedUnitSet();
+
+    const rows = document.querySelectorAll('#grid tbody tr');
+    let tcCount = 0;
+    let unitBadCount = 0;
+    const badUnitsSet = new Set();
+
+    rows.forEach(tr => {
+      tr.classList.remove('tc-row');
+      tr.querySelectorAll('td.unit-bad').forEach(td => td.classList.remove('unit-bad'));
+
+      // кандидаты
+      const hasName = anyNonEmpty(tr, nameCols);
+      const unitRaw = firstNonEmptyCellText(tr, unitCols);
+      const unitNorm = normalizeUnit(unitRaw);
+      const hasUnit = !!unitNorm && (allowedUnits.size === 0 || allowedUnits.has(unitNorm));
+
+      let okQty = true;
+      if (requireQty) {
+        const q = qtyValue(tr, qtyCols);
+        okQty = !isNaN(q) && q > 0;
+      }
+      if (hasName && hasUnit && okQty) {
+        tr.classList.add('tc-row');
+        tcCount++;
+      }
+
+      // неучтённые UNIT
+      unitCols.forEach(c => {
+        const td = tr.querySelector(`td[data-col="${c}"]`);
+        if (!td) return;
+        const raw = (td.textContent || '').trim();
+        if (!raw) return;
+        const norm = normalizeUnit(raw);
+        if (!norm) return;
+        if (allowedUnits.size > 0 && !allowedUnits.has(norm)) {
+          td.classList.add('unit-bad');
+          unitBadCount++;
+          badUnitsSet.add(raw);
+        }
+      });
+    });
+
+    document.getElementById('tc-counter').textContent = String(tcCount);
+    document.getElementById('unit-bad-counter').textContent = String(unitBadCount);
+    const listEl = document.getElementById('unit-bad-list');
+    const items = Array.from(badUnitsSet).slice(0, 20).map(x => `<code>${x}</code>`).join(', ');
+    listEl.innerHTML = items ? `| Примеры: ${items}${badUnitsSet.size > 20 ? '…' : ''}` : '';
+  }
+
+  // guard: обязательные роли назначены?
+  function requiredRolesPresent(){
+    const need = new Set(['NAME_OF_WORK','UNIT','QTY']);
+    document.querySelectorAll('.role-select').forEach(sel => {
+      need.delete(sel.value);
+    });
+    return need.size === 0;
+  }
+
+  // init: цвет шапок + подсказки
+  function refreshUI(){
+    applyHeaderColors();
+    applyRowHints();
+  }
+
+  // события
+  document.querySelectorAll('.role-select').forEach(sel=>{
+    sel.addEventListener('change', refreshUI);
+  });
+  document.getElementById('unit-allow')?.addEventListener('input', applyRowHints);
+  document.getElementById('require-qty')?.addEventListener('change', applyRowHints);
+
+  function getUnitAllowRaw(){ return document.getElementById('unit-allow')?.value || ""; }
+  function getRequireQty(){ return !!document.getElementById('require-qty')?.checked; }
+
+
+  // save schema
+  document.getElementById('btn-save').onclick = async ()=>{
     const col_roles = collectRoles();
-    const sheet_index = getSheetIndex();
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
     const resp = await fetch(SAVE_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body: JSON.stringify({col_roles, sheet_index})
+      body: JSON.stringify({
+        col_roles,
+        sheet_index: parseInt(sheet,10)||0,
+        unit_allow_raw: getUnitAllowRaw(),      
+        require_qty: getRequireQty(),           
+      })
     });
     const data = await resp.json();
-    if (!data.ok) alert('Ошибка сохранения: '+(data.error||'unknown')); else alert('Схема сохранена для листа #' + sheet_index);
+    if (!data.ok) alert('Ошибка сохранения: '+(data.error||'unknown')); else alert('Схема сохранена');
   };
 
-  // --- извлечь разметку из таблицы (для выбранного листа) ---
-  const btnExtract = document.getElementById('btn-extract');
-  if (btnExtract) btnExtract.onclick = async ()=>{
+  // extract
+  document.getElementById('btn-extract').onclick = async ()=>{
+    if (!requiredRolesPresent()){
+      alert('Назначьте обязательные роли: «НАИМЕНОВАНИЕ РАБОТ/ТК», «ЕД. ИЗМ.», «КОЛ-ВО».');
+      return;
+    }
     const col_roles = collectRoles();
-    const sheet_index = getSheetIndex();
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
     const resp = await fetch(EXTRACT_URL, {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body: JSON.stringify({col_roles, sheet_index})
+      body: JSON.stringify({
+        col_roles,
+        sheet_index: parseInt(sheet,10)||0,
+        unit_allow_raw: getUnitAllowRaw(),      // 🔹
+        require_qty: getRequireQty(),           // 🔹
+      })
     });
     const data = await resp.json();
-    if (!data.ok) alert('Ошибка извлечения: '+(data.error||'unknown')); else alert('Разметка построена (лист #' + sheet_index + '). Открой «Граф» или «Разметить».');
+    if (!data.ok) alert('Ошибка извлечения: '+(data.error||'unknown')); else alert('Разметка построена. Открой «Граф» или «Разметить».');
   };
 
-  // --- скрыть отмеченные строки ---
-  const btnHideRows = document.getElementById('btn-hide-rows');
-  if (btnHideRows) btnHideRows.onclick = ()=>{
-    document.querySelectorAll('.row-check:checked').forEach(cb=>{
-      const tr = cb.closest('tr');
-      if (tr) tr.classList.add('hidden-row');
-    });
+  // hide/show UI
+  document.getElementById('btn-hide-rows').onclick = ()=> {
+    document.querySelectorAll('.row-check:checked').forEach(cb=> cb.closest('tr')?.classList.add('hidden-row'));
   };
-
-  // --- скрыть отмеченные колонки ---
-  const btnHideCols = document.getElementById('btn-hide-cols');
-  if (btnHideCols) btnHideCols.onclick = ()=>{
+  document.getElementById('btn-hide-cols').onclick = ()=> {
     document.querySelectorAll('.col-check:checked').forEach(cb=>{
       const col = parseInt(cb.dataset.col, 10);
-      // скрыть header колонки
-      const th = document.querySelector(`#grid thead th[data-col="${col}"]`);
-      if (th) th.classList.add('hidden-col');
-      // скрыть все ячейки этой колонки
+      document.querySelector(`#grid thead th[data-col="${col}"]`)?.classList.add('hidden-col');
       document.querySelectorAll(`#grid tbody td[data-col="${col}"]`).forEach(td=> td.classList.add('hidden-col'));
     });
   };
-
-  // --- показать всё ---
-  const btnShowAll = document.getElementById('btn-show-all');
-  if (btnShowAll) btnShowAll.onclick = ()=>{
+  document.getElementById('btn-show-all').onclick = ()=> {
     document.querySelectorAll('.hidden-row').forEach(el=> el.classList.remove('hidden-row'));
     document.querySelectorAll('.hidden-col').forEach(el=> el.classList.remove('hidden-col'));
     document.querySelectorAll('.row-check, .col-check').forEach(cb=> cb.checked = false);
+    refreshUI();
   };
+
+  // first paint
+  refreshUI();
 });
 </script>
 {% endblock %}
