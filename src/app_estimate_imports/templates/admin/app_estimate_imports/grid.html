@@ -8,21 +8,49 @@
   table.grid { width:100%; border-collapse: collapse; font-size:13px; }
   table.grid th, table.grid td { border:1px solid #e0e0e0; padding:4px 6px; vertical-align: top; }
   table.grid thead th { position: sticky; top: 0; background:#f8f8f8; z-index: 2; }
-  .role-select { width: 220px; } /* шире, чтобы влезали русские заголовки */
+  .role-select { width: 220px; }
   .head-role { font-size: 11px; color:#666; }
   .head-caption { font-size: 11px; color:#333; margin-top:4px; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  /* Управление видимостью */
+  /* Видимость */
   .hidden-col { display:none; }
   .hidden-row { display:none; }
-  .control-col { width: 36px; position: sticky; left: 0; background: #f8f8f8; z-index: 3; }
-  .control-cell { position: sticky; left: 0; background: #fff; z-index: 2; }
+
+  /* Липкая колонка управления (чекбокс + иерархия + бейджи) */
+  .control-col { width: 48px; position: sticky; left: 0; background: #f8f8f8; z-index: 4; }
+  .control-cell { position: sticky; left: 0; background: #fff; z-index: 3; padding: 0 4px !important; overflow: visible; } /* бейдж может выходить вправо */
+  .ctrl-wrap { position: relative; min-height: 22px; padding-top: 2px; }
+  .ctrl-wrap .cb { position: relative; z-index: 2; } /* чекбокс над линиями */
+
+  /* Рисуем «рёбра» иерархии в той же ячейке */
+  .hier { position: absolute; inset: 0 0 0 0; z-index: 1; pointer-events: none; }
+  .hier .lvl {
+    position: absolute;
+    top: 0;
+    bottom: 0;             /* линия растягивается на всю высоту строки */
+    width: 3px;            /* толщина линии */
+    background: var(--lvl-color, #9e9e9e); /* цвет задаём из JS */
+    border-radius: 1px;
+    opacity: .95;
+  }
+  .hier .elbow {
+    position: absolute;
+    height: 10px; width: 10px;
+    border-left: 3px solid var(--elbow-color, #9e9e9e);
+    border-bottom: 3px solid var(--elbow-color, #9e9e9e);
+    border-bottom-left-radius: 2px;
+  }
 
   /* Подсветка кандидатов (NAME_OF_WORK + UNIT (+QTY)) */
   .tc-row td { background: rgba(121, 174, 200, 0.18) !important; }
 
   /* Неучтённые UNIT */
   td.unit-bad { background: rgba(220, 20, 60, 0.14) !important; }
+
+  /* Группы: бейдж в ячейке управления, мягкая заливка строк */
+  .group-badge { font-size:11px; padding:2px 6px; border-radius:10px; display:inline-block; margin: 2px 0 0 0; cursor: pointer; white-space:nowrap; position: relative; z-index: 3; max-width: 280px; }
+  .group-badge:hover { filter: brightness(0.95); }
+  tr[data-group~="1"] td { background-image: linear-gradient(0deg, rgba(0,0,0,0.02), rgba(0,0,0,0.02)); }
 </style>
 {% endblock %}
 
@@ -52,6 +80,10 @@
     <a class="button" id="btn-hide-rows">Скрыть выбранные строки</a>
     <a class="button" id="btn-hide-cols">Скрыть отмеченные колонки</a>
     <a class="button" id="btn-show-all">Показать всё</a>
+
+    <!-- Группы -->
+    <a class="button" id="btn-group-create">Создать группу из выделенных</a>
+    <a class="button" id="btn-group-tree">Дерево групп</a>
 
     <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
       <label style="display:flex;gap:6px;align-items:center">
@@ -106,7 +138,11 @@
         {% for r in rows %}
         <tr data-row="{{ r.row_index }}" class="row">
           <td class="control-cell">
-            <input type="checkbox" class="row-check" title="Отметить строку для скрытия">
+            <div class="ctrl-wrap">
+              <input type="checkbox" class="row-check cb" title="Выделить строку (Shift — диапазон)">
+              <div class="hier"></div>
+              <!-- сюда же добавляются бейджи групп для строки-старта -->
+            </div>
           </td>
           {% for col in cols %}
             {% with val=r.cells|index:col %}
@@ -121,7 +157,7 @@
 
   <p style="margin-top:8px;color:#666;">
     Обязательные роли: <strong>НАИМЕНОВАНИЕ РАБОТ/ТК</strong>, <strong>ЕД. ИЗМ.</strong>, <strong>КОЛ-ВО</strong>.<br>
-    До тех пор, пока они не назначены хотя бы по одной колонке, извлечение разметки будет недоступно.
+    Для групп: выделите строки (можно с Shift) → «Создать группу из выделенных». Бейдж кликабелен — удаляет группу (с её потомками) после подтверждения.
   </p>
 </div>
 {% endblock %}
@@ -143,8 +179,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // endpoints
-  const SAVE_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
-  const EXTRACT_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/extract-from-grid/");
+  const SAVE_URL      = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
+  const EXTRACT_URL   = window.location.pathname.replace(/\/grid\/?$/, "/api/extract-from-grid/");
+  const GROUPS_LIST   = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/list/");
+  const GROUPS_CREATE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/create/");
+  const GROUPS_DELETE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/delete/");
 
   // sheet + show_all controls
   document.getElementById('sheet')?.addEventListener('change', (e)=> navigateWith({sheet: e.target.value}));
@@ -174,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // --- Units normalization & hints (как в прошлой версии) ---
+  // Units normalization
   function normalizeUnit(u) {
     if (!u) return "";
     let s = (u || "").toLowerCase().trim();
@@ -293,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function () {
     applyRowHints();
   }
 
-  // события
+  // события селектов/параметров
   document.querySelectorAll('.role-select').forEach(sel=>{
     sel.addEventListener('change', refreshUI);
   });
@@ -302,7 +341,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function getUnitAllowRaw(){ return document.getElementById('unit-allow')?.value || ""; }
   function getRequireQty(){ return !!document.getElementById('require-qty')?.checked; }
-
 
   // save schema
   document.getElementById('btn-save').onclick = async ()=>{
@@ -314,8 +352,8 @@ document.addEventListener('DOMContentLoaded', function () {
       body: JSON.stringify({
         col_roles,
         sheet_index: parseInt(sheet,10)||0,
-        unit_allow_raw: getUnitAllowRaw(),      
-        require_qty: getRequireQty(),           
+        unit_allow_raw: getUnitAllowRaw(),
+        require_qty: getRequireQty(),
       })
     });
     const data = await resp.json();
@@ -336,8 +374,8 @@ document.addEventListener('DOMContentLoaded', function () {
       body: JSON.stringify({
         col_roles,
         sheet_index: parseInt(sheet,10)||0,
-        unit_allow_raw: getUnitAllowRaw(),      // 🔹
-        require_qty: getRequireQty(),           // 🔹
+        unit_allow_raw: getUnitAllowRaw(),
+        require_qty: getRequireQty(),
       })
     });
     const data = await resp.json();
@@ -362,8 +400,230 @@ document.addEventListener('DOMContentLoaded', function () {
     refreshUI();
   };
 
-  // first paint
+  /* =========================
+     ГРУППЫ / ПОД-ГРУППЫ
+     ========================= */
+
+  // Shift-range выделение строк
+  let lastRowClicked = null;
+  document.querySelectorAll('.row-check').forEach(cb=>{
+    cb.addEventListener('click', (e)=>{
+      const tr = cb.closest('tr');
+      const idx = parseInt(tr?.dataset.row, 10);
+      if (e.shiftKey && lastRowClicked != null) {
+        const [a,b] = [lastRowClicked, idx].sort((x,y)=>x-y);
+        document.querySelectorAll('#grid tbody tr').forEach(r=>{
+          const ri = parseInt(r.dataset.row, 10);
+          if (ri>=a && ri<=b) r.querySelector('.row-check').checked = true;
+        });
+      }
+      lastRowClicked = idx;
+    });
+  });
+
+  // Собрать выделенные строки -> склеить в диапазоны
+  function selectedRanges(){
+    const rows = Array.from(document.querySelectorAll('.row-check'))
+      .map(cb => cb.checked ? parseInt(cb.closest('tr').dataset.row, 10) : null)
+      .filter(Boolean).sort((a,b)=>a-b);
+    const out = [];
+    let start = null, prev = null;
+    for (const r of rows){
+      if (start==null){ start = prev = r; continue; }
+      if (r === prev+1){ prev = r; continue; }
+      out.push([start, prev]); start = prev = r;
+    }
+    if (start!=null) out.push([start, prev]);
+    return out;
+  }
+
+  async function fetchGroups(){
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    const resp = await fetch(`${GROUPS_LIST}?sheet_index=${sheet}`);
+    const data = await resp.json();
+    return data.ok ? (data.groups || []) : [];
+  }
+
+  function rangesCoveredBy(parentRanges, childRanges){
+    return childRanges.every(([s2,e2]) => parentRanges.some(([s1,e1]) => s1<=s2 && e2<=e1));
+  }
+
+  async function promptCreateGroup(ranges){
+    const groups = await fetchGroups();
+    const byId = Object.fromEntries(groups.map(g=>[g.uid,g]));
+    function depthOf(uid){
+      let d=0; let cur = byId[uid];
+      while (cur && cur.parent_uid){ d++; cur = byId[cur.parent_uid]; }
+      return d;
+    }
+    groups.forEach(g=> g._depth = depthOf(g.uid));
+
+    const candidates = groups.filter(g => rangesCoveredBy(g.rows||[], ranges));
+    const name = window.prompt('Название группы:','Группа');
+    if (!name) return null;
+    let parent_uid = null;
+    if (candidates.length){
+      const s = ['(0) — без родителя'].concat(candidates.map((g,i)=>`(${i+1}) ${'  '.repeat(g._depth)}${g.name}`)).join('\n');
+      const pick = window.prompt(`Выберите родителя:\n${s}\nВведите номер:`, '0');
+      const n = parseInt(pick||'0',10)||0;
+      if (n>0) parent_uid = candidates[n-1].uid;
+    }
+    const palette = ['#F0F4C3','#D1C4E9','#B2EBF2','#FFECB3','#C8E6C9','#FFE0B2','#E1BEE7','#FFCDD2'];
+    const color = palette[Math.floor(Math.random()*palette.length)];
+    return {name, parent_uid, color};
+  }
+
+  // Создать группу из выделенных
+  document.getElementById('btn-group-create').onclick = async ()=>{
+    const ranges = selectedRanges();
+    if (!ranges.length){ alert('Сначала выделите строки (чекбоксы, можно с Shift).'); return; }
+    const cfg = await promptCreateGroup(ranges);
+    if (!cfg) return;
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    const resp = await fetch(GROUPS_CREATE, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({ sheet_index: parseInt(sheet,10)||0, name: cfg.name, rows: ranges, parent_uid: cfg.parent_uid, color: cfg.color })
+    });
+    const data = await resp.json();
+    if (!data.ok){ alert('Ошибка создания группы: '+(data.error||'unknown')); return; }
+    await repaintGroups();
+    document.querySelectorAll('.row-check:checked').forEach(cb=> cb.checked=false);
+  };
+
+  // Быстрое дерево групп (alert)
+  document.getElementById('btn-group-tree').onclick = async ()=>{
+    const groups = await fetchGroups();
+    const children = {};
+    groups.forEach(g=>{
+      const p = g.parent_uid || '_root';
+      (children[p] ||= []).push(g);
+    });
+    function walk(pid, depth, acc){
+      (children[pid]||[]).forEach(g=>{
+        acc.push(`${'  '.repeat(depth)}- ${g.name}  [${JSON.stringify(g.rows)}]`);
+        walk(g.uid, depth+1, acc);
+      });
+    }
+    const lines = []; walk('_root', 0, lines);
+    alert(lines.join('\n') || 'Пока нет групп');
+  };
+
+  // Удаление группы
+  async function deleteGroup(uid){
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    const ok = confirm('Удалить эту группу и все её вложенные под-группы?');
+    if (!ok) return;
+    const resp = await fetch(GROUPS_DELETE, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({ sheet_index: parseInt(sheet,10)||0, uid })
+    });
+    const data = await resp.json();
+    if (!data.ok){ alert('Ошибка удаления: '+(data.error||'unknown')); return; }
+    repaintGroups();
+  }
+
+  // Рендер «рёбер» и бейджей прямо в колонке управления
+  function renderHierarchyInControl(groups){
+    const byId = Object.fromEntries(groups.map(g=>[g.uid,g]));
+    function depthOf(uid){
+      let d=0; let cur = byId[uid];
+      while (cur && cur.parent_uid){ d++; cur = byId[cur.parent_uid]; }
+      return d;
+    }
+    groups.forEach(g=> g._depth = depthOf(g.uid));
+
+    const MAX_LEVELS = 4; // рисуем до 4 уровней в узкой колонке
+
+    document.querySelectorAll('#grid tbody tr').forEach(tr=>{
+      const rowNum = parseInt(tr.dataset.row,10);
+      const ctrl = tr.querySelector('.ctrl-wrap');
+      const hier = tr.querySelector('.hier');
+      if (!ctrl || !hier) return;
+      hier.innerHTML = '';
+
+      // группы, покрывающие текущую строку, по глубине
+      const covering = groups
+        .filter(g => (g.rows||[]).some(([s,e]) => rowNum>=s && rowNum<=e))
+        .sort((a,b) => a._depth - b._depth);
+
+      // уровень -> цвет
+      const levelColors = new Map();
+      covering.forEach(g => {
+        const lvl = Math.min(g._depth, MAX_LEVELS-1);
+        if (!levelColors.has(lvl)) levelColors.set(lvl, g.color);
+      });
+
+      // вертикали
+      levelColors.forEach((color, level) => {
+        const l = document.createElement('div');
+        l.className = 'lvl';
+        l.style.left = (level*10 + 4) + 'px';     // центр 3px полосы в 10px «слоте»
+        l.style.setProperty('--lvl-color', color);
+        hier.appendChild(l);
+      });
+
+      // стартующие группы
+      const startsHere = groups
+        .filter(g => (g.rows||[]).some(([s,e]) => rowNum === s))
+        .sort((a,b)=>a._depth-b._depth);
+
+      startsHere.forEach(g=>{
+        const level = Math.min(g._depth, MAX_LEVELS-1);
+        const elbow = document.createElement('div');
+        elbow.className = 'elbow';
+        elbow.style.left = (level*10 + 4) + 'px';
+        elbow.style.top  = '2px';
+        elbow.style.setProperty('--elbow-color', g.color);
+        hier.appendChild(elbow);
+      });
+
+      // бейджи (с отступом)
+      ctrl.querySelectorAll('.group-badge').forEach(b=> b.remove());
+      startsHere.forEach(g=>{
+        const level = Math.min(g._depth, MAX_LEVELS-1);
+        const badge = document.createElement('span');
+        badge.className = 'group-badge';
+        badge.dataset.uid = g.uid;
+        badge.style.background = g.color;
+        badge.style.marginLeft = (level*10 + 14) + 'px';  // отступ от «рёбер»
+        badge.title = 'Клик — удалить группу';
+        badge.textContent = g.name;
+        badge.addEventListener('click', ()=> deleteGroup(g.uid));
+        ctrl.appendChild(badge);
+      });
+    });
+  }
+
+  // Заливка строк групп (как раньше)
+  function fillGroupRows(groups){
+    document.querySelectorAll('#grid tbody tr').forEach(tr=>{
+      tr.style.backgroundImage = ''; tr.dataset.group = '';
+    });
+    groups.forEach(g=>{
+      (g.rows||[]).forEach(([s,e])=>{
+        for (let r=s; r<=e; r++){
+          const tr = document.querySelector(`#grid tbody tr[data-row="${r}"]`);
+          if (!tr) continue;
+          const overlay = `${g.color}22`;
+          tr.style.backgroundImage = `linear-gradient(0deg, ${overlay}, ${overlay})`;
+          tr.dataset.group = (tr.dataset.group ? tr.dataset.group+' ' : '') + '1';
+        }
+      });
+    });
+  }
+
+  // Комплексный перерисовщик
+  async function repaintGroups(){
+    const groups = await fetchGroups();
+    fillGroupRows(groups);
+    renderHierarchyInControl(groups);
+  }
+
+  // первый рендер
   refreshUI();
+  repaintGroups();
 });
 </script>
 {% endblock %}

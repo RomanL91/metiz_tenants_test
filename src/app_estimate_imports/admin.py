@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import json, secrets
 from django.contrib import admin, messages
 from django.http import HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
@@ -213,11 +213,11 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.compose_view),
                 name="imports_compose",
             ),
-            path(
-                "<int:pk>/graph/",
-                self.admin_site.admin_view(self.graph_view),
-                name="imports_graph",
-            ),
+            # path(
+            #     "<int:pk>/graph/",
+            #     self.admin_site.admin_view(self.graph_view),
+            #     name="imports_graph",
+            # ),
             path(
                 "<int:pk>/api/set-label/",
                 self.admin_site.admin_view(self.api_set_label),
@@ -242,6 +242,31 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 "<int:pk>/api/extract-from-grid/",
                 self.admin_site.admin_view(self.api_extract_from_grid),
                 name="imports_api_extract_from_grid",
+            ),
+            path(
+                "<int:pk>/api/groups/list/",
+                self.admin_site.admin_view(self.api_groups_list),
+                name="imports_groups_list",
+            ),
+            path(
+                "<int:pk>/api/groups/create/",
+                self.admin_site.admin_view(self.api_groups_create),
+                name="imports_groups_create",
+            ),
+            path(
+                "<int:pk>/api/groups/delete/",
+                self.admin_site.admin_view(self.api_groups_delete),
+                name="imports_groups_delete",
+            ),
+            path(
+                "<int:pk>/graph/",
+                self.admin_site.admin_view(self.graph_view),
+                name="imports_graph",
+            ),
+            path(
+                "<int:pk>/api/graph-data/",
+                self.admin_site.admin_view(self.api_graph_data),
+                name="imports_graph_data",
             ),
         ]
         return custom + urls
@@ -587,25 +612,21 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             self.message_user(request, "Нет ParseResult", level=messages.ERROR)
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
-        # гарантируем uid'ы + наличие markup
-        from app_estimate_imports.services_markup import ensure_markup_exists
-        from app_estimate_imports.utils_markup import ensure_uids_in_tree
-
         pr = obj.parse_result
-        pr.data = ensure_uids_in_tree(pr.data)
-        pr.save(update_fields=["data"])
-        markup = ensure_markup_exists(obj)
+        sheets = pr.data.get("sheets") or []
+        sheet_i = int(request.GET.get("sheet") or 0)
+        if sheet_i < 0 or sheet_i >= len(sheets):
+            sheet_i = 0
+        sheet_names = [s.get("name") or f"Лист {i+1}" for i, s in enumerate(sheets)]
 
-        graph = _build_graph(pr.data, markup.annotation or {})
-        context = dict(
+        ctx = dict(
             self.admin_site.each_context(request),
-            title=f"Граф сметы: {obj.original_name}",
+            title=f"Граф: {obj.original_name}",
             file=obj,
-            graph_json=json.dumps(graph, ensure_ascii=False),
+            sheet_index=sheet_i,
+            sheet_names=sheet_names,
         )
-        return TemplateResponse(
-            request, "admin/app_estimate_imports/graph.html", context
-        )
+        return TemplateResponse(request, "admin/app_estimate_imports/graph.html", ctx)
 
     def api_set_label(self, request, pk: int):
         obj = self.get_object(request, pk)
@@ -713,7 +734,6 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
         if show_all:
             # если используете загрузку полного листа из файла — оставьте этот блок;
             # иначе просто rows остаются как есть
-            from app_estimate_imports.utils_excel import load_sheet_rows_full
 
             xlsx_path = getattr(obj.file, "path", None) or (
                 pr.data.get("file") or {}
@@ -876,6 +896,144 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 status=400,
             )
 
+    def _sheet_cfg(self, markup, sheet_i: int):
+        ann = markup.annotation or {}
+        schema = ann.get("schema") or {}
+        sheets = schema.get("sheets") or {}
+        cfg = sheets.get(str(sheet_i)) or {}
+        cfg.setdefault("groups", [])
+        sheets[str(sheet_i)] = cfg
+        schema["sheets"] = sheets
+        ann["schema"] = schema
+        markup.annotation = ann
+        return cfg, ann
+
+    def api_groups_list(self, request, pk: int):
+        obj = self.get_object(request, pk)
+        if not obj:
+            return HttpResponse(
+                json.dumps({"ok": False, "error": "file_not_found"}),
+                content_type="application/json",
+                status=404,
+            )
+        sheet_i = int(request.GET.get("sheet_index") or 0)
+        markup = self._ensure_markup(obj)
+        cfg, _ = self._sheet_cfg(markup, sheet_i)
+        return HttpResponse(
+            json.dumps({"ok": True, "groups": cfg.get("groups")}),
+            content_type="application/json",
+        )
+
+    def api_groups_create(self, request, pk: int):
+        obj = self.get_object(request, pk)
+        if not obj:
+            return HttpResponse(
+                json.dumps({"ok": False, "error": "file_not_found"}),
+                content_type="application/json",
+                status=404,
+            )
+        try:
+            p = json.loads(request.body.decode("utf-8"))
+            sheet_i = int(p.get("sheet_index") or 0)
+            name = (p.get("name") or "").strip()
+            rows = p.get("rows") or []  # [[s,e], ...] 1-based
+            parent_uid = p.get("parent_uid")
+            color = p.get("color") or "#E0F7FA"
+
+            if not name or not rows:
+                return HttpResponse(
+                    json.dumps({"ok": False, "error": "empty_name_or_rows"}),
+                    content_type="application/json",
+                    status=400,
+                )
+
+            markup = self._ensure_markup(obj)
+            cfg, ann = self._sheet_cfg(markup, sheet_i)
+            groups = cfg.get("groups") or []
+
+            # если есть родитель — проверим покрытие
+            if parent_uid:
+                parent = next((g for g in groups if g.get("uid") == parent_uid), None)
+                if not parent:
+                    return HttpResponse(
+                        json.dumps({"ok": False, "error": "parent_not_found"}),
+                        content_type="application/json",
+                        status=400,
+                    )
+                if not _ranges_cover(parent.get("rows") or [], rows):
+                    return HttpResponse(
+                        json.dumps({"ok": False, "error": "parent_not_cover"}),
+                        content_type="application/json",
+                        status=400,
+                    )
+
+            uid = "grp_" + secrets.token_hex(8)
+            item = {
+                "uid": uid,
+                "name": name,
+                "color": color,
+                "parent_uid": parent_uid,
+                "rows": rows,
+            }
+            groups.append(item)
+            cfg["groups"] = groups
+            markup.annotation = ann
+            markup.save(update_fields=["annotation"])
+            return HttpResponse(
+                json.dumps({"ok": True, "group": item}), content_type="application/json"
+            )
+        except Exception as e:
+            return HttpResponse(
+                json.dumps({"ok": False, "error": str(e)}),
+                content_type="application/json",
+                status=400,
+            )
+
+    def api_groups_delete(self, request, pk: int):
+        obj = self.get_object(request, pk)
+        if not obj:
+            return HttpResponse(
+                json.dumps({"ok": False, "error": "file_not_found"}),
+                content_type="application/json",
+                status=404,
+            )
+        try:
+            p = json.loads(request.body.decode("utf-8"))
+            sheet_i = int(p.get("sheet_index") or 0)
+            uid = p.get("uid")
+            if not uid:
+                return HttpResponse(
+                    json.dumps({"ok": False, "error": "no_uid"}),
+                    content_type="application/json",
+                    status=400,
+                )
+
+            markup = self._ensure_markup(obj)
+            cfg, ann = self._sheet_cfg(markup, sheet_i)
+            groups = cfg.get("groups") or []
+            # удаляем группу и всех её потомков (простая рекурсия)
+            to_delete = set()
+
+            def collect(u):
+                to_delete.add(u)
+                for g in groups:
+                    if g.get("parent_uid") == u:
+                        collect(g.get("uid"))
+
+            collect(uid)
+            cfg["groups"] = [g for g in groups if g.get("uid") not in to_delete]
+            markup.annotation = ann
+            markup.save(update_fields=["annotation"])
+            return HttpResponse(
+                json.dumps({"ok": True}), content_type="application/json"
+            )
+        except Exception as e:
+            return HttpResponse(
+                json.dumps({"ok": False, "error": str(e)}),
+                content_type="application/json",
+                status=400,
+            )
+
     # — пересчёт метаданных при сохранении (удобно в админке) —
 
     def save_model(self, request, obj: ImportedEstimateFile, form, change):
@@ -890,10 +1048,325 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
             obj.sheet_count = count_sheets_safely(obj.file.path)
             obj.save(update_fields=["size_bytes", "sha256", "sheet_count"])
 
+    # ---- вспомогательные: нормализация юнитов и чтение схемы ----
+
+    def _load_groups(self, markup, sheet_i: int):
+        """
+        Возвращает список групп для листа sheet_i в нормализованном виде:
+        [{uid, name, parent_uid, color, rows:[[start,end], ...]}, ...]
+        Ищет в нескольких местах annotation: schema.sheets, groups, sheets.
+        """
+        ann = markup.annotation or {}
+        sheet_key = str(sheet_i)
+
+        groups_all = []
+
+        # Вариант 0 (ВАЖНО): annotation["schema"]["sheets"][sheet]["groups"]
+        schema = ann.get("schema") or {}
+        sheets_schema = schema.get("sheets") or {}
+        raw = sheets_schema.get(sheet_key)
+        if isinstance(raw, dict) and isinstance(raw.get("groups"), list):
+            groups_all = raw["groups"]
+
+        # Вариант A: annotation["groups"][sheet] => list | dict(items/groups)
+        if not groups_all:
+            root = ann.get("groups")
+            if isinstance(root, dict):
+                raw = root.get(sheet_key)
+                if isinstance(raw, list):
+                    groups_all = raw
+                elif isinstance(raw, dict):
+                    if isinstance(raw.get("items"), list):
+                        groups_all = raw["items"]
+                    elif isinstance(raw.get("groups"), list):
+                        groups_all = raw["groups"]
+
+        # Вариант B: annotation["sheets"][sheet]["groups" | "items"]
+        if not groups_all:
+            sheets = ann.get("sheets") or {}
+            raw = sheets.get(sheet_key) or {}
+            if isinstance(raw, dict):
+                for k in ("groups", "items"):
+                    if isinstance(raw.get(k), list):
+                        groups_all = raw[k]
+                        break
+
+        # Нормализация
+        norm = []
+        for g in groups_all or []:
+            uid = g.get("uid") or g.get("id") or g.get("gid")
+            if not uid:
+                continue
+            name = g.get("name") or g.get("title") or "Группа"
+            parent = g.get("parent_uid") or g.get("parent") or g.get("parentId") or None
+            color = g.get("color") or "#90caf9"
+            rows = g.get("rows") or g.get("ranges") or []
+            rr = []
+            for r in rows:
+                if isinstance(r, (list, tuple)) and len(r) >= 2:
+                    try:
+                        rr.append([int(r[0]), int(r[1])])
+                    except Exception:
+                        pass
+            norm.append(
+                {
+                    "uid": uid,
+                    "name": name,
+                    "parent_uid": parent,
+                    "color": color,
+                    "rows": rr,
+                }
+            )
+        return norm
+
+    @staticmethod
+    def _normalize_unit_py(u: str) -> str:
+        if not u:
+            return ""
+        s = (u or "").lower().strip()
+        s = s.replace("\u00b2", "2").replace("\u00b3", "3")
+        compact = "".join(ch for ch in s if ch not in " .,")
+        # те же эвристики, что и в grid.js
+        import re
+
+        if re.fullmatch(r"(м\^?2|м2|квм|мкв|квадратн\w*метр\w*)", compact or ""):
+            return "м2"
+        if re.fullmatch(r"(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)", compact or ""):
+            return "м3"
+        if re.fullmatch(r"(шт|штука|штуки|штук)", compact or ""):
+            return "шт"
+        if re.fullmatch(r"(пм|погм|погонныйметр|погонныхметров)", compact or ""):
+            return "пм"
+        if re.fullmatch(r"(компл|комплект|комплекта|комплектов)", compact or ""):
+            return "компл"
+        return compact
+
+    def _read_schema_for_sheet(self, markup, sheet_i: int):
+        """Возвращает (col_roles, unit_allow_set, require_qty) с fallback'ами."""
+        ann = markup.annotation or {}
+        schema = ann.get("schema") or {}
+        sheets = schema.get("sheets") or {}
+        s = sheets.get(str(sheet_i)) or {}
+        col_roles = s.get("col_roles") or []
+        # unit_allow/require_qty допускаем как на уровне листа, так и глобально
+        unit_allow_raw = s.get("unit_allow_raw") or schema.get("unit_allow_raw") or ""
+        require_qty = bool(
+            s.get("require_qty")
+            if s.get("require_qty") is not None
+            else schema.get("require_qty") or False
+        )
+        unit_allow_set = set()
+        for x in unit_allow_raw.split(",") if unit_allow_raw else []:
+            nx = self._normalize_unit_py(x)
+            if nx:
+                unit_allow_set.add(nx)
+        return col_roles, unit_allow_set, require_qty
+
+    def _detect_techcards(
+        self, pr_data: dict, sheet_i: int, col_roles, unit_allow_set, require_qty: bool
+    ):
+        """Сканирует строки листа и возвращает список ТК: dict(id,row_index,name)."""
+        sheets = pr_data.get("sheets") or []
+        sheet = sheets[sheet_i] if sheet_i < len(sheets) else {}
+        rows = sheet.get("rows") or []
+
+        # индексы колонок по ролям
+        def idxs(role):
+            return [i for i, r in enumerate(col_roles or []) if r == role]
+
+        name_cols = idxs("NAME_OF_WORK")
+        unit_cols = idxs("UNIT")
+        qty_cols = idxs("QTY")
+
+        def val(row, idx):
+            cells = row.get("cells") or []
+            return (cells[idx] if idx < len(cells) else "") or ""
+
+        def any_nonempty(row, idxs_):
+            for i in idxs_:
+                if (val(row, i) or "").strip():
+                    return True
+            return False
+
+        def first_text(row, idxs_):
+            for i in idxs_:
+                t = (val(row, i) or "").strip()
+                if t:
+                    return t
+            return ""
+
+        def qty_ok(row):
+            if not require_qty:
+                return True
+            import re
+
+            for i in qty_cols:
+                raw = (val(row, i) or "").replace(" ", "").replace(",", ".")
+                try:
+                    num = float(raw)
+                except Exception:
+                    continue
+                if num > 0:
+                    return True
+            return False
+
+        tcs = []
+        for row in rows:
+            has_name = any_nonempty(row, name_cols)
+            unit_raw = first_text(row, unit_cols)
+            unit_norm = self._normalize_unit_py(unit_raw)
+            has_unit = bool(unit_norm) and (
+                not unit_allow_set or unit_norm in unit_allow_set
+            )
+            if has_name and has_unit and qty_ok(row):
+                tcs.append(
+                    {
+                        "id": f"t:{row.get('row_index')}",
+                        "row_index": row.get("row_index"),
+                        "name": first_text(row, name_cols)
+                        or f"ТК {row.get('row_index')}",
+                    }
+                )
+        return tcs
+
+    def api_graph_data(self, request, pk: int):
+        obj = self.get_object(request, pk)
+        if not obj or not hasattr(obj, "parse_result"):
+            return HttpResponse(
+                json.dumps({"ok": False, "error": "no_parse_result"}),
+                content_type="application/json",
+                status=400,
+            )
+
+        sheet_i = int(request.GET.get("sheet_index") or 0)
+
+        # читаем группы (толерантно к схеме хранения)
+        markup = self._ensure_markup(obj)
+        groups_all = self._load_groups(markup, sheet_i)
+
+        # глубина по parent_uid
+        by_id = {g["uid"]: g for g in groups_all}
+
+        def depth(uid):
+            d = 0
+            cur = by_id.get(uid)
+            while cur and cur.get("parent_uid"):
+                d += 1
+                cur = by_id.get(cur.get("parent_uid"))
+            return d
+
+        for g in groups_all:
+            g["_depth"] = depth(g["uid"])
+
+        # схема/юниты/qty → находим ТК
+        col_roles, unit_allow_set, require_qty = self._read_schema_for_sheet(
+            markup, sheet_i
+        )
+        tcs = self._detect_techcards(
+            obj.parse_result.data, sheet_i, col_roles, unit_allow_set, require_qty
+        )
+
+        # сопоставляем ТК самой глубокой группе, накрывающей строку
+        def row_covered_by_group(g, row_index: int) -> bool:
+            for s, e in g.get("rows") or []:
+                if s <= row_index <= e:
+                    return True
+            return False
+
+        # узлы/рёбра
+        sheets = obj.parse_result.data.get("sheets") or []
+        sheet_name = (
+            sheets[sheet_i].get("name") if sheet_i < len(sheets) else None
+        ) or f"Лист {sheet_i+1}"
+        root_id = f"root:{sheet_i}"
+        nodes = [
+            {
+                "data": {
+                    "id": root_id,
+                    "label": f"Лист: {sheet_name}",
+                    "type": "root",
+                    "color": "#bdbdbd",
+                }
+            }
+        ]
+        edges = []
+
+        # группы → узлы
+        for g in groups_all:
+            gid = f"g:{g['uid']}"
+            nodes.append(
+                {
+                    "data": {
+                        "id": gid,
+                        "label": g.get("name") or "Группа",
+                        "type": "group",
+                        "color": g.get("color") or "#90caf9",
+                    }
+                }
+            )
+
+        # связи групп (parent→child), иначе корень
+        for g in groups_all:
+            gid = f"g:{g['uid']}"
+            parent_uid = g.get("parent_uid")
+            if parent_uid and parent_uid in by_id:
+                pid = f"g:{parent_uid}"
+            else:
+                pid = root_id
+            edges.append(
+                {"data": {"id": f"e:{pid}->{gid}", "source": pid, "target": gid}}
+            )
+
+        # ТК → узлы + связь с самой глубокой покрывающей группой (или корнем)
+        for t in tcs:
+            row_index = t.get("row_index")
+            owner_gid = None
+            if row_index is not None:
+                covering = [g for g in groups_all if row_covered_by_group(g, row_index)]
+                covering.sort(key=lambda x: x["_depth"])
+                if covering:
+                    owner_gid = f"g:{covering[-1]['uid']}"
+            if not owner_gid:
+                owner_gid = root_id
+
+            nodes.append(
+                {
+                    "data": {
+                        "id": t["id"],
+                        "label": t["name"],
+                        "type": "tc",
+                        "color": "#a5d6a7",
+                    }
+                }
+            )
+            edges.append(
+                {
+                    "data": {
+                        "id": f"e:{owner_gid}->{t['id']}",
+                        "source": owner_gid,
+                        "target": t["id"],
+                    }
+                }
+            )
+
+        payload = {"ok": True, "nodes": nodes, "edges": edges}
+        return HttpResponse(
+            json.dumps(payload, ensure_ascii=False), content_type="application/json"
+        )
+
 
 # Вне класса (ниже файла admin.py) — утилита сборки графа:
 import hashlib
 import re
+
+
+def _ranges_cover(a, b):
+    """Проверяет, что объединение диапазонов a полностью покрывает b."""
+    # простая проверка: каждый [s2,e2] из b попадает в любой [s1,e1] из a
+    for s2, e2 in b:
+        if not any(s1 <= s2 and e2 <= e1 for s1, e1 in a):
+            return False
+    return True
 
 
 def _norm(s: str) -> str:

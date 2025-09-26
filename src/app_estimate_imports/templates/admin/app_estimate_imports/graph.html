@@ -3,220 +3,208 @@
 
 {% block extrastyle %}
 <style>
-  .graph-toolbar { margin: 0 0 12px; display: flex; gap: 8px; align-items: center; }
-  .graph-toolbar input[type="text"] { width: 320px; }
-  #cy {
-    height: calc(100vh - 260px);
-    min-height: 520px;
-    border: 1px solid var(--border-color, #e0e0e0);
-    background: #fff;
-    border-radius: 4px;
-  }
-  .legend { margin-left: auto; display: flex; gap: 8px; font-size: 12px; color: #555; align-items: center; }
-  .legend span { display:inline-flex; align-items:center; gap:6px; }
-  .dot { width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid #999; }
-  .dot.group { background:#f5f5f5; }
-  .dot.tc { background:#e6f2f7; border-color:#79aec8; }
-  .dot.work { background:#eef7e6; border-color:#72b16a; }
-  .dot.material { background:#f7efe6; border-color:#c8a879; }
-  .sidepanel {
-    margin-top: 10px; padding: 10px; background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px;
-  }
-  .sidepanel code { user-select: all; }
+  .graph-toolbar { margin:0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #cy { width:100%; height: calc(100vh - 240px); border:1px solid #e0e0e0; border-radius:4px; background:#fafafa; }
+  .legend { font-size:12px; color:#555; display:flex; gap:16px; align-items:center; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd; background:#fff; }
+  .info { margin-top:8px; font-size:12px; color:#666; }
+  .sidepanel { padding:8px 10px; border:1px solid #e0e0e0; border-radius:4px; background:#fff; }
+  .muted { color:#888; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="module">
   <h2>{{ title }}</h2>
+
   <div class="graph-toolbar">
-    <a class="button" href="../change/">Назад к файлу</a>
-    <input id="search" type="text" placeholder="Поиск по названию или UID…" />
-    <a class="button" id="btn-search">Найти</a>
-    <a class="button" id="btn-clear">Сбросить выбор</a>
-    <span class="legend">
-      <span><i class="dot group"></i> GROUP</span>
-      <span><i class="dot tc"></i> TECH_CARD</span>
-      <span><i class="dot work"></i> WORK</span>
-      <span><i class="dot material"></i> MATERIAL</span>
+    <a class="button" href="../change/">Назад</a>
+
+    <label>Лист:&nbsp;
+      <select id="sheet">
+        {% for name in sheet_names %}
+          <option value="{{ forloop.counter0 }}" {% if forloop.counter0 == sheet_index %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <a class="button" id="btn-reload">Перестроить</a>
+
+    <label>Макет:&nbsp;
+      <select id="layout">
+        <option value="dagre" selected>Иерархический (TB)</option>
+        <option value="cose">Силовой (CoSE)</option>
+      </select>
+    </label>
+
+    <label>Фильтр:&nbsp;<input type="text" id="filter" placeholder="поиск по метке" style="width:220px"></label>
+
+    <span class="legend" style="margin-left:auto;">
+      <span class="chip">Группа</span>
+      <span class="chip">ТК</span>
     </span>
   </div>
 
   <div id="cy"></div>
 
-  <div class="sidepanel" id="panel" hidden>
-    <strong>Узел:</strong> <span id="p-title"></span><br/>
-    <strong>UID:</strong> <code id="p-uid"></code><br/>
-    <strong>Тип:</strong> <span id="p-type"></span><br/>
-    <strong>Путь:</strong> <span id="p-path"></span><br/>
-    <div style="margin-top:8px;">
-      <span>Пометить как: </span>
-      <a class="button" data-set="GROUP">GROUP</a>
-      <a class="button" data-set="TECH_CARD">TECH_CARD</a>
-      <a class="button" data-set="WORK">WORK</a>
-      <a class="button" data-set="MATERIAL">MATERIAL</a>
-    </div>
-    <div id="tc-actions" style="margin-top:8px;" hidden>
-      <em>Выдели на графе узлы-работы/материалы, затем:</em><br/>
-      <a class="button" id="btn-attach-works">Привязать как WORKS</a>
-      <a class="button" id="btn-attach-materials">Привязать как MATERIALS</a>
-    </div>
+  <div class="info">
+    Клик по узлу — подсветка соседей; двойной клик — центрировать. Выделение по фильтру скрывает остальные узлы/рёбра.
   </div>
 </div>
 {% endblock %}
 
-{% block extrahead %}
-<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
-{% endblock %}
-
 {% block footer %}
+<!-- Cytoscape + dagre (CDN) -->
+<script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
 <script>
-  const GRAPH = {{ graph_json|safe }};
-  const API_SET = window.location.pathname.replace(/\/graph\/?$/, "/api/set-label/");
-  const API_ATTACH = window.location.pathname.replace(/\/graph\/?$/, "/api/attach-members/");
-
-  function getCookie(name) {
-    const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
-    return m ? m.pop() : '';
+document.addEventListener('DOMContentLoaded', function(){
+  function navigateWith(params){
+    const base = window.location.pathname;
+    const p = new URLSearchParams(window.location.search);
+    if (params.sheet != null) p.set('sheet', params.sheet);
+    const qs = p.toString();
+    window.location.assign(qs ? (base + '?' + qs) : base);
   }
-  const CSRF = getCookie('csrftoken');
+  const sheetSel = document.getElementById('sheet');
+  sheetSel?.addEventListener('change', e => navigateWith({sheet: e.target.value}));
 
-  const cy = cytoscape({
-  container: document.getElementById('cy'),
-  elements: [].concat(GRAPH.nodes, GRAPH.edges),
-  layout: {
-    name: 'breadthfirst',
-    directed: true,
-    padding: 30,
-    spacingFactor: 1.35,
-    fit: true,
-    roots: 'node[id ^= "sheet:"]' // корни — синтетические узлы листов
-  },
-  wheelSensitivity: 0.2,
-  style: [
-    { selector: 'node',
-      style: {
-        'label': 'data(label)',
-        'text-wrap': 'wrap',
-        'text-max-width': '220px',
-        'font-size': 12,
-        'background-color': '#f5f5f5',
-        'border-color': '#999',
-        'border-width': 1,
-        'shape': 'round-rectangle',
-        'padding': '6px'
-      }
-    },
-    { selector: 'node[type = "GROUP"][role = "SHIFR"]',  style: { 'background-color': '#f0f6fb', 'border-color': '#79aec8' } },
-    { selector: 'node[type = "GROUP"][role ^= "UR"]',    style: { 'background-color': '#f5f5f5' } },
-    { selector: 'node[type = "GROUP"][role = "NAME"]',   style: { 'background-color': '#faf5ef', 'border-color': '#c8a879' } },
-    { selector: 'node[type = "TECH_CARD"]', style: { 'background-color': '#e6f2f7', 'border-color': '#79aec8' } },
-    { selector: 'node[type = "WORK"]',      style: { 'background-color': '#eef7e6', 'border-color': '#72b16a', 'shape': 'ellipse' } },
-    { selector: 'node[type = "MATERIAL"]',  style: { 'background-color': '#f7efe6', 'border-color': '#c8a879', 'shape': 'diamond' } },
-    { selector: 'edge',
-      style: {
-        'curve-style': 'bezier',
-        'control-point-distance': 30,
-        'width': 1,
-        'line-color': '#bbb',
-        'target-arrow-shape': 'triangle',
-        'target-arrow-color': '#bbb'
-      }
-    },
-    { selector: 'edge[rel = "work"]',     style: { 'line-style': 'dashed' } },
-    { selector: 'edge[rel = "material"]', style: { 'line-style': 'dotted' } },
-    { selector: ':selected', style: { 'border-width': 2, 'border-color': '#4a90e2', 'line-color': '#4a90e2', 'target-arrow-color': '#4a90e2' } },
-    { selector: 'node.highlight', style: { 'border-width': 3, 'border-color': '#e67e22' } }
-  ]
-});
+  const API_URL = window.location.pathname.replace(/\/graph\/?$/, "/api/graph-data/");
 
-  // панель деталей
-  const panel = document.getElementById('panel');
-  const pTitle = document.getElementById('p-title');
-  const pUid = document.getElementById('p-uid');
-  const pType = document.getElementById('p-type');
-  const pPath = document.getElementById('p-path');
-  const tcActions = document.getElementById('tc-actions');
+  let cy = cytoscape({
+    container: document.getElementById('cy'),
+    wheelSensitivity: 0.2,
+    style: [
+      {
+        selector: 'node[type="root"]',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': 'data(color)',
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#212121',
+          'font-size': 12,
+          'padding': '8px',
+          'border-width': 1,
+          'border-color': '#9e9e9e'
+        }
+      },
+      {
+        selector: 'node[type="group"]',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': 'data(color)',
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#212121',
+          'font-weight': 500,
+          'font-size': 12,
+          'padding': '6px',
+          'border-width': 1,
+          'border-color': '#90a4ae'
+        }
+      },
+      {
+        selector: 'node[type="tc"]',
+        style: {
+          'shape': 'ellipse',
+          'background-color': 'data(color)',
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#1b5e20',
+          'font-size': 11,
+          'padding': '4px',
+          'border-width': 1,
+          'border-color': '#a5d6a7'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': '#b0bec5',
+          'target-arrow-color': '#b0bec5',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier'
+        }
+      },
+      { selector: '.faded', style: { 'opacity': 0.12 } },
+      { selector: '.highlight', style: { 'line-color': '#607d8b', 'target-arrow-color': '#607d8b', 'width': 3 } },
+      { selector: 'node.selected', style: { 'border-color': '#37474f', 'border-width': 2 } }
+    ]
+  });
 
-  function showPanel(n) {
-  if (!n) { panel.hidden = true; return; }
-  const d = n.data();
-  panel.hidden = false;
-  pTitle.textContent = d.label || d.id;
-  pUid.textContent = d.id;
-  pType.textContent = d.type + (d.role ? ` (${d.role})` : '');
-  pPath.textContent = d.path || '';
-  tcActions.hidden = (d.type !== 'TECH_CARD');
-}
-
-  cy.on('tap', 'node', (evt) => showPanel(evt.target));
-  cy.on('tap', (evt) => { if (evt.target === cy) showPanel(null); });
-
-  // смена метки
-  panel.addEventListener('click', async (e) => {
-  const lbl = e.target.getAttribute('data-set');
-  if (!lbl) return;
-  const nodes = cy.$(':selected').filter('node');
-  if (!nodes.length) { alert('Сначала выделите узлы.'); return; }
-  for (const n of nodes) {
-    const uid = n.id();
-    const title = n.data('label') || '';
-    await fetch(API_SET, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-      body: JSON.stringify({ uid, label: lbl, title })
-    });
-    n.data('type', lbl);
+  function layoutOptions(name){
+    const sheetDir = 'TB'; // можно сделать UI-переключатель TB/LR
+    if (name === 'dagre') {
+      return { name: 'dagre', rankDir: sheetDir, nodeSep: 25, rankSep: 60, edgeSep: 10, padding: 20, fit: true, animate: false };
+    }
+    if (name === 'cose') {
+      return { name: 'cose', fit: true, animate: false, nodeOverlap: 10, nodeRepulsion: 800000, idealEdgeLength: 100 };
+    }
+    return { name: 'grid' };
   }
-});
 
-  // привязка к ТК
-  async function attach(kind) {
-    const sel = cy.$(':selected');
-    const tc = sel.filter('node[type = "TECH_CARD"]').first();
-    if (!tc.nonempty()) { alert('Выделите ТЕХКАРТУ и узлы-работы/материалы.'); return; }
-    const others = sel.filter('node').not(tc);
-    const works = [], materials = [];
-    others.forEach(n => {
-      if (n.data('type') === 'WORK') works.push(n.id());
-      if (n.data('type') === 'MATERIAL') materials.push(n.id());
-    });
-    if (kind === 'works' && !works.length) { alert('Нет выбранных WORK узлов.'); return; }
-    if (kind === 'materials' && !materials.length) { alert('Нет выбранных MATERIAL узлов.'); return; }
-
-    const payload = { tc_uid: tc.id(), works, materials };
-    const resp = await fetch(API_ATTACH, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF }, body: JSON.stringify(payload) });
+  async function loadGraph(){
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    const resp = await fetch(`${API_URL}?sheet_index=${sheet}`);
     const data = await resp.json();
-    if (!data.ok) { alert('Ошибка: ' + (data.error || 'unknown')); return; }
+    if (!data.ok){ alert('Не удалось получить данные графа'); return; }
 
-    // Обновим визуально: добавим рёбра ТК→W/M.
-    works.forEach(w => {
-      const id = `${tc.id()}=>W:${w}`;
-      if (cy.getElementById(id).empty())
-        cy.add({ group: 'edges', data: { id, source: tc.id(), target: w, rel: 'work' } });
-    });
-    materials.forEach(m => {
-      const id = `${tc.id()}=>M:${m}`;
-      if (cy.getElementById(id).empty())
-        cy.add({ group: 'edges', data: { id, source: tc.id(), target: m, rel: 'material' } });
-    });
+    cy.elements().remove();
+    const elements = []
+      .concat((data.nodes || []).map(n => ({ data: n.data })))
+      .concat((data.edges || []).map(e => ({ data: e.data })));
+    cy.add(elements);
+
+    runLayout();
   }
-  document.getElementById('btn-attach-works').onclick = () => attach('works');
-  document.getElementById('btn-attach-materials').onclick = () => attach('materials');
 
-  // поиск
-  document.getElementById('btn-search').onclick = () => {
-    const q = (document.getElementById('search').value || '').toLowerCase();
-    cy.$('node').removeClass('highlight');
+  function runLayout(){
+    const name = document.getElementById('layout').value;
+    cy.layout(layoutOptions(name)).run();
+  }
+
+  // фильтр по подстроке
+  function applyFilter(){
+    const q = (document.getElementById('filter').value || '').trim().toLowerCase();
+    cy.elements().removeClass('faded');
     if (!q) return;
-    cy.$('node').forEach(n => {
-      const d = n.data();
-      if ((d.label||'').toLowerCase().includes(q) || (d.id||'').toLowerCase().includes(q)) n.addClass('highlight');
-    });
-  };
-  document.getElementById('btn-clear').onclick = () => {
-    cy.$('node').unselect().removeClass('highlight');
-    showPanel(null);
-  };
+    const matched = cy.nodes().filter(n => (n.data('label') || '').toLowerCase().includes(q));
+    const neighborhood = matched.closedNeighborhood();
+    cy.elements().not(neighborhood).addClass('faded');
+  }
+
+  // интерактив
+  cy.on('tap', 'node', function(evt){
+    const n = evt.target;
+    cy.elements().removeClass('selected highlight');
+    n.addClass('selected');
+    n.connectedEdges().addClass('highlight');
+    n.connectedEdges().connectedNodes().addClass('selected');
+  });
+  cy.on('tap', function(evt){
+    if (evt.target === cy){
+      cy.elements().removeClass('selected highlight');
+    }
+  });
+  cy.on('dbltap', 'node', function(evt){
+    const n = evt.target;
+    cy.center(n);
+    cy.zoom({level: 1.0, renderedPosition: n.renderedPosition()});
+  });
+
+  document.getElementById('btn-reload').addEventListener('click', loadGraph);
+  document.getElementById('layout').addEventListener('change', runLayout);
+  document.getElementById('filter').addEventListener('input', applyFilter);
+
+  // первый запуск
+  loadGraph();
+});
 </script>
 {% endblock %}
