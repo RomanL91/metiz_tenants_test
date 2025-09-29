@@ -13,18 +13,146 @@
 - Методы возвращают готовые HTTP-ответы (HTML или JSON/redirect) для встраивания в админку.
 """
 
+from uuid import uuid4
+
+from django.db import transaction
 from django.contrib import messages
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 
 from app_estimate_imports.handlers.base_handler import BaseHandler
-from app_estimate_imports.utils_markup import ensure_uids_in_tree
-from app_estimate_imports.services_markup import build_markup_skeleton
+
+from app_estimate_imports.models import ParseMarkup
+
+
+ALLOWED_LABELS = {"TECH_CARD", "WORK", "MATERIAL", "GROUP"}
 
 
 class MarkupHandler(BaseHandler):
     """Обработчик операций с разметкой"""
+
+    @transaction.atomic
+    def _apply_label(
+        self, file_obj, uid: str, label: str, title: str | None = None
+    ) -> None:
+        if label not in ALLOWED_LABELS:
+            raise ValueError(f"Недопустимая метка: {label}")
+        markup = self.ensure_markup_exists(file_obj)
+        ann = markup.annotation
+        ann["labels"][uid] = label
+        if title:
+            ann.setdefault("names", {})[uid] = title  # ← словарь имён для uid
+        markup.annotation = ann
+        markup.save(update_fields=["annotation"])
+
+    def list_nodes(self, parse_result) -> list[dict]:
+        """
+        Плоский список узлов дерева: [{uid, title, path}]
+        path — собираем из titles родителей (для читаемости).
+        """
+        nodes: list[dict] = []
+
+        def walk(node: dict, parents: list[str]):
+            uid = node.get("uid")
+            title = node.get("title") or ""
+            path = " / ".join([*parents, title]) if title else " / ".join(parents)
+            if uid:
+                nodes.append({"uid": uid, "title": title, "path": path})
+            for ch in node.get("children") or []:
+                walk(ch, [*parents, title] if title else parents)
+
+        for sheet in parse_result.data.get("sheets") or []:
+            for b in sheet.get("blocks") or []:
+                walk(b, [sheet.get("name") or "Лист"])
+        return nodes
+
+    def ensure_markup_exists(self, file_obj) -> ParseMarkup:
+        """
+        Гарантирует наличие ParseMarkup и uid'ов в ParseResult.data.
+        """
+        pr = getattr(file_obj, "parse_result", None)
+        if not pr:
+            raise ValueError("Нет ParseResult для файла")
+
+        # Проставим uid всем узлам
+        pr.data = self.ensure_uids_in_tree(pr.data)
+        pr.save(update_fields=["data"])
+
+        markup = getattr(file_obj, "markup", None)
+        if not markup:
+            markup = ParseMarkup.objects.create(
+                file=file_obj,
+                parse_result=pr,
+                annotation={"labels": {}, "tech_cards": []},
+            )
+        else:
+            ann = markup.annotation or {}
+            ann.setdefault("labels", {})
+            ann.setdefault("tech_cards", [])
+            markup.annotation = ann
+            markup.save(update_fields=["annotation"])
+        return markup
+
+    def _walk_blocks(self, blocks: list, prefix: str):
+        for i, b in enumerate(blocks):
+            if "uid" not in b or not b["uid"]:
+                b["uid"] = f"{prefix}-b{i}-{uuid4().hex[:8]}"
+            children = b.get("children") or []
+            if isinstance(children, list) and children:
+                self._walk_blocks(children, prefix=b["uid"])
+
+    def build_markup_skeleton(self, parse_result) -> dict:
+        """
+        Строит черновик:
+        - labels: все найденные uid -> "GROUP" (можно править руками в админке)
+        - tech_cards: []
+        """
+        data = self.ensure_uids_in_tree(parse_result.data)
+        labels: dict[str, str] = {}
+
+        def collect(blocks: list):
+            for b in blocks:
+                uid = b.get("uid")
+                if uid:
+                    labels[uid] = "GROUP"
+                ch = b.get("children") or []
+                if ch:
+                    collect(ch)
+
+        for sheet in data.get("sheets") or []:
+            collect(sheet.get("blocks") or [])
+
+        return {"labels": labels, "tech_cards": []}
+
+    def ensure_uids_in_tree(self, data: dict) -> dict:
+        """
+        Проставляет uid каждому узлу в sheets[].blocks[*] и формирует blocks из rows при необходимости.
+        Узел: {"title": "...", "children": [...], "uid": "..."}.
+        """
+        if not data:
+            return {"sheets": []}
+        sheets = data.get("sheets") or []
+        for si, sheet in enumerate(sheets):
+            if "blocks" in sheet and isinstance(sheet["blocks"], list):
+                self._walk_blocks(sheet["blocks"], prefix=f"s{si}")
+            else:
+                # преобразуем rows -> blocks (title = первая непустая ячейка)
+                blocks = []
+                for ri, row in enumerate(sheet.get("rows") or []):
+                    cells = row.get("cells") or []
+                    title = next((c for c in cells if c), "")
+                    if not title:
+                        continue
+                    blocks.append(
+                        {
+                            "title": title,
+                            "children": [],
+                            "uid": f"s{si}-r{ri}-{uuid4().hex[:8]}",
+                        }
+                    )
+                sheet["blocks"] = blocks
+        return data
 
     def generate_skeleton(self, request: HttpRequest, pk: int) -> HttpResponse:
         """
@@ -50,11 +178,11 @@ class MarkupHandler(BaseHandler):
             markup = self.markup_service.ensure_markup_exists(obj)
 
             # Обновляем данные с UID'ами
-            obj.parse_result.data = ensure_uids_in_tree(obj.parse_result.data)
+            obj.parse_result.data = self.ensure_uids_in_tree(obj.parse_result.data)
             obj.parse_result.save(update_fields=["data"])
 
             # Создаем скелет разметки
-            markup.annotation = build_markup_skeleton(obj.parse_result)
+            markup.annotation = self.build_markup_skeleton(obj.parse_result)
             markup.save(update_fields=["annotation"])
 
             messages.success(request, "Черновик разметки создан")
@@ -80,10 +208,8 @@ class MarkupHandler(BaseHandler):
             messages.error(request, "Нет ParseResult")
             return self.redirect_back_or_change(request)
 
-        from ..services_markup import ensure_markup_exists, list_nodes
-
-        markup = ensure_markup_exists(obj)
-        nodes = list_nodes(obj.parse_result)
+        markup = self.ensure_markup_exists(obj)
+        nodes = self.list_nodes(obj.parse_result)
         labels = (markup.annotation or {}).get("labels", {})
 
         # Генерация HTML таблицы
@@ -153,9 +279,7 @@ class MarkupHandler(BaseHandler):
             return HttpResponseRedirect(f"../labeler/")
 
         try:
-            from ..services_markup import set_label
-
-            set_label(obj, uid, label)
+            self._apply_label(obj, uid, label)
             messages.success(request, f"{uid} → {label}")
         except Exception as e:
             messages.error(request, f"Ошибка: {e!r}")
