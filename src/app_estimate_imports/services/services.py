@@ -1,7 +1,15 @@
+from __future__ import annotations
+
 import hashlib
+
 from typing import BinaryIO
 
 from openpyxl import load_workbook
+
+from django.db import transaction
+from django.core.files.uploadedfile import UploadedFile
+
+from app_estimate_imports.models import ImportedEstimateFile, ParseResult
 
 
 def compute_sha256(fobj: BinaryIO) -> str:
@@ -34,9 +42,23 @@ def parse_excel_to_json(path: str) -> dict:
     return result
 
 
-def count_sheets_safely(path: str) -> int:
-    try:
-        wb = load_workbook(filename=path, read_only=True, data_only=True)
-        return len(wb.worksheets)
-    except Exception:
-        return 0
+def save_imported_file(uploaded: UploadedFile) -> ImportedEstimateFile:
+    obj = ImportedEstimateFile.objects.create(
+        file=uploaded,
+        original_name=uploaded.name,
+        size_bytes=getattr(uploaded, "size", 0) or 0,
+    )
+    f = obj.file.open("rb")
+    obj.sha256 = compute_sha256(f)
+    obj.save(update_fields=["sha256"])
+    return obj
+
+
+@transaction.atomic
+def parse_and_store(file_obj: ImportedEstimateFile) -> ParseResult:
+    data = parse_excel_to_json(file_obj.file.path)
+    estimate_name = (data.get("extracted", {}) or {}).get("estimate_name", "")[:255]
+    pr, _ = ParseResult.objects.update_or_create(
+        file=file_obj, defaults={"data": data, "estimate_name": estimate_name}
+    )
+    return pr

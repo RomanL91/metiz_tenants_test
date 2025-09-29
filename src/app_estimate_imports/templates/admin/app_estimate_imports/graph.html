@@ -154,7 +154,12 @@ document.addEventListener('DOMContentLoaded', function(){
     const sheet = new URLSearchParams(location.search).get('sheet') || '0';
     const resp = await fetch(`${API_URL}?sheet_index=${sheet}`);
     const data = await resp.json();
-    if (!data.ok){ alert('Не удалось получить данные графа'); return; }
+    if (!data.ok){ 
+      alert('Не удалось получить данные графа'); 
+      console.error('Graph API error:', data);
+      
+      return;
+    }
 
     cy.elements().remove();
     const elements = []

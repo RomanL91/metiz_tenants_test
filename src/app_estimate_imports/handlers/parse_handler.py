@@ -18,6 +18,7 @@
 
 import json
 
+from django.urls import reverse
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 
@@ -113,11 +114,17 @@ class ParseHandler(BaseHandler):
             messages.error(request, "Нет разметки для материализации")
             return self.redirect_back_or_change(request)
 
-        success = self.materialization_service.materialize_estimate(obj)
+        result = self.materialization_service.materialize_estimate(obj)
 
-        if success:
+        # Успех: пришёл объект Estimate → редиректим на его change
+        if result is not None and hasattr(result, "pk"):
+            estimate = result
+            urlname = (
+                f"admin:{estimate._meta.app_label}_{estimate._meta.model_name}_change"
+            )
             messages.success(request, "Смета создана")
-        else:
-            self.materialization_service.add_messages_to_request(request)
+            return HttpResponseRedirect(reverse(urlname, args=[estimate.pk]))
 
-        return HttpResponseRedirect(f"../{pk}/change/")
+        # Ошибка
+        self.materialization_service.add_messages_to_request(request)
+        return self.redirect_back_or_change(request)
