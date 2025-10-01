@@ -1,0 +1,28 @@
+services:
+  web:
+    build: .
+    container_name: metiz_web
+    restart: unless-stopped
+    environment:
+      # только база
+      POSTGRES_HOST: metiz_database
+      POSTGRES_DB: MyMetizBD
+      POSTGRES_USER: MyMetizUser
+      POSTGRES_PASSWORD: MyMetizPassword
+      POSTGRES_PORT: "3333"
+    ports:
+      - "8000:8000"
+    volumes:
+      - metiz_static:/app/staticfiles # STATIC_ROOT
+      - metiz_media:/app/media # MEDIA_ROOT
+    networks:
+      - metiz_network
+
+volumes:
+  metiz_static:
+  metiz_media:
+
+
+networks:
+  metiz_network:
+    external: true
