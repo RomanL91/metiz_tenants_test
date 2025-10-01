@@ -1,0 +1,44 @@
+<li class="est-node">
+    <div class="row">
+      <button type="button" class="toggle" aria-expanded="true">▾</button>
+  
+      <span class="gname">
+        {{ node.group_form.id }}  {# hidden id #}
+        {{ node.group_form.name }}
+      </span>
+  
+      <span class="meta">ID: {{ node.group.id }} · order: {{ node.group.order }}</span>
+    </div>
+  
+    <ul class="links">
+      {% if node.links %}
+        {% for link, form in node.links %}
+          <li class="link-row">
+            <span class="branch">{% if not forloop.last %}├─{% else %}└─{% endif %}</span>
+            {{ form.id }}
+            {{ form.technical_card_version.errors }}
+            <label>Техкарта (версия): {{ form.technical_card_version }}</label>
+            {% if link.technical_card_version %}
+              <span class="muted">
+                — {{ link.technical_card_version.card.name }} (v{{ link.technical_card_version.version }})
+              </span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      {% else %}
+        <li class="link-row empty">
+          <span class="branch">└─</span>
+          <span class="muted">Нет техкарт</span>
+        </li>
+      {% endif %}
+    </ul>
+  
+    {% if node.children %}
+      <ul class="children">
+        {% for ch in node.children %}
+          {% include "admin/app_outlay/partials/estimate_tree_node.html" with node=ch only %}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+  

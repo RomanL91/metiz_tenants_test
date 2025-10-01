@@ -1,0 +1,172 @@
+{# templates/admin/app_outlay/estimate_change.html #}
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    .tc-map { width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; }
+    .tc-map th, .tc-map td { border:1px solid #e0e0e0; padding:6px 8px; vertical-align:top; }
+    .tc-map thead th { background:#f8f8f8; position:sticky; top:0; }
+    .tc-map .muted { color:#888; font-size:11px; }
+    .tc-map .sys { font-weight:600; }
+    .tc-map .cell-2lines > div + div { margin-top:2px; }
+    .tc-map .qty-input { width:100px; }
+    .tc-map .tc-input { width:260px; }
+    .tc-map .col-slim { white-space:nowrap; }
+    .tc-map .col-wide { min-width:220px; }
+    .tc-map .sec-hdr td { background:#fafafa; padding-top:10px; }
+    .badge { display:inline-block; padding:4px 10px; border-radius:10px; font-weight:600; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {{ block.super }}
+
+  <h2 style="margin-top:24px">Сопоставление ТК (табличный вид)</h2>
+
+  {% if not table_sections %}
+    <p class="help">Нет данных превью: либо файл не привязан, либо разметка не обнаружила ТК.</p>
+  {% else %}
+    <table class="tc-map" id="tc-map">
+      <thead>
+        <tr>
+          <th class="col-wide">{{ role_titles.NAME_OF_WORK }}</th>
+          <th class="col-slim">{{ role_titles.UNIT }}</th>
+          <th class="col-slim">{{ role_titles.QTY }}</th>
+          <th class="col-wide">Сопоставить с ТК</th>
+          {% for col in optional_cols %}
+            <th>{{ col.title }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for sec in table_sections %}
+          <tr class="sec-hdr">
+            <td colspan="{{ table_colspan }}">
+              <span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span>
+            </td>
+          </tr>
+
+          {% for it in sec.items %}
+            <tr data-row="{{ it.row_index }}">
+              <td>{{ it.name }}</td>
+              <td>{{ it.unit }}</td>
+              <td>
+                <input type="number" step="0.0001" class="qty-input"
+                       value="{{ it.qty|default_if_none:'' }}" placeholder="0">
+              </td>
+              <td>
+                <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…"
+                       data-id="" data-text="">
+                <div class="muted">строка Excel: {{ it.row_index }}</div>
+              </td>
+
+              {% for v in it.opt_values %}
+                <td class="cell-2lines opt-cell">
+                  <div class="sys">—</div>
+                  <div class="muted">xls: {{ v|default:"—" }}</div>
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <script>
+    (function(){
+      const AUTOCOMPLETE_URL = "{% url 'admin:outlay_tc_autocomplete' %}";
+      const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
+      const CALC_ORDER = JSON.parse('{{ calc_order_json|escapejs }}'); // порядок опц. колонок
+
+      // --- простой автокомплит на fetch ---
+      async function searchTC(q) {
+        const resp = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
+        const data = await resp.json();
+        return (data.results || []);
+      }
+      function attachAutocomplete(input){
+        let box;
+        input.addEventListener('input', async ()=>{
+          const q = input.value.trim();
+          if (box) box.remove();
+          if (!q || q.length < 2) return;
+          const items = await searchTC(q);
+
+          box = document.createElement('div');
+          box.style.position='absolute';
+          box.style.background='#fff';
+          box.style.border='1px solid #ddd';
+          box.style.zIndex=10;
+          box.style.maxHeight='220px';
+          box.style.overflow='auto';
+          const rect = input.getBoundingClientRect();
+          box.style.left=(rect.left+window.scrollX)+'px';
+          box.style.top=(rect.bottom+window.scrollY)+'px';
+          box.style.minWidth=rect.width+'px';
+
+          items.forEach(it=>{
+            const a = document.createElement('div');
+            a.textContent = it.text;
+            a.style.padding='4px 8px';
+            a.style.cursor='pointer';
+            a.addEventListener('mousedown', ()=>{
+              input.value = it.text;
+              input.dataset.id = it.id;
+              input.dataset.text = it.text;
+              if (box) { box.remove(); box = null; }
+              const tr = input.closest('tr');
+              if (tr) triggerRowCalc(tr);
+            });
+            box.appendChild(a);
+          });
+          document.body.appendChild(box);
+
+          const onClickAway = (ev)=>{
+            if (box && !box.contains(ev.target) && ev.target!==input){
+              box.remove(); box = null; document.removeEventListener('mousedown', onClickAway);
+            }
+          };
+          setTimeout(()=> document.addEventListener('mousedown', onClickAway), 0);
+        });
+      }
+
+      // --- пересчёт системных стоимостей ---
+      async function triggerRowCalc(tr){
+        if (!tr) return;
+        const inpTC = tr.querySelector('.js-tc-autocomplete');
+        const inpQty = tr.querySelector('.qty-input');
+        const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
+        const qty  = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
+
+        tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent = '—');
+        if (!tcId || !isFinite(qty)) return;
+
+        try{
+          const resp = await fetch(CALC_URL + '?tc=' + tcId + '&qty=' + encodeURIComponent(qty));
+          const data = await resp.json();
+          if (!data.ok) return;
+          const calc = data.calc || {};
+          const order = (data.order && data.order.length) ? data.order : CALC_ORDER;
+          const cells = tr.querySelectorAll('.opt-cell');
+          order.forEach((rid, idx)=>{
+            const td = cells[idx];
+            if (!td) return;
+            const val = (calc[rid] != null)
+              ? Number(calc[rid]).toLocaleString(undefined, {maximumFractionDigits: 4})
+              : '—';
+            td.querySelector('.sys').textContent = val;
+          });
+        }catch(e){}
+      }
+
+      document.querySelectorAll('.js-tc-autocomplete').forEach(attachAutocomplete);
+      document.querySelectorAll('#tc-map .qty-input').forEach(inp=>{
+        inp.addEventListener('change', ()=> triggerRowCalc(inp.closest('tr')));
+        inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));
+      });
+    })();
+  </script>
+{% endblock %}

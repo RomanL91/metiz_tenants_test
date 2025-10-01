@@ -1,0 +1,24 @@
+<div class="grp" style="--bg: {{ node.color|default:'#e0f7fa' }}">
+    <div class="title">{{ node.name }}</div>
+  
+    {% if node.tcs %}
+      <div class="tcs">
+        {% for tc in node.tcs %}
+          <div class="tc">
+            <span class="name">{{ tc.name }} <span class="muted">[строка {{ tc.row_index }}]</span></span>
+            <input type="text" class="tc-lookup picker" placeholder="Начните вводить название ТК…" list="dl_{{ node.uid }}_{{ forloop.counter }}">
+            <datalist id="dl_{{ node.uid }}_{{ forloop.counter }}"></datalist>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  
+    {% if node.children %}
+      <div style="margin-left:14px;">
+        {% for ch in node.children %}
+          {% include "admin/app_outlay/_estimate_tree_group.html" with node=ch %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+  

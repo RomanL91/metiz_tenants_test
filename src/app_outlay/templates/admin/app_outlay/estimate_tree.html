@@ -1,0 +1,42 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'app_outlay/nested_list.css' %}">
+{% endblock %}
+{% block extrahead %}
+  {{ block.super }}
+  <script src="{% static 'app_outlay/nested_list.js' %}"></script>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="object-tools">
+    <ul class="object-tools">
+      <li><a class="button" href="{{ list_url }}">К списку смет</a></li>
+    </ul>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ group_formset.management_form }}
+    {{ link_formset.management_form }}
+
+    <ul class="est-tree">
+      {% if tree|length == 0 %}
+        <li class="empty">Группы ещё не созданы.</li>
+      {% endif %}
+
+      {# рекурсивный рендер #}
+      {% for node in tree %}
+        {% include "admin/app_outlay/partials/estimate_tree_node.html" with node=node %}
+      {% endfor %}
+    </ul>
+
+    <div style="margin-top:14px;">
+      <button type="submit" class="button default">Сохранить изменения</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
