@@ -11,6 +11,20 @@ class Estimate(models.Model):
         default="RUB",
         blank=True,
     )
+    source_file = models.ForeignKey(
+        "app_estimate_imports.ImportedEstimateFile",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="derived_estimates",
+        help_text="От какого импортированного файла построена смета (для превью).",
+    )
+    source_sheet_index = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=0,
+        help_text="Индекс листа Excel, по которому строилось превью.",
+    )
 
     def __str__(self) -> str:
         return self.name

@@ -17,7 +17,18 @@ def materialize_estimate_from_markup(markup) -> Estimate:
     estimate_name = pr.estimate_name or markup.file.original_name
     estimate = Estimate.objects.create(name=estimate_name)
 
+    estimate.source_file = markup.file  # ImportedEstimateFile
+    # estimate.source_sheet_index = sheet_index   # если есть понимание листа; иначе 0
+    estimate.save(update_fields=["source_file", "source_sheet_index"])
+
     # построим кэш групп по пути
+
+    if not Group.objects.filter(estimate=estimate).exists():
+        Group.objects.get_or_create(
+            estimate=estimate,
+            parent=None,
+            defaults={"name": "Общий раздел", "order": 0},
+        )
     group_cache: dict[tuple[str, ...], Group] = {}
 
     def ensure_group_path(path: tuple[str, ...]) -> Group:
