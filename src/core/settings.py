@@ -128,6 +128,7 @@ SHARED_APPS = [
     "django.contrib.contenttypes",  # нужен в public (и в tenant), допускается в обоих списках
     "django.contrib.staticfiles",  # статика для публичной зоны (опционально)
     "app_tenants",
+    "nested_admin",
 ]
 
 TENANT_APPS = [
