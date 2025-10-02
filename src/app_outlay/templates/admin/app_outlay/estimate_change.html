@@ -28,6 +28,24 @@
   {% if not table_sections %}
     <p class="help">Нет данных превью: либо файл не привязан, либо разметка не обнаружила ТК.</p>
   {% else %}
+    <!-- НОВАЯ КНОПКА -->
+    <div style="margin-bottom: 16px;">
+      <button type="button" id="btn-auto-match" class="button" style="background: #417690; color: white;">
+        🤖 Автосопоставить ТК
+      </button>
+      <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
+    </div>
+
+    <!-- ИТОГОВАЯ ПАНЕЛЬ -->
+    <div id="summary-panel" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 12px 16px; margin-bottom: 16px; display: flex; gap: 24px; align-items: center; font-size: 13px;">
+      <div style="font-weight: 600; color: #495057;">
+        Строк: <span id="summary-rows">0</span>
+      </div>
+      <div style="border-left: 1px solid #dee2e6; padding-left: 24px;" id="summary-totals">
+        <!-- Здесь будут итоги по колонкам -->
+      </div>
+    </div>
+
     <table class="tc-map" id="tc-map">
       <thead>
         <tr>
@@ -76,85 +94,265 @@
   {% endif %}
 
   <script>
-    (function(){
-      const CALC_ORDER = JSON.parse('{{ calc_order_json|escapejs }}'); // порядок колонок как на странице
-      const AUTOCOMPLETE_URL = "{% url 'admin:outlay_tc_autocomplete' %}";
-      const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
-  
-      async function searchTC(q){
-        const r = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
-        const d = await r.json(); return d.results || [];
-      }
-      function attachAutocomplete(input){
-        let box;
-        input.addEventListener('input', async ()=>{
-          const q = input.value.trim();
-          if (box) box.remove();
-          if (q.length < 2) return;
-          const items = await searchTC(q);
-          const rect = input.getBoundingClientRect();
-          box = document.createElement('div');
-          Object.assign(box.style, {
-            position:'absolute', background:'#fff', border:'1px solid #ddd',
-            zIndex:10, maxHeight:'220px', overflow:'auto',
-            left:(rect.left+window.scrollX)+'px', top:(rect.bottom+window.scrollY)+'px',
-            minWidth:rect.width+'px'
-          });
-          items.forEach(it=>{
-            const a = document.createElement('div');
-            a.textContent = it.text;
-            a.style.cssText='padding:4px 8px; cursor:pointer;';
-            a.addEventListener('mousedown', ()=>{
-              input.value = it.text;
-              input.dataset.id = it.id;
-              input.dataset.text = it.text;
-              box.remove(); box=null;
-              const tr = input.closest('tr');
-              if (tr) triggerRowCalc(tr);
+      (function(){
+        const CALC_ORDER = JSON.parse('{{ calc_order_json|escapejs }}');
+        const AUTOCOMPLETE_URL = "{% url 'admin:outlay_tc_autocomplete' %}";
+        const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
+        const AUTO_MATCH_URL = window.location.pathname.replace(/\/change\/?$/, '/api/auto-match/');
+    
+        async function searchTC(q){
+          const r = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
+          const d = await r.json(); return d.results || [];
+        }
+    
+        function attachAutocomplete(input){
+          let box;
+          input.addEventListener('input', async ()=>{
+            const q = input.value.trim();
+            if (box) box.remove();
+            if (q.length < 2) return;
+            const items = await searchTC(q);
+            const rect = input.getBoundingClientRect();
+            box = document.createElement('div');
+            Object.assign(box.style, {
+              position:'absolute', background:'#fff', border:'1px solid #ddd',
+              zIndex:10, maxHeight:'220px', overflow:'auto',
+              left:(rect.left+window.scrollX)+'px', top:(rect.bottom+window.scrollY)+'px',
+              minWidth:rect.width+'px'
             });
-            box.appendChild(a);
+            items.forEach(it=>{
+              const a = document.createElement('div');
+              a.textContent = it.text;
+              a.style.cssText='padding:4px 8px; cursor:pointer;';
+              a.addEventListener('mousedown', ()=>{
+                input.value = it.text;
+                input.dataset.id = it.id;
+                input.dataset.text = it.text;
+                box.remove(); box=null;
+                const tr = input.closest('tr');
+                if (tr) triggerRowCalc(tr);
+              });
+              box.appendChild(a);
+            });
+            document.body.appendChild(box);
+            const clickAway = (ev)=>{ if (box && !box.contains(ev.target) && ev.target!==input){ box.remove(); box=null; document.removeEventListener('mousedown', clickAway);} };
+            setTimeout(()=> document.addEventListener('mousedown', clickAway), 0);
           });
-          document.body.appendChild(box);
-          const clickAway = (ev)=>{ if (box && !box.contains(ev.target) && ev.target!==input){ box.remove(); box=null; document.removeEventListener('mousedown', clickAway);} };
-          setTimeout(()=> document.addEventListener('mousedown', clickAway), 0);
+        }
+    
+        document.querySelectorAll('.js-tc-autocomplete, .tc-lookup').forEach(attachAutocomplete);
+    
+        async function triggerRowCalc(tr){
+          if (!tr) return;
+          const inpTC = tr.querySelector('.js-tc-autocomplete');
+          const inpQty = tr.querySelector('.qty-input');
+          const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
+          const qty  = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
+    
+          console.log('triggerRowCalc:', { tcId, qty, hasQty: !!qty }); // ДЕБАГ
+    
+          tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent = '—');
+          if (!tcId || !isFinite(qty) || qty === 0) {
+            console.log('Skipping calc: tcId=' + tcId + ', qty=' + qty);
+            return;
+          }
+    
+          try{
+            const resp = await fetch(CALC_URL + '?tc=' + tcId + '&qty=' + encodeURIComponent(qty));
+            const data = await resp.json();
+            if (!data.ok) return;
+            const calc = data.calc || {};
+            const cells = tr.querySelectorAll('.opt-cell');
+    
+            CALC_ORDER.forEach((rid, idx)=>{
+              const td = cells[idx];
+              if (!td) return;
+              const val = (calc[rid] != null)
+                ? Number(calc[rid]).toLocaleString(undefined, {maximumFractionDigits: 4})
+                : '—';
+              td.querySelector('.sys').textContent = val;
+            });
+          }catch(e){
+            console.error('Calc error:', e);
+          }
+        }
+    
+        document.querySelectorAll('#tc-map .qty-input').forEach(inp=>{
+          inp.addEventListener('change', ()=> triggerRowCalc(inp.closest('tr')));
+          inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));
         });
-      }
-  
-      document.querySelectorAll('.js-tc-autocomplete, .tc-lookup').forEach(attachAutocomplete);
-  
-      async function triggerRowCalc(tr){
-        if (!tr) return;
-        const inpTC = tr.querySelector('.js-tc-autocomplete');
-        const inpQty = tr.querySelector('.qty-input');
-        const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
-        const qty  = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
-  
-        tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent = '—');
-        if (!tcId || !isFinite(qty)) return;
-  
-        try{
-          const resp = await fetch(CALC_URL + '?tc=' + tcId + '&qty=' + encodeURIComponent(qty));
-          const data = await resp.json();
-          if (!data.ok) return;
-          const calc = data.calc || {};
-          const cells = tr.querySelectorAll('.opt-cell');
-  
-          // ВАЖНО: заполняем строго по CALC_ORDER (порядок колонок на странице)
-          CALC_ORDER.forEach((rid, idx)=>{
-            const td = cells[idx];
-            if (!td) return;
-            const val = (calc[rid] != null)
-              ? Number(calc[rid]).toLocaleString(undefined, {maximumFractionDigits: 4})
-              : '—';
-            td.querySelector('.sys').textContent = val;
+    
+        // ========== АВТОСОПОСТАВЛЕНИЕ ==========
+        const btnAutoMatch = document.getElementById('btn-auto-match');
+        const statusSpan = document.getElementById('auto-match-status');
+        
+        if (!btnAutoMatch) return;
+        
+        btnAutoMatch.addEventListener('click', async () => {
+          btnAutoMatch.disabled = true;
+          statusSpan.textContent = 'Ищу совпадения...';
+          
+          const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
+          const items = [];
+          
+          rows.forEach(tr => {
+            const rowIndex = tr.dataset.row;
+            const nameCell = tr.querySelector('td:nth-child(1)');
+            const unitCell = tr.querySelector('td:nth-child(2)');
+            
+            if (nameCell && unitCell) {
+              items.push({
+                row_index: parseInt(rowIndex),
+                name: nameCell.textContent.trim(),
+                unit: unitCell.textContent.trim()
+              });
+            }
           });
-        }catch(e){}
-      }
-  
-      document.querySelectorAll('#tc-map .qty-input').forEach(inp=>{
-        inp.addEventListener('change', ()=> triggerRowCalc(inp.closest('tr')));
-        inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));
+          
+          try {
+            const resp = await fetch(AUTO_MATCH_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+              },
+              body: JSON.stringify({ items })
+            });
+            
+            const data = await resp.json();
+            
+            if (!data.ok) {
+              statusSpan.textContent = '❌ Ошибка: ' + (data.error || 'unknown');
+              btnAutoMatch.disabled = false;
+              return;
+            }
+            
+            let matched = 0;
+            data.results.forEach(result => {
+              const tr = document.querySelector(`tr[data-row="${result.row_index}"]`);
+              if (!tr) return;
+              
+              const tcInput = tr.querySelector('.js-tc-autocomplete');
+              const qtyInput = tr.querySelector('.qty-input');
+              if (!tcInput) return;
+              
+              if (result.matched_tc_id && result.matched_tc_text) {
+                tcInput.value = result.matched_tc_text;
+                tcInput.dataset.id = result.matched_tc_id;
+                tcInput.dataset.text = result.matched_tc_text;
+                
+                // Визуальная индикация качества совпадения
+                if (result.similarity >= 0.9) {
+                  tcInput.style.background = '#d4edda';
+                } else if (result.similarity >= 0.5) {
+                  tcInput.style.background = '#fff3cd';
+                } else {
+                  tcInput.style.background = '#f8d7da';
+                }
+                
+                // ВАЖНО: Запускаем расчёт только если есть количество
+                if (qtyInput && qtyInput.value && parseFloat(qtyInput.value) > 0) {
+                  triggerRowCalc(tr);
+                } else {
+                  console.log('Пропущен расчёт для строки', result.row_index, '- нет количества');
+                }
+                
+                matched++;
+              }
+            });
+            
+            statusSpan.textContent = `✅ Сопоставлено: ${matched} из ${items.length}`;
+            setTimeout(updateSummary, 500);
+            
+          } catch (e) {
+            statusSpan.textContent = '❌ Ошибка сети';
+            console.error(e);
+          } finally {
+            btnAutoMatch.disabled = false;
+          }
+        });
+
+        // ========== ИТОГОВАЯ ПАНЕЛЬ ==========
+    function updateSummary() {
+      const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
+      const summaryTotals = document.getElementById('summary-totals');
+      const summaryRows = document.getElementById('summary-rows');
+      
+      if (!summaryTotals || !summaryRows) return;
+      
+      // Подсчёт строк
+      summaryRows.textContent = rows.length;
+      
+      // Подсчёт сумм по колонкам
+      const totals = {};
+      CALC_ORDER.forEach(roleId => {
+        totals[roleId] = 0;
       });
-    })();
+      
+      let calculatedRows = 0;
+      
+      rows.forEach(tr => {
+        const optCells = tr.querySelectorAll('.opt-cell');
+        let hasValues = false;
+        
+        CALC_ORDER.forEach((roleId, idx) => {
+          const cell = optCells[idx];
+          if (!cell) return;
+          
+          const sysDiv = cell.querySelector('.sys');
+          if (!sysDiv) return;
+          
+          const text = sysDiv.textContent.trim();
+          if (text === '—' || text === '') return;
+          
+          // Парсим число (убираем пробелы-разделители тысяч)
+          const value = parseFloat(text.replace(/\s/g, '').replace(',', '.'));
+          if (!isNaN(value)) {
+            totals[roleId] += value;
+            hasValues = true;
+          }
+        });
+        
+        if (hasValues) calculatedRows++;
+      });
+      
+      // Формируем HTML с итогами
+      let html = '';
+      
+      CALC_ORDER.forEach(roleId => {
+        const total = totals[roleId];
+        if (total > 0) {
+          // Находим название колонки
+          const colTitle = {{ role_titles|safe }}[roleId] || roleId;
+          const shortTitle = colTitle.replace('ЦЕНА ', '').replace('ИТОГО ', '');
+          
+          html += `
+            <div style="margin-right: 20px;">
+              <div style="color: #6c757d; font-size: 11px; margin-bottom: 2px;">${shortTitle}</div>
+              <div style="font-weight: 600; color: #212529;">${total.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+          `;
+        }
+      });
+      
+      if (html) {
+        html = `<div style="color: #6c757d; font-size: 11px; margin-bottom: 4px;">Рассчитано строк: ${calculatedRows}</div>` + html;
+      } else {
+        html = '<div style="color: #6c757d;">Нет данных для расчёта</div>';
+      }
+      
+      summaryTotals.innerHTML = html;
+    }
+    
+    // Обновляем итоги при загрузке страницы
+    updateSummary();
+    
+    // Обновляем итоги при изменении любого поля количества
+    document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        setTimeout(updateSummary, 100); // Задержка чтобы дождаться пересчёта
+      });
+    });
+      })();
   </script>
 {% endblock %}

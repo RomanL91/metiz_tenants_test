@@ -29,7 +29,7 @@ class TechnicalCard(models.Model):
         verbose_name_plural = _("Техкарты")
 
     def __str__(self) -> str:
-        return self.name
+        return f"{self.name} [{self.output_unit}]"
 
     @property
     def latest_version(self):

@@ -108,7 +108,6 @@ OPTIONAL_ROLE_IDS = [
 
 @admin.register(Estimate)
 class EstimateAdmin(admin.ModelAdmin):
-    # change_form_template = "admin/app_outlay/estimate_tree.html"
     change_form_template = "admin/app_outlay/estimate_change.html"
     list_display = (
         "id",
@@ -131,6 +130,12 @@ class EstimateAdmin(admin.ModelAdmin):
                 "<path:object_id>/api/calc/",
                 self.admin_site.admin_view(self.api_calc),
                 name="estimate_calc",
+            ),
+            # НОВЫЙ ENDPOINT
+            path(
+                "<path:object_id>/api/auto-match/",
+                self.admin_site.admin_view(self.api_auto_match),
+                name="estimate_auto_match",
             ),
         ]
         return custom + urls
@@ -249,179 +254,6 @@ class EstimateAdmin(admin.ModelAdmin):
         )
         return super().render_change_form(request, context, add, change, form_url, obj)
 
-    # def change_view(self, request, object_id, form_url="", extra_context=None):
-    #     # TODO бля
-    #     from .helpers import (
-    #         _load_groups_from_annotation,
-    #         _read_sheet_schema,
-    #         _detect_tc_rows,
-    #         _assign_tc_to_deepest_group,
-    #     )
-
-    #     extra_context = extra_context or {}
-    #     est = self.get_object(request, object_id)
-    #     preview = {"groups": [], "loose": [], "ready": False}
-
-    #     if (
-    #         est
-    #         and est.source_file
-    #         and hasattr(est.source_file, "parse_result")
-    #         and hasattr(est.source_file, "markup")
-    #     ):
-    #         pr = est.source_file.parse_result
-    #         markup = est.source_file.markup
-    #         sheet_i = est.source_sheet_index or 0
-
-    #         groups = _load_groups_from_annotation(markup.annotation or {}, sheet_i)
-    #         col_roles, unit_set, require_qty = _read_sheet_schema(markup, sheet_i)
-    #         tcs = _detect_tc_rows(
-    #             pr.data or {}, sheet_i, col_roles, unit_set, require_qty
-    #         )
-    #         tree, loose = _assign_tc_to_deepest_group(groups, tcs)
-
-    #         # если групп нет — создаём «Без группы» и кидаем туда все ТК
-    #         if not tree and not groups:
-    #             tree = [
-    #                 {
-    #                     "uid": "_virtual",
-    #                     "name": "Без группы",
-    #                     "color": "#eceff1",
-    #                     "tcs": tcs,
-    #                     "children": [],
-    #                 }
-    #             ]
-    #             loose = []
-
-    #         preview = {"groups": tree, "loose": loose, "ready": True}
-
-    #     extra_context["tc_preview"] = preview
-    #     extra_context["tc_autocomplete_url"] = "outlay_tc_autocomplete"
-    #     return super().change_view(
-    #         request, object_id, form_url, extra_context=extra_context
-    #     )
-
-    # def change_view(self, request, object_id, form_url="", extra_context=None):
-    #     import json
-    #     from django.urls import reverse
-    #     from .helpers import (
-    #         _load_groups_from_annotation,
-    #         _read_sheet_schema,
-    #         _detect_tc_rows,
-    #         _assign_tc_to_deepest_group,
-    #         ROLE_TITLES,
-    #         OPTIONAL_ROLE_IDS,
-    #         _collect_excel_candidates,
-    #         load_sheet_rows_full,
-    #     )
-
-    #     extra = dict(extra_context or {})
-    #     est = self.get_object(request, object_id)
-
-    #     preview = {"groups": [], "loose": [], "ready": False}
-    #     excel_candidates = []
-    #     optional_cols = []
-    #     role_titles = ROLE_TITLES
-
-    #     if (
-    #         est
-    #         and est.source_file_id
-    #         and hasattr(est.source_file, "parse_result")
-    #         and hasattr(est.source_file, "markup")
-    #     ):
-    #         pr = est.source_file.parse_result
-    #         markup = est.source_file.markup
-    #         sheet_i = est.source_sheet_index or 0
-
-    #         groups = _load_groups_from_annotation(markup.annotation or {}, sheet_i)
-
-    #         # глубина групп
-    #         by_id = {g["uid"]: g for g in groups}
-
-    #         def _depth(uid):
-    #             d = 0
-    #             cur = by_id.get(uid)
-    #             while cur and cur.get("parent_uid"):
-    #                 d += 1
-    #                 cur = by_id.get(cur.get("parent_uid"))
-    #             return d
-
-    #         for g in groups:
-    #             g["_depth"] = _depth(g["uid"])
-
-    #         col_roles, unit_set, require_qty = _read_sheet_schema(markup, sheet_i)
-    #         xlsx_path = getattr(est.source_file.file, "path", None) or (
-    #             pr.data.get("file") or {}
-    #         ).get("path")
-    #         full_rows = []
-    #         if xlsx_path:
-    #             try:
-    #                 full_rows = load_sheet_rows_full(xlsx_path, sheet_index=sheet_i)
-    #             except Exception:
-    #                 full_rows = []
-    #         tcs = _detect_tc_rows(
-    #             pr.data or {}, sheet_i, col_roles, unit_set, require_qty, rows=full_rows
-    #         )
-    #         tree, loose = _assign_tc_to_deepest_group(groups, tcs)
-    #         if not tree and not groups:
-    #             tree = [
-    #                 {
-    #                     "uid": "_virtual",
-    #                     "name": "Без группы",
-    #                     "color": "#eceff1",
-    #                     "tcs": tcs,
-    #                     "children": [],
-    #                 }
-    #             ]
-    #             loose = []
-    #         preview = {"groups": tree, "loose": loose, "ready": True}
-
-    #         # ВСЕ строки листа
-    #         xlsx_path = getattr(est.source_file.file, "path", None) or (
-    #             pr.data.get("file") or {}
-    #         ).get("path")
-    #         excel_candidates = _collect_excel_candidates(
-    #             pr, col_roles, sheet_i, xlsx_path=xlsx_path, load_full=True
-    #         )
-
-    #         # подсветка: ищем самую глубокую накрывающую группу
-    #         def _owner_group(row_index: int):
-    #             cov = []
-    #             for g in groups:
-    #                 for s, e in g.get("rows") or []:
-    #                     if s <= row_index <= e:
-    #                         cov.append(g)
-    #                         break
-    #             if not cov:
-    #                 return None
-    #             cov.sort(key=lambda x: x["_depth"])
-    #             return cov[-1]
-
-    #         for it in excel_candidates:
-    #             gi = _owner_group(it.get("row_index") or 0)
-    #             it["group_color"] = (gi or {}).get("color")
-    #             it["group_name"] = (gi or {}).get("name")
-
-    #         present_optional = [rid for rid in OPTIONAL_ROLE_IDS if rid in col_roles]
-    #         optional_cols = [
-    #             {"id": rid, "title": role_titles.get(rid, rid)}
-    #             for rid in present_optional
-    #         ]
-    #         for it in excel_candidates:
-    #             raw = it.get("excel_optional") or {}
-    #             it["opt_values"] = [raw.get(rid) for rid in present_optional]
-
-    #     extra.update(
-    #         {
-    #             "tc_preview": preview,
-    #             "excel_candidates": excel_candidates,
-    #             "optional_cols": optional_cols,
-    #             "optional_cols_json": json.dumps(optional_cols, ensure_ascii=False),
-    #             "role_titles": role_titles,
-    #             "tc_autocomplete_url": reverse("admin:outlay_tc_autocomplete"),
-    #         }
-    #     )
-    #     return super().change_view(request, object_id, form_url, extra_context=extra)
-
     def api_calc(self, request, object_id: str):
         from app_outlay.utils_calc import calc_for_tc
 
@@ -436,6 +268,27 @@ class EstimateAdmin(admin.ModelAdmin):
         resp_calc = {k: float(v) for k, v in calc.items()}
         return JsonResponse({"ok": True, "calc": resp_calc, "order": order})
         # ---------- ВСПОМОГАТЕЛЬНОЕ: читаем полный лист Excel ----------
+
+    def api_auto_match(self, request, object_id: str):
+        """API для автоматического сопоставления ТК."""
+        from app_outlay.services.tc_matcher import TCMatcher
+        import json
+
+        try:
+            # Получаем данные из POST
+            data = json.loads(request.body)
+            items = data.get("items", [])
+
+            if not items:
+                return JsonResponse({"ok": False, "error": "no_items"}, status=400)
+
+            # Выполняем сопоставление
+            matched = TCMatcher.batch_match(items)
+
+            return JsonResponse({"ok": True, "results": matched})
+
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     def _load_full_sheet_rows(self, xlsx_path: str, sheet_index: int) -> list[dict]:
         """
@@ -701,163 +554,7 @@ class EstimateAdmin(admin.ModelAdmin):
         return tree, loose
 
     # ---------- change_view: используем ПОЛНЫЕ строки и красим группы ----------
-    # def change_view(self, request, object_id, form_url="", extra_context=None):
-    #     import json
 
-    #     extra = dict(extra_context or {})
-    #     est = self.get_object(request, object_id)
-
-    #     preview = {"groups": [], "loose": [], "ready": False}
-    #     excel_candidates = []
-    #     optional_cols = []  # [{id, title}]
-    #     role_titles = ROLE_TITLES
-
-    #     if (
-    #         est
-    #         and est.source_file_id
-    #         and hasattr(est.source_file, "parse_result")
-    #         and hasattr(est.source_file, "markup")
-    #     ):
-    #         pr = est.source_file.parse_result
-    #         markup = est.source_file.markup
-    #         sheet_i = est.source_sheet_index or 0
-
-    #         # 1) роли/юниты/обязательность qty
-    #         from app_estimate_imports.services.schema_service import (
-    #             SchemaService as _SS,
-    #         )  # если есть сервис
-
-    #         try:
-    #             col_roles, unit_set, require_qty = _SS().read_sheet_schema(
-    #                 markup, sheet_i
-    #             )
-    #         except Exception:
-    #             # фолбэк: без сервиса — пустые настройки
-    #             col_roles, unit_set, require_qty = (
-    #                 (markup.annotation or {})
-    #                 .get("schema", {})
-    #                 .get("sheets", {})
-    #                 .get(str(sheet_i), {})
-    #                 .get("col_roles")
-    #                 or [],
-    #                 set(),
-    #                 False,
-    #             )
-
-    #         # 2) полный лист Excel
-    #         xlsx_path = getattr(est.source_file.file, "path", None) or (
-    #             pr.data.get("file") or {}
-    #         ).get("path")
-    #         if xlsx_path:
-    #             rows_full = self._load_full_sheet_rows(xlsx_path, sheet_i)
-    #         else:
-    #             rows_full = pr.data.get("sheets", [{}])[sheet_i].get("rows") or []
-
-    #         # 3) кандидаты ТК + группы по annotation
-    #         tcs = self._detect_tc_rows_from_rows(
-    #             rows_full, col_roles, unit_set, require_qty
-    #         )
-    #         groups = self._load_groups_from_annotation(markup.annotation or {}, sheet_i)
-    #         tree, loose = self._assign_tc_to_deepest_group(groups, tcs)
-
-    #         if not tree and not groups:
-    #             # виртуальная «Без группы»
-    #             tree = [
-    #                 {
-    #                     "uid": "_virtual",
-    #                     "name": "Без группы",
-    #                     "color": "#f0f4f8",
-    #                     "tcs": tcs,
-    #                     "children": [],
-    #                 }
-    #             ]
-    #             loose = []
-
-    #         preview = {"groups": tree, "loose": loose, "ready": True}
-
-    #         # 4) таблица сопоставления по ПОЛНЫМ строкам
-    #         excel_candidates = self._collect_excel_candidates_from_rows(
-    #             rows_full, col_roles
-    #         )
-    #         present_optional = [rid for rid in OPTIONAL_ROLE_IDS if rid in col_roles]
-    #         optional_cols = [
-    #             {"id": rid, "title": role_titles.get(rid, rid)}
-    #             for rid in present_optional
-    #         ]
-
-    #         present_optional = [rid for rid in OPTIONAL_ROLE_IDS if rid in col_roles]
-    #         optional_cols = [
-    #             {"id": rid, "title": role_titles.get(rid, rid)}
-    #             for rid in present_optional
-    #         ]
-    #         excel_all = self._collect_excel_candidates_from_rows(rows_full, col_roles)
-    #         # оставляем только строки, которые мы признали ТК
-    #         allowed_rows = {tc["row_index"] for tc in tcs}
-    #         excel_candidates = [
-    #             it for it in excel_all if it["row_index"] in allowed_rows
-    #         ]
-
-    #         # подготовим значения опциональных полей в порядке optional_cols
-    #         for it in excel_candidates:
-    #             raw = it.get("excel_optional") or {}
-    #             it["opt_values"] = [raw.get(r["id"]) for r in optional_cols]
-
-    #         # секции для таблицы по дереву групп (включая подгруппы)
-    #         cand_by_row = {it["row_index"]: it for it in excel_candidates}
-    #         table_sections: list[dict] = []
-
-    #         def _flatten_group(node: dict, parent_path: str | None = None):
-    #             path = node.get("name") or "Группа"
-    #             path = path if parent_path is None else f"{parent_path} / {path}"
-    #             items = []
-    #             for tc in node.get("tcs") or []:
-    #                 ci = cand_by_row.get(tc["row_index"])
-    #                 if ci:
-    #                     items.append(ci)
-    #             table_sections.append(
-    #                 {
-    #                     "path": path,
-    #                     "color": node.get("color") or "#eef",
-    #                     "items": items,
-    #                 }
-    #             )
-    #             for ch in node.get("children") or []:
-    #                 _flatten_group(ch, path)
-
-    #         for root in tree or []:
-    #             _flatten_group(root)
-
-    #         # «Без группы»
-    #         loose_items = []
-    #         for tc in loose or []:
-    #             ci = cand_by_row.get(tc["row_index"])
-    #             if ci:
-    #                 loose_items.append(ci)
-    #         if loose_items:
-    #             table_sections.append(
-    #                 {
-    #                     "path": "Без группы",
-    #                     "color": "#f0f4f8",
-    #                     "items": loose_items,
-    #                 }
-    #             )
-
-    #     extra.update(
-    #         {
-    #             "tc_preview": preview,
-    #             "excel_candidates": excel_candidates,
-    #             "optional_cols": optional_cols,
-    #             "optional_cols_json": json.dumps(optional_cols, ensure_ascii=False),
-    #             "role_titles": role_titles,
-    #             "tc_autocomplete_url": reverse("admin:outlay_tc_autocomplete"),
-    #             "table_sections": table_sections,
-    #             "calc_order_json": json.dumps(
-    #                 [c["id"] for c in optional_cols], ensure_ascii=False
-    #             ),
-    #             "table_colspan": 4 + len(optional_cols),
-    #         }
-    #     )
-    #     return super().change_view(request, object_id, form_url, extra_context=extra)
     def change_view(self, request, object_id, form_url="", extra_context=None):
         import json
         from django.urls import reverse
