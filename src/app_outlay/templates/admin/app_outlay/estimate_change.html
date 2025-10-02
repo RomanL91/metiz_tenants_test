@@ -77,81 +77,70 @@
 
   <script>
     (function(){
+      const CALC_ORDER = JSON.parse('{{ calc_order_json|escapejs }}'); // порядок колонок как на странице
       const AUTOCOMPLETE_URL = "{% url 'admin:outlay_tc_autocomplete' %}";
       const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
-      const CALC_ORDER = JSON.parse('{{ calc_order_json|escapejs }}'); // порядок опц. колонок
-
-      // --- простой автокомплит на fetch ---
-      async function searchTC(q) {
-        const resp = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
-        const data = await resp.json();
-        return (data.results || []);
+  
+      async function searchTC(q){
+        const r = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
+        const d = await r.json(); return d.results || [];
       }
       function attachAutocomplete(input){
         let box;
         input.addEventListener('input', async ()=>{
           const q = input.value.trim();
           if (box) box.remove();
-          if (!q || q.length < 2) return;
+          if (q.length < 2) return;
           const items = await searchTC(q);
-
-          box = document.createElement('div');
-          box.style.position='absolute';
-          box.style.background='#fff';
-          box.style.border='1px solid #ddd';
-          box.style.zIndex=10;
-          box.style.maxHeight='220px';
-          box.style.overflow='auto';
           const rect = input.getBoundingClientRect();
-          box.style.left=(rect.left+window.scrollX)+'px';
-          box.style.top=(rect.bottom+window.scrollY)+'px';
-          box.style.minWidth=rect.width+'px';
-
+          box = document.createElement('div');
+          Object.assign(box.style, {
+            position:'absolute', background:'#fff', border:'1px solid #ddd',
+            zIndex:10, maxHeight:'220px', overflow:'auto',
+            left:(rect.left+window.scrollX)+'px', top:(rect.bottom+window.scrollY)+'px',
+            minWidth:rect.width+'px'
+          });
           items.forEach(it=>{
             const a = document.createElement('div');
             a.textContent = it.text;
-            a.style.padding='4px 8px';
-            a.style.cursor='pointer';
+            a.style.cssText='padding:4px 8px; cursor:pointer;';
             a.addEventListener('mousedown', ()=>{
               input.value = it.text;
               input.dataset.id = it.id;
               input.dataset.text = it.text;
-              if (box) { box.remove(); box = null; }
+              box.remove(); box=null;
               const tr = input.closest('tr');
               if (tr) triggerRowCalc(tr);
             });
             box.appendChild(a);
           });
           document.body.appendChild(box);
-
-          const onClickAway = (ev)=>{
-            if (box && !box.contains(ev.target) && ev.target!==input){
-              box.remove(); box = null; document.removeEventListener('mousedown', onClickAway);
-            }
-          };
-          setTimeout(()=> document.addEventListener('mousedown', onClickAway), 0);
+          const clickAway = (ev)=>{ if (box && !box.contains(ev.target) && ev.target!==input){ box.remove(); box=null; document.removeEventListener('mousedown', clickAway);} };
+          setTimeout(()=> document.addEventListener('mousedown', clickAway), 0);
         });
       }
-
-      // --- пересчёт системных стоимостей ---
+  
+      document.querySelectorAll('.js-tc-autocomplete, .tc-lookup').forEach(attachAutocomplete);
+  
       async function triggerRowCalc(tr){
         if (!tr) return;
         const inpTC = tr.querySelector('.js-tc-autocomplete');
         const inpQty = tr.querySelector('.qty-input');
         const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
         const qty  = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
-
+  
         tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent = '—');
         if (!tcId || !isFinite(qty)) return;
-
+  
         try{
           const resp = await fetch(CALC_URL + '?tc=' + tcId + '&qty=' + encodeURIComponent(qty));
           const data = await resp.json();
           if (!data.ok) return;
           const calc = data.calc || {};
-          const order = (data.order && data.order.length) ? data.order : CALC_ORDER;
           const cells = tr.querySelectorAll('.opt-cell');
-          order.forEach((rid, idx)=>{
+  
+          // ВАЖНО: заполняем строго по CALC_ORDER (порядок колонок на странице)
+          CALC_ORDER.forEach((rid, idx)=>{
             const td = cells[idx];
             if (!td) return;
             const val = (calc[rid] != null)
@@ -161,8 +150,7 @@
           });
         }catch(e){}
       }
-
-      document.querySelectorAll('.js-tc-autocomplete').forEach(attachAutocomplete);
+  
       document.querySelectorAll('#tc-map .qty-input').forEach(inp=>{
         inp.addEventListener('change', ()=> triggerRowCalc(inp.closest('tr')));
         inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));

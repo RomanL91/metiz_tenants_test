@@ -423,36 +423,18 @@ class EstimateAdmin(admin.ModelAdmin):
     #     return super().change_view(request, object_id, form_url, extra_context=extra)
 
     def api_calc(self, request, object_id: str):
-        """Возвращает «системные» стоимости для выбранной ТК и qty.
-        Пока заглушка: вернёт нули, если нет цен/норм в модели.
-        Позже подключим полноценный сервис ценообразования.
-        """
+        from app_outlay.utils_calc import calc_for_tc
+
         try:
             tc_id = int(request.GET.get("tc") or 0)
-            qty = float(request.GET.get("qty") or 0)
+            qty = request.GET.get("qty") or "0"
         except Exception:
             return JsonResponse({"ok": False, "error": "bad_params"}, status=400)
 
-        # TODO: заменить на реальный расчёт.
-        # пример целевых полей (совпадает с ролями):
-        calc = {
-            "UNIT_PRICE_OF_MATERIAL": 0.0,
-            "UNIT_PRICE_OF_WORK": 0.0,
-            "UNIT_PRICE_OF_MATERIALS_AND_WORKS": 0.0,
-            "PRICE_FOR_ALL_MATERIAL": 0.0,
-            "PRICE_FOR_ALL_WORK": 0.0,
-            "TOTAL_PRICE": 0.0,
-        }
-        # если уже есть в системе цены/нормы — здесь их агрегируем:
-        # calc["UNIT_PRICE_OF_MATERIAL"] = ...
-        # calc["UNIT_PRICE_OF_WORK"] = ...
-        # calc["UNIT_PRICE_OF_MATERIALS_AND_WORKS"] = calc["UNIT_PRICE_OF_MATERIAL"] + calc["UNIT_PRICE_OF_WORK"]
-        # calc["PRICE_FOR_ALL_MATERIAL"] = calc["UNIT_PRICE_OF_MATERIAL"] * qty
-        # calc["PRICE_FOR_ALL_WORK"] = calc["UNIT_PRICE_OF_WORK"] * qty
-        # calc["TOTAL_PRICE"] = calc["UNIT_PRICE_OF_MATERIALS_AND_WORKS"] * qty
-
-        return JsonResponse({"ok": True, "calc": calc})
-
+        calc, order = calc_for_tc(tc_id, qty)
+        # Decimal -> float для JSON (можно и str)
+        resp_calc = {k: float(v) for k, v in calc.items()}
+        return JsonResponse({"ok": True, "calc": resp_calc, "order": order})
         # ---------- ВСПОМОГАТЕЛЬНОЕ: читаем полный лист Excel ----------
 
     def _load_full_sheet_rows(self, xlsx_path: str, sheet_index: int) -> list[dict]:
