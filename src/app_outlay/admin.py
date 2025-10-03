@@ -1,11 +1,131 @@
-from django.contrib import admin, messages
+"""Админ-панель для модуля «Сметы» (app_outlay).
+
+Назначение файла
+----------------
+Этот модуль настраивает интерфейс Django Admin для работы со «Сметами»:
+- Регистрация и настройка ModelAdmin'ов: `EstimateAdmin`, `GroupAdmin`.
+- Inline-редактирование связей «Группа ↔ Версия ТК» через
+  `GroupTechnicalCardLinkInline` с удобными вычисляемыми полями.
+- Кастомные admin-эндпоинты:
+    * `api_calc` — расчёт показателей по версии ТК и количеству;
+    * `tc_autocomplete` — простой автокомплит/батч-сопоставление ТК (POST JSON);
+    * `api_auto_match` — батч-автоматическое сопоставление ТК (POST JSON).
+- Сервисные функции разбора Excel-листа с кешированием:
+    * `_load_full_sheet_rows()` — чтение полного листа (openpyxl, read_only).
+    * `_load_full_sheet_rows_cached()` — та же выборка с кешем (django-redis).
+- Построение «чернового превью» по импортированному файлу:
+    * разбор ролей колонок (NAME_OF_WORK/UNIT/QTY/…);
+    * нормализация единиц измерения;
+    * извлечение кандидатов ТК и раскладка по иерархии групп из аннотации.
+
+Важно
+-----
+- Все строки интерфейса обёрнуты в `gettext_lazy(_)` и готовы к локализации.
+- Производительность:
+    * списки «Смет» аннотируются агрегациями (без N+1);
+    * чтение Excel кешируется по пути файла, mtime и индексу листа.
+- Безопасность: все кастомные урлы проходят через `admin_site.admin_view`.
+"""
+
+import nested_admin as na
+
+from django.db import transaction
+from django.db.models import Count
 from django.urls import reverse, path
+from django.contrib import admin, messages
+from django.utils.translation import gettext_lazy as _
 from django.http import HttpResponseRedirect, JsonResponse
 
-from app_technical_cards.models import TechnicalCard
-
-from app_outlay.models import Estimate, Group, GroupTechnicalCardLink
 from app_outlay.forms import GroupFormSet, LinkFormSet
+from app_outlay.models import Estimate, Group, GroupTechnicalCardLink
+
+# ---------- Импорты для ENDPOINTS  ----------
+import json
+from app_outlay.utils_calc import calc_for_tc
+from app_outlay.services.tc_matcher import TCMatcher
+
+
+def _json_error(msg: str, status=400):
+    return JsonResponse({"ok": False, "error": msg}, status=status)
+
+
+def _json_ok(payload: dict, status=200):
+    data = {"ok": True}
+    data.update(payload)
+    return JsonResponse(data, status=status)
+
+
+# ---------- Для чтения листов  ----------
+# это бы потом вынести от сюда, например в утилиты
+
+import os
+from django.core.cache import cache
+from openpyxl import load_workbook
+
+
+def _xlsx_cache_key(path: str, sheet_index: int) -> str:
+    try:
+        mtime = int(os.path.getmtime(path))
+    except Exception:
+        mtime = 0
+    return f"outlay:xlsx:{path}:{mtime}:sheet:{sheet_index}"
+
+
+def _load_full_sheet_rows(xlsx_path: str, sheet_index: int) -> list[dict]:
+    """
+    Возвращает ВСЕ строки листа в виде [{'row_index': int, 'cells': [..]}, ..]
+    row_index — 1-based как в разметке групп.
+    """
+    wb = load_workbook(xlsx_path, data_only=True, read_only=True)
+    try:
+        ws = wb.worksheets[sheet_index]
+    except IndexError:
+        ws = wb.active
+
+    rows = []
+    # оценим ширину по первой непустой сотне строк
+    max_cols = 0
+    sample = 0
+    for r in ws.iter_rows(min_row=1, max_row=min(200, ws.max_row), values_only=True):
+        if any(c not in (None, "", " ") for c in r):
+            max_cols = max(max_cols, len(r))
+        sample += 1
+        if sample >= 200:
+            break
+    if max_cols <= 0:
+        max_cols = ws.max_column or 1
+
+    # теперь читаем всё
+    for idx, r in enumerate(
+        ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True), start=1
+    ):
+        cells = list(r)[:max_cols]
+        # нормализация текста
+        norm = [(str(c).strip() if c is not None else "") for c in cells]
+        rows.append({"row_index": idx, "cells": norm})
+    wb.close()
+    return rows
+
+
+def _load_full_sheet_rows_cached(
+    xlsx_path: str, sheet_index: int, ttl: int = 600
+) -> list[dict]:
+    """
+    Обёртка над `_load_full_sheet_rows` с кешированием результатов.
+
+    :param xlsx_path: путь к файлу .xlsx
+    :param sheet_index: индекс листа
+    :param ttl: время жизни кеша в секундах (дефолт: 10 минут)
+    :return: список словарей строк листа
+    """
+    key = _xlsx_cache_key(xlsx_path, sheet_index)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    rows = _load_full_sheet_rows(xlsx_path, sheet_index)
+    cache.set(key, rows, ttl)
+    return rows
+
 
 # ---------- INLINES ----------
 
@@ -15,6 +135,8 @@ class GroupTechnicalCardLinkInline(admin.TabularInline):
     extra = 0
     ordering = ("order", "id")
     raw_id_fields = ("technical_card_version",)
+    show_change_link = True
+
     fields = (
         "order",
         "technical_card_version",
@@ -39,51 +161,42 @@ class GroupTechnicalCardLinkInline(admin.TabularInline):
         "pinned_at",
     )
 
-    # — отрисовка вычисляемых полей «как в смете»
+    @admin.display(description=_("Ед. ТК"))
     def unit_display(self, obj):
         return obj.unit or ""
 
-    unit_display.short_description = "Ед. ТК"
-
+    @admin.display(description=_("Цена МАТ/ед"))
     def unit_cost_materials_display(self, obj):
         v = obj.unit_cost_materials
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    unit_cost_materials_display.short_description = "Цена МАТ/ед"
-
+    @admin.display(description=_("Цена РАБ/ед"))
     def unit_cost_works_display(self, obj):
         v = obj.unit_cost_works
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    unit_cost_works_display.short_description = "Цена РАБ/ед"
-
+    @admin.display(description=_("Итого / ед (ТК)"))
     def unit_cost_total_display(self, obj):
         v = obj.unit_cost_total
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    unit_cost_total_display.short_description = "Итого / ед (ТК)"
-
+    @admin.display(description=_("МАТ × кол-во"))
     def total_cost_materials_display(self, obj):
         v = obj.total_cost_materials
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    total_cost_materials_display.short_description = "МАТ × кол-во"
-
+    @admin.display(description=_("РАБ × кол-во"))
     def total_cost_works_display(self, obj):
         v = obj.total_cost_works
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    total_cost_works_display.short_description = "РАБ × кол-во"
-
+    @admin.display(description=_("Итого (МАТ+РАБ) × кол-во"))
     def total_cost_display(self, obj):
         v = obj.total_cost
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    total_cost_display.short_description = "Итого (МАТ+РАБ) × кол-во"
-
 
 # ---------- АДМИНКИ ----------
-from openpyxl import load_workbook
 
 ROLE_TITLES = {
     "NAME_OF_WORK": "НАИМЕНОВАНИЕ РАБОТ/ТК",
@@ -109,14 +222,35 @@ OPTIONAL_ROLE_IDS = [
 @admin.register(Estimate)
 class EstimateAdmin(admin.ModelAdmin):
     change_form_template = "admin/app_outlay/estimate_change.html"
+    list_per_page = 50
     list_display = (
         "id",
         "name",
         "currency",
-        "groups_count",
-        "tc_links_count",
+        "groups_count_annot",
+        "tc_links_count_annot",
     )
     search_fields = ("name",)
+
+    # Переопределим, чтобы убрать N+1 при списковом виде
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.annotate(
+            _groups_count=Count("groups", distinct=False),
+            _tc_links_count=Count("groups__techcard_links", distinct=True),
+        )
+
+    # вычисляемые колонки для спискового вида
+    @admin.display(description=_("Групп"))
+    def groups_count_annot(self, obj):
+        return obj._groups_count
+
+    @admin.display(description=_("ТК в смете"))
+    def tc_links_count_annot(self, obj):
+        return obj._tc_links_count
+
+    # ---------- URLS: роутинг ----------
+    # это нужно будет вынести отсюда. можно использовать DRF
 
     def get_urls(self):
         urls = super().get_urls()
@@ -140,140 +274,42 @@ class EstimateAdmin(admin.ModelAdmin):
         ]
         return custom + urls
 
-    def tc_autocomplete(self, request, *args, **kwargs):
-        """Простой автокомплит по ТК."""
-        q = (request.GET.get("q") or "").strip()
-        qs = (
-            TechnicalCard.objects.all()
-        )  # если нужно выбирать версию — поменяй на TechnicalCardVersion
-        if q:
-            qs = qs.filter(name__icontains=q)
-        data = [{"id": obj.pk, "text": obj.name} for obj in qs[:20]]
-        return JsonResponse({"results": data})
-
-    def groups_count(self, obj):
-        return obj.groups.count()
-
-    groups_count.short_description = "Групп"
-
-    def tc_links_count(self, obj):
-        # Быстрый подсчёт через related name
-        return GroupTechnicalCardLink.objects.filter(group__estimate=obj).count()
-
-    tc_links_count.short_description = "ТК в смете"
-
-    def render_change_form(
-        self, request, context, add=False, change=False, form_url="", obj=None
-    ):
-        # на стандартный add оставляем дефолтное поведение
-        if add or obj is None:
-            return super().render_change_form(
-                request, context, add, change, form_url, obj
-            )
-
-        # источники данных
-        group_qs = Group.objects.filter(estimate=obj).order_by(
-            "parent_id", "order", "id"
-        )
-        link_qs = (
-            GroupTechnicalCardLink.objects.filter(group__estimate=obj)
-            .select_related(
-                "group", "technical_card_version", "technical_card_version__card"
-            )
-            .order_by("group_id", "order", "id")
-        )
-        if not group_qs.exists():
-            Group.objects.get_or_create(
-                estimate=obj,
-                parent=None,
-                defaults={"name": "Общий раздел", "order": 0},
-            )
-            group_qs = Group.objects.filter(estimate=obj).order_by(
-                "parent_id", "order", "id"
-            )
-
-        # POST: валидируем и сохраняем оба формсета
-        if request.method == "POST":
-            gfs = GroupFormSet(request.POST, queryset=group_qs, prefix="grp")
-            lfs = LinkFormSet(request.POST, queryset=link_qs, prefix="lnk")
-            if gfs.is_valid() and lfs.is_valid():
-                gfs.save()
-                lfs.save()
-                self.message_user(
-                    request, "Изменения сохранены", level=messages.SUCCESS
-                )
-                return HttpResponseRedirect(request.path)
-            else:
-                self.message_user(
-                    request, "Исправьте ошибки в форме", level=messages.ERROR
-                )
-        else:
-            gfs = GroupFormSet(queryset=group_qs, prefix="grp")
-            lfs = LinkFormSet(queryset=link_qs, prefix="lnk")
-
-        # строим дерево групп (parent → children), и маппим формы по pk
-        groups = list(group_qs)
-        children = {}
-        for g in groups:
-            children.setdefault(g.parent_id, []).append(g)
-        for lst in children.values():
-            lst.sort(key=lambda x: (x.order, x.id))
-
-        gform_by_id = {f.instance.pk: f for f in gfs.forms}
-        lforms_by_gid = {}
-        for f in lfs.forms:
-            lforms_by_gid.setdefault(f.instance.group_id, []).append((f.instance, f))
-
-        def build(parent_id):
-            out = []
-            for g in children.get(parent_id, []):
-                out.append(
-                    {
-                        "group": g,
-                        "group_form": gform_by_id.get(g.pk),
-                        "links": lforms_by_gid.get(
-                            g.pk, []
-                        ),  # [(link_obj, link_form), ...]
-                        "children": build(g.pk),
-                    }
-                )
-            return out
-
-        tree = build(None)
-
-        context.update(
-            {
-                "title": f"Смета: {obj.name}",
-                "tree": tree,
-                "group_formset": gfs,
-                "link_formset": lfs,
-                "list_url": reverse(
-                    f"admin:{Estimate._meta.app_label}_{Estimate._meta.model_name}_changelist"
-                ),
-            }
-        )
-        return super().render_change_form(request, context, add, change, form_url, obj)
+    # ---------- ENDPOINTS: ... ----------
+    # также лучше вынести из модуля, например во view|contrillers etc
 
     def api_calc(self, request, object_id: str):
-        from app_outlay.utils_calc import calc_for_tc
 
         try:
-            tc_id = int(request.GET.get("tc") or 0)
-            qty = request.GET.get("qty") or "0"
+            tc_id = int(request.GET.get("tc", "0"))
+            qty_raw = (request.GET.get("qty") or "0").replace(",", ".")
+            qty = float(qty_raw)
+            if tc_id <= 0 or qty < 0:
+                return _json_error(_("Некорректные параметры"), 400)
         except Exception:
-            return JsonResponse({"ok": False, "error": "bad_params"}, status=400)
+            return _json_error(_("Некорректные параметры"), 400)
 
         calc, order = calc_for_tc(tc_id, qty)
-        # Decimal -> float для JSON (можно и str)
         resp_calc = {k: float(v) for k, v in calc.items()}
-        return JsonResponse({"ok": True, "calc": resp_calc, "order": order})
-        # ---------- ВСПОМОГАТЕЛЬНОЕ: читаем полный лист Excel ----------
+        return _json_ok({"calc": resp_calc, "order": order})
+
+    def tc_autocomplete(self, request, *args, **kwargs):
+        """Простой автокомплит по ТК."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+        try:
+            if request.content_type and "application/json" not in request.content_type:
+                return _json_error(_("Ожидается JSON"), 400)
+            data = json.loads(request.body or b"{}")
+            items = data.get("items") or []
+            if not isinstance(items, list) or not items:
+                return _json_error(_("Нет элементов для сопоставления"), 400)
+            matched = TCMatcher.batch_match(items)
+            return _json_ok({"results": matched})
+        except Exception as e:
+            return _json_error(str(e), 500)
 
     def api_auto_match(self, request, object_id: str):
         """API для автоматического сопоставления ТК."""
-        from app_outlay.services.tc_matcher import TCMatcher
-        import json
-
         try:
             # Получаем данные из POST
             data = json.loads(request.body)
@@ -289,43 +325,6 @@ class EstimateAdmin(admin.ModelAdmin):
 
         except Exception as e:
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
-
-    def _load_full_sheet_rows(self, xlsx_path: str, sheet_index: int) -> list[dict]:
-        """
-        Возвращает ВСЕ строки листа в виде [{'row_index': int, 'cells': [..]}, ..]
-        row_index — 1-based как в разметке групп.
-        """
-        wb = load_workbook(xlsx_path, data_only=True, read_only=True)
-        try:
-            ws = wb.worksheets[sheet_index]
-        except IndexError:
-            ws = wb.active
-
-        rows = []
-        # оценим ширину по первой непустой сотне строк
-        max_cols = 0
-        sample = 0
-        for r in ws.iter_rows(
-            min_row=1, max_row=min(200, ws.max_row), values_only=True
-        ):
-            if any(c not in (None, "", " ") for c in r):
-                max_cols = max(max_cols, len(r))
-            sample += 1
-            if sample >= 200:
-                break
-        if max_cols <= 0:
-            max_cols = ws.max_column or 1
-
-        # теперь читаем всё
-        for idx, r in enumerate(
-            ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True), start=1
-        ):
-            cells = list(r)[:max_cols]
-            # нормализация текста
-            norm = [(str(c).strip() if c is not None else "") for c in cells]
-            rows.append({"row_index": idx, "cells": norm})
-        wb.close()
-        return rows
 
     # ---------- ВСПОМОГАТЕЛЬНОЕ: вытаскиваем индексы колонок по ролям ----------
     def _idxs(self, col_roles: list[str], role: str) -> list[int]:
@@ -553,7 +552,100 @@ class EstimateAdmin(admin.ModelAdmin):
         tree = [build(r["uid"]) for r in roots]
         return tree, loose
 
-    # ---------- change_view: используем ПОЛНЫЕ строки и красим группы ----------
+    # ---------- ПРЕДСТАВЛЕНИЯ: переопределенные представления ----------
+
+    def render_change_form(
+        self, request, context, add=False, change=False, form_url="", obj=None
+    ):
+        # на стандартный add оставляем дефолтное поведение
+        if add or obj is None:
+            return super().render_change_form(
+                request, context, add, change, form_url, obj
+            )
+
+        # источники данных
+        group_qs = Group.objects.filter(estimate=obj).order_by(
+            "parent_id", "order", "id"
+        )
+        link_qs = (
+            GroupTechnicalCardLink.objects.filter(group__estimate=obj)
+            .select_related(
+                "group", "technical_card_version", "technical_card_version__card"
+            )
+            .order_by("group_id", "order", "id")
+        )
+        if not group_qs.exists():
+            Group.objects.get_or_create(
+                estimate=obj,
+                parent=None,
+                defaults={"name": "Общий раздел", "order": 0},
+            )
+            group_qs = Group.objects.filter(estimate=obj).order_by(
+                "parent_id", "order", "id"
+            )
+
+        # POST: валидируем и сохраняем оба формсета
+        if request.method == "POST":
+            gfs = GroupFormSet(request.POST, queryset=group_qs, prefix="grp")
+            lfs = LinkFormSet(request.POST, queryset=link_qs, prefix="lnk")
+            if gfs.is_valid() and lfs.is_valid():
+                with transaction.atomic():
+                    gfs.save()
+                    lfs.save()
+                self.message_user(
+                    request, _("Изменения сохранены"), level=messages.SUCCESS
+                )
+                return HttpResponseRedirect(request.path)
+            else:
+                self.message_user(
+                    request, _("Исправьте ошибки в форме"), level=messages.ERROR
+                )
+        else:
+            gfs = GroupFormSet(queryset=group_qs, prefix="grp")
+            lfs = LinkFormSet(queryset=link_qs, prefix="lnk")
+
+        # строим дерево групп (parent → children), и маппим формы по pk
+        groups = list(group_qs)
+        children = {}
+        for g in groups:
+            children.setdefault(g.parent_id, []).append(g)
+        for lst in children.values():
+            lst.sort(key=lambda x: (x.order, x.id))
+
+        gform_by_id = {f.instance.pk: f for f in gfs.forms}
+        lforms_by_gid = {}
+        for f in lfs.forms:
+            lforms_by_gid.setdefault(f.instance.group_id, []).append((f.instance, f))
+
+        def build(parent_id):
+            out = []
+            for g in children.get(parent_id, []):
+                out.append(
+                    {
+                        "group": g,
+                        "group_form": gform_by_id.get(g.pk),
+                        "links": lforms_by_gid.get(
+                            g.pk, []
+                        ),  # [(link_obj, link_form), ...]
+                        "children": build(g.pk),
+                    }
+                )
+            return out
+
+        tree = build(None)
+
+        context.update(
+            {
+                "title": f"Смета: {obj.name}",
+                "tree": tree,
+                "group_formset": gfs,
+                "link_formset": lfs,
+                "list_url": reverse(
+                    f"admin:{Estimate._meta.app_label}_{Estimate._meta.model_name}_changelist"
+                ),
+            }
+        )
+        return super().render_change_form(request, context, add, change, form_url, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         import json
@@ -644,7 +736,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 (pr.data or {}).get("file") or {}
             ).get("path")
             if xlsx_path:
-                rows_full = self._load_full_sheet_rows(xlsx_path, sheet_i)
+                rows_full = _load_full_sheet_rows_cached(xlsx_path, sheet_i)
             else:
                 # фолбэк на parse_result, если файла нет
                 rows_full = ((pr.data or {}).get("sheets") or [{}])[sheet_i].get(
