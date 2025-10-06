@@ -300,19 +300,38 @@ class EstimateAdmin(admin.ModelAdmin):
 
     def tc_autocomplete(self, request, *args, **kwargs):
         """Простой автокомплит по ТК."""
-        if request.method != "POST":
-            return _json_error(_("Метод не разрешён"), 405)
-        try:
-            if request.content_type and "application/json" not in request.content_type:
-                return _json_error(_("Ожидается JSON"), 400)
-            data = json.loads(request.body or b"{}")
-            items = data.get("items") or []
-            if not isinstance(items, list) or not items:
-                return _json_error(_("Нет элементов для сопоставления"), 400)
-            matched = TCMatcher.batch_match(items)
-            return _json_ok({"results": matched})
-        except Exception as e:
-            return _json_error(str(e), 500)
+
+        # Для ручного поиска (GET)
+        if request.method == "GET":
+            from app_technical_cards.models import TechnicalCard
+
+            q = (request.GET.get("q") or "").strip()
+            qs = TechnicalCard.objects.all()
+
+            if q:
+                qs = qs.filter(name__icontains=q)
+
+            data = [{"id": obj.pk, "text": obj.name} for obj in qs[:20]]
+            return JsonResponse({"results": data})
+
+        # Для батч-автосопоставления (POST)
+        if request.method == "POST":
+            try:
+                if (
+                    request.content_type
+                    and "application/json" not in request.content_type
+                ):
+                    return _json_error(_("Ожидается JSON"), 400)
+                data = json.loads(request.body or b"{}")
+                items = data.get("items") or []
+                if not isinstance(items, list) or not items:
+                    return _json_error(_("Нет элементов для сопоставления"), 400)
+                matched = TCMatcher.batch_match(items)
+                return _json_ok({"results": matched})
+            except Exception as e:
+                return _json_error(str(e), 500)
+
+        return _json_error(_("Метод не разрешён"), 405)
 
     def api_auto_match(self, request, object_id: str):
         """API для автоматического сопоставления ТК."""
@@ -423,6 +442,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     for idx, item in enumerate(items):
                         tc_id = item.get("tc_id")
                         quantity = item.get("quantity", 0)
+                        row_index = item.get("row_index")
 
                         if not tc_id or quantity <= 0:
                             continue
@@ -439,22 +459,28 @@ class EstimateAdmin(admin.ModelAdmin):
                             if not tc_version:
                                 continue
 
-                            # Создаём или обновляем связь
-                            link, created = (
-                                GroupTechnicalCardLink.objects.update_or_create(
+                            # Проверяем существование связи с таким же source_row_index
+                            existing_link = GroupTechnicalCardLink.objects.filter(
+                                group=group, source_row_index=row_index
+                            ).first()
+
+                            if existing_link:
+                                # Обновляем существующую запись
+                                existing_link.technical_card_version = tc_version
+                                existing_link.quantity = quantity
+                                existing_link.order = idx
+                                existing_link.save()
+                                updated_count += 1
+                            else:
+                                # Создаём новую запись
+                                GroupTechnicalCardLink.objects.create(
                                     group=group,
                                     technical_card_version=tc_version,
-                                    defaults={
-                                        "quantity": quantity,
-                                        "order": idx,
-                                    },
+                                    quantity=quantity,
+                                    order=idx,
+                                    source_row_index=row_index,
                                 )
-                            )
-
-                            if created:
                                 created_count += 1
-                            else:
-                                updated_count += 1
 
                         except TechnicalCard.DoesNotExist:
                             continue
@@ -972,6 +998,26 @@ class EstimateAdmin(admin.ModelAdmin):
                 else:
                     table_sections = []
 
+            # --- 8) Загружаем существующие сопоставления из БД
+            existing_mappings = {}  # {row_index: {tc_id, tc_name, quantity}}
+
+            if est:
+                # Получаем все связи для этой сметы
+                links_qs = GroupTechnicalCardLink.objects.filter(
+                    group__estimate=est
+                ).select_related(
+                    "group", "technical_card_version", "technical_card_version__card"
+                )
+
+                # НОВАЯ ЛОГИКА: прямое сопоставление по source_row_index
+                for link in links_qs:
+                    if link.source_row_index:  # Если есть привязка к строке Excel
+                        existing_mappings[link.source_row_index] = {
+                            "tc_id": link.technical_card_version.card_id,
+                            "tc_name": link.technical_card_version.card.name,
+                            "quantity": float(link.quantity),
+                        }
+
         # --- 8) Отдаём контекст в шаблон
         extra.update(
             {
@@ -986,6 +1032,9 @@ class EstimateAdmin(admin.ModelAdmin):
                 "table_colspan": 4
                 + len(optional_cols),  # для colspan в заголовках секций
                 "tc_preview": {"ready": False},  # чтобы шаблон не ожидал старую панель
+                "existing_mappings_json": json.dumps(
+                    existing_mappings, ensure_ascii=False
+                ),
             }
         )
         return super().change_view(request, object_id, form_url, extra_context=extra)

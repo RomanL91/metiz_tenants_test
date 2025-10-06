@@ -145,9 +145,17 @@ class GroupTechnicalCardLink(models.Model):
             "Когда именно версия ТК была зафиксирована (связь добавлена в смету)."
         ),
     )
+    source_row_index = models.PositiveIntegerField(
+        _("Индекс строки в источнике"),
+        null=True,
+        blank=True,
+        help_text=_(
+            "Номер строки в исходном Excel файле (для трассировки сопоставлений)."
+        ),
+    )
 
     class Meta:
-        unique_together = [("group", "technical_card_version")]
+        # unique_together = [("group", "technical_card_version")]
         ordering = ["order", "id"]
         verbose_name = _("ТК в группе сметы")
         verbose_name_plural = _("ТК в группах сметы")

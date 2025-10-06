@@ -103,6 +103,8 @@
       const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
       const AUTO_MATCH_URL = window.location.pathname.replace(/\/change\/?$/, '/api/auto-match/');
       const SAVE_MAPPINGS_URL = window.location.pathname.replace(/\/change\/?$/, '/api/save-mappings/');
+      // Загружаем существующие сопоставления
+      const EXISTING_MAPPINGS = JSON.parse('{{ existing_mappings_json|escapejs }}' || '{}');
   
       const btnAutoMatch = document.getElementById('btn-auto-match');
       const btnSaveMappings = document.getElementById('btn-save-mappings');
@@ -337,6 +339,44 @@
       
       updateSummary();
       
+      // ========== ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ ==========
+      function prefillExistingMappings() {
+        console.log('Предзаполнение существующих сопоставлений:', EXISTING_MAPPINGS);
+        
+        Object.keys(EXISTING_MAPPINGS).forEach(rowIndex => {
+          const mapping = EXISTING_MAPPINGS[rowIndex];
+          const tr = document.querySelector(`tr[data-row="${rowIndex}"]`);
+          
+          if (!tr) return;
+          
+          const tcInput = tr.querySelector('.js-tc-autocomplete');
+          const qtyInput = tr.querySelector('.qty-input');
+          
+          if (tcInput && mapping.tc_id && mapping.tc_name) {
+            tcInput.value = mapping.tc_name;
+            tcInput.dataset.id = mapping.tc_id;
+            tcInput.dataset.text = mapping.tc_name;
+            tcInput.style.background = '#e7f3ff'; // Голубой фон для сохранённых
+          }
+          
+          if (qtyInput && mapping.quantity) {
+            qtyInput.value = mapping.quantity;
+          }
+          
+          // Запускаем расчёт для строки
+          if (mapping.tc_id && mapping.quantity > 0) {
+            setTimeout(() => triggerRowCalc(tr), 100);
+          }
+        });
+        
+        // Обновляем итоги после предзаполнения
+        setTimeout(updateSummary, 500);
+      }
+
+      // Вызываем предзаполнение после загрузки страницы
+      prefillExistingMappings();
+
+
       document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
         inp.addEventListener('change', () => {
           setTimeout(updateSummary, 100);
