@@ -271,6 +271,12 @@ class EstimateAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.api_auto_match),
                 name="estimate_auto_match",
             ),
+            # сохранить расчеты, создать группы, ТК
+            path(
+                "<path:object_id>/api/save-mappings/",
+                self.admin_site.admin_view(self.api_save_mappings),
+                name="estimate_save_mappings",
+            ),
         ]
         return custom + urls
 
@@ -325,6 +331,147 @@ class EstimateAdmin(admin.ModelAdmin):
 
         except Exception as e:
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+    def api_save_mappings(self, request, object_id: str):
+        """Сохранить сопоставления ТК в базу данных."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+
+        try:
+            est = self.get_object(request, object_id)
+            if not est:
+                return _json_error(_("Смета не найдена"), 404)
+
+            data = json.loads(request.body)
+            mappings = data.get("mappings", [])
+
+            if not mappings:
+                return _json_error(_("Нет данных для сохранения"), 400)
+
+            from app_technical_cards.models import TechnicalCard
+
+            with transaction.atomic():
+                # Группируем по секциям
+                by_section = {}
+                for m in mappings:
+                    section = m.get("section", "Без группы")
+                    if section not in by_section:
+                        by_section[section] = []
+                    by_section[section].append(m)
+
+                created_count = 0
+                updated_count = 0
+
+                # Кеш созданных групп для избежания дублей
+                groups_cache = {}
+
+                def get_or_create_group_hierarchy(
+                    section_path: str, order_hint: int = 0
+                ):
+                    """
+                    Создаёт иерархию групп по пути вида "Родитель / Дочерняя / Внучатая".
+                    Возвращает самую глубокую группу.
+                    """
+                    if section_path in groups_cache:
+                        return groups_cache[section_path]
+
+                    # Разбиваем путь на части
+                    parts = [p.strip() for p in section_path.split("/")]
+
+                    parent = None
+                    current_path = ""
+
+                    for idx, part in enumerate(parts):
+                        if not part:
+                            continue
+
+                        # Строим полный путь до текущего уровня
+                        if current_path:
+                            current_path += f" / {part}"
+                        else:
+                            current_path = part
+
+                        # Проверяем кеш
+                        if current_path in groups_cache:
+                            parent = groups_cache[current_path]
+                            continue
+
+                        # Создаём или находим группу
+                        group, created = Group.objects.get_or_create(
+                            estimate=est,
+                            name=part,
+                            parent=parent,
+                            defaults={"order": order_hint + idx},
+                        )
+
+                        groups_cache[current_path] = group
+                        parent = group
+
+                    return parent
+
+                # Обрабатываем каждую секцию
+                for section_idx, (section_name, items) in enumerate(by_section.items()):
+                    # Получаем или создаём иерархию групп
+                    group = get_or_create_group_hierarchy(
+                        section_name, order_hint=section_idx * 100
+                    )
+
+                    if not group:
+                        continue
+
+                    # Обрабатываем каждую строку в секции
+                    for idx, item in enumerate(items):
+                        tc_id = item.get("tc_id")
+                        quantity = item.get("quantity", 0)
+
+                        if not tc_id or quantity <= 0:
+                            continue
+
+                        try:
+                            # Получаем карточку и её последнюю опубликованную версию
+                            tc_card = TechnicalCard.objects.get(id=tc_id)
+                            tc_version = (
+                                tc_card.versions.filter(is_published=True)
+                                .order_by("-created_at")
+                                .first()
+                            )
+
+                            if not tc_version:
+                                continue
+
+                            # Создаём или обновляем связь
+                            link, created = (
+                                GroupTechnicalCardLink.objects.update_or_create(
+                                    group=group,
+                                    technical_card_version=tc_version,
+                                    defaults={
+                                        "quantity": quantity,
+                                        "order": idx,
+                                    },
+                                )
+                            )
+
+                            if created:
+                                created_count += 1
+                            else:
+                                updated_count += 1
+
+                        except TechnicalCard.DoesNotExist:
+                            continue
+
+                return _json_ok(
+                    {
+                        "created": created_count,
+                        "updated": updated_count,
+                        "total": created_count + updated_count,
+                    }
+                )
+
+        except Exception as e:
+            import traceback
+
+            traceback.print_exc()
+            return _json_error(str(e), 500)
 
     # ---------- ВСПОМОГАТЕЛЬНОЕ: вытаскиваем индексы колонок по ролям ----------
     def _idxs(self, col_roles: list[str], role: str) -> list[int]:
