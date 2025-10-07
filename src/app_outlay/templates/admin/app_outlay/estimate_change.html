@@ -28,7 +28,7 @@
   {% if not table_sections %}
     <p class="help">Нет данных превью: либо файл не привязан, либо разметка не обнаружила ТК.</p>
   {% else %}
-    <!-- НОВАЯ КНОПКА -->
+    <!-- КНОПКИ -->
     <div style="margin-bottom: 16px;">
       <button type="button" id="btn-auto-match" class="button" style="background: #417690; color: white;">
         🤖 Автосопоставить ТК
@@ -49,6 +49,7 @@
       </div>
     </div>
 
+    <!-- ТАБЛИЦА СОПОСТАВЛЕНИЯ ТК -->
     <table class="tc-map" id="tc-map">
       <thead>
         <tr>
@@ -103,7 +104,6 @@
       const CALC_URL = window.location.pathname.replace(/\/change\/?$/, '/api/calc/');
       const AUTO_MATCH_URL = window.location.pathname.replace(/\/change\/?$/, '/api/auto-match/');
       const SAVE_MAPPINGS_URL = window.location.pathname.replace(/\/change\/?$/, '/api/save-mappings/');
-      // Загружаем существующие сопоставления
       const EXISTING_MAPPINGS = JSON.parse('{{ existing_mappings_json|escapejs }}' || '{}');
   
       const btnAutoMatch = document.getElementById('btn-auto-match');
@@ -187,7 +187,7 @@
         inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));
       });
   
-      // ========== АВТОСОПОСТАВЛЕНИЕ ==========
+      // АВТОСОПОСТАВЛЕНИЕ
       if (btnAutoMatch) {
         btnAutoMatch.addEventListener('click', async () => {
           btnAutoMatch.disabled = true;
@@ -270,7 +270,7 @@
         });
       }
   
-      // ========== ИТОГОВАЯ ПАНЕЛЬ ==========
+      // ИТОГОВАЯ ПАНЕЛЬ
       function updateSummary() {
         const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
         const summaryTotals = document.getElementById('summary-totals');
@@ -339,7 +339,7 @@
       
       updateSummary();
       
-      // ========== ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ ==========
+      // ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ
       function prefillExistingMappings() {
         console.log('Предзаполнение существующих сопоставлений:', EXISTING_MAPPINGS);
         
@@ -356,26 +356,22 @@
             tcInput.value = mapping.tc_name;
             tcInput.dataset.id = mapping.tc_id;
             tcInput.dataset.text = mapping.tc_name;
-            tcInput.style.background = '#e7f3ff'; // Голубой фон для сохранённых
+            tcInput.style.background = '#e7f3ff';
           }
           
           if (qtyInput && mapping.quantity) {
             qtyInput.value = mapping.quantity;
           }
           
-          // Запускаем расчёт для строки
           if (mapping.tc_id && mapping.quantity > 0) {
             setTimeout(() => triggerRowCalc(tr), 100);
           }
         });
         
-        // Обновляем итоги после предзаполнения
         setTimeout(updateSummary, 500);
       }
 
-      // Вызываем предзаполнение после загрузки страницы
       prefillExistingMappings();
-
 
       document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
         inp.addEventListener('change', () => {
@@ -383,7 +379,7 @@
         });
       });
   
-      // ========== СОХРАНЕНИЕ РАСЧЕТОВ ==========
+      // СОХРАНЕНИЕ РАСЧЕТОВ
       if (btnSaveMappings) {
         btnSaveMappings.addEventListener('click', async () => {
           const mappings = [];

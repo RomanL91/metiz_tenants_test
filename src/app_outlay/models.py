@@ -56,6 +56,24 @@ class Estimate(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    @property
+    def active_overhead_costs(self):
+        """Активные накладные расходы для этой сметы."""
+        return self.overhead_cost_links.filter(is_active=True).select_related(
+            "overhead_cost_container"
+        )
+
+    @property
+    def total_overhead_amount(self):
+        """Общая сумма всех активных накладных расходов."""
+        from decimal import Decimal
+
+        total = sum(
+            link.snapshot_total_amount or Decimal("0.00")
+            for link in self.active_overhead_costs
+        )
+        return total
+
 
 class Group(models.Model):
     estimate = models.ForeignKey(
@@ -191,3 +209,115 @@ class GroupTechnicalCardLink(models.Model):
     @property
     def total_cost(self):
         return (self.unit_cost_total or 0) * (self.quantity or 0)
+
+
+class EstimateOverheadCostLink(models.Model):
+    """
+    Связь сметы с контейнером накладных расходов.
+    Одна смета может иметь несколько контейнеров накладных расходов.
+    """
+
+    estimate = models.ForeignKey(
+        Estimate,
+        verbose_name=_("Смета"),
+        on_delete=models.CASCADE,
+        related_name="overhead_cost_links",
+        help_text=_("Смета, к которой применяются накладные расходы."),
+    )
+
+    overhead_cost_container = models.ForeignKey(
+        "app_overhead_costs.OverheadCostContainer",
+        verbose_name=_("Контейнер накладных расходов"),
+        on_delete=models.PROTECT,
+        related_name="estimate_links",
+        help_text=_("Контейнер накладных расходов, применяемый к смете."),
+    )
+
+    order = models.PositiveIntegerField(
+        _("Порядок применения"),
+        default=0,
+        db_index=True,
+        help_text=_(
+            "Порядок применения накладных расходов (если важна последовательность)."
+        ),
+    )
+
+    applied_at = models.DateTimeField(
+        _("Дата применения"),
+        auto_now_add=True,
+        help_text=_("Когда контейнер был добавлен к смете."),
+    )
+
+    is_active = models.BooleanField(
+        _("Активен"),
+        default=True,
+        help_text=_("Неактивные связи не учитываются в расчётах."),
+    )
+
+    # Снапшоты для истории (на момент применения)
+    snapshot_total_amount = models.DecimalField(
+        _("Сумма НР (снапшот)"),
+        max_digits=16,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Общая сумма накладных расходов на момент применения."),
+    )
+
+    snapshot_materials_percentage = models.DecimalField(
+        _("% на материалы (снапшот)"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Процент на материалы на момент применения."),
+    )
+
+    snapshot_works_percentage = models.DecimalField(
+        _("% на работы (снапшот)"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Процент на работы на момент применения."),
+    )
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = _("Накладные расходы в смете")
+        verbose_name_plural = _("Накладные расходы в сметах")
+        indexes = [
+            models.Index(fields=["estimate", "order"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.estimate.name} ← {self.overhead_cost_container.name}"
+
+    def save(self, *args, **kwargs):
+        """При сохранении автоматически создаём снапшоты."""
+        if not self.pk or not self.snapshot_total_amount:
+            # Создаём снапшоты только при первом сохранении
+            self.snapshot_total_amount = self.overhead_cost_container.total_amount
+            self.snapshot_materials_percentage = (
+                self.overhead_cost_container.materials_percentage
+            )
+            self.snapshot_works_percentage = (
+                self.overhead_cost_container.works_percentage
+            )
+        super().save(*args, **kwargs)
+
+    @property
+    def current_total_amount(self):
+        """Текущая сумма контейнера (может отличаться от снапшота)."""
+        return self.overhead_cost_container.total_amount
+
+    @property
+    def has_changes(self) -> bool:
+        """Проверка: изменился ли контейнер с момента применения."""
+        return (
+            self.snapshot_total_amount != self.current_total_amount
+            or self.snapshot_materials_percentage
+            != self.overhead_cost_container.materials_percentage
+            or self.snapshot_works_percentage
+            != self.overhead_cost_container.works_percentage
+        )

@@ -29,7 +29,7 @@
 
 import nested_admin as na
 
-from django.db import transaction
+from django.db import transaction, models
 from django.db.models import Count
 from django.urls import reverse, path
 from django.contrib import admin, messages
@@ -37,7 +37,12 @@ from django.utils.translation import gettext_lazy as _
 from django.http import HttpResponseRedirect, JsonResponse
 
 from app_outlay.forms import GroupFormSet, LinkFormSet
-from app_outlay.models import Estimate, Group, GroupTechnicalCardLink
+from app_outlay.models import (
+    Estimate,
+    Group,
+    GroupTechnicalCardLink,
+    EstimateOverheadCostLink,
+)
 
 # ---------- Импорты для ENDPOINTS  ----------
 import json
@@ -128,6 +133,80 @@ def _load_full_sheet_rows_cached(
 
 
 # ---------- INLINES ----------
+
+
+# class EstimateOverheadCostLinkInline(na.NestedTabularInline):
+class EstimateOverheadCostLinkInline(admin.TabularInline):
+    """Инлайн для управления накладными расходами в смете."""
+
+    model = EstimateOverheadCostLink
+    extra = 0
+    ordering = ("order", "id")
+
+    fields = (
+        # "order",
+        "overhead_cost_container",
+        # "is_active",
+        "distribution_display",
+        "snapshot_total_display",
+        "current_total_display",
+        # "has_changes_display",
+        "applied_at",
+    )
+
+    readonly_fields = (
+        "distribution_display",
+        "snapshot_total_display",
+        "current_total_display",
+        # "has_changes_display",
+        "applied_at",
+    )
+
+    autocomplete_fields = ["overhead_cost_container"]
+
+    @admin.display(description=_("Распределение"))
+    def distribution_display(self, obj):
+        if not obj.pk:
+            return "—"
+
+        mat = (
+            obj.snapshot_materials_percentage
+            or obj.overhead_cost_container.materials_percentage
+        )
+        work = (
+            obj.snapshot_works_percentage
+            or obj.overhead_cost_container.works_percentage
+        )
+
+        from django.utils.html import format_html
+
+        return format_html(
+            '<span style="font-size: 11px;">МАТ: {}% / РАБ: {}%</span>', mat, work
+        )
+
+    @admin.display(description=_("Сумма (снапшот)"))
+    def snapshot_total_display(self, obj):
+        if not obj.pk or not obj.snapshot_total_amount:
+            return "—"
+        return f"{obj.snapshot_total_amount:,.2f}"
+
+    @admin.display(description=_("Сумма (текущая)"))
+    def current_total_display(self, obj):
+        if not obj.pk:
+            return "—"
+        total = obj.current_total_amount
+
+        from django.utils.html import format_html
+
+        if obj.has_changes:
+            return format_html('<span style="color: #856404;">{:,.2f} ⚠️</span>', total)
+        return f"{total:,.2f}"
+
+    # @admin.display(description=_("Изменён?"), boolean=True)
+    # def has_changes_display(self, obj):
+    #     if not obj.pk:
+    #         return None
+    #     return obj.has_changes
 
 
 class GroupTechnicalCardLinkInline(admin.TabularInline):
@@ -229,8 +308,10 @@ class EstimateAdmin(admin.ModelAdmin):
         "currency",
         "groups_count_annot",
         "tc_links_count_annot",
+        "overhead_costs_count_annot",
     )
     search_fields = ("name",)
+    inlines = [EstimateOverheadCostLinkInline]
 
     # Переопределим, чтобы убрать N+1 при списковом виде
     def get_queryset(self, request):
@@ -238,6 +319,7 @@ class EstimateAdmin(admin.ModelAdmin):
         return qs.annotate(
             _groups_count=Count("groups", distinct=False),
             _tc_links_count=Count("groups__techcard_links", distinct=True),
+            _overhead_count=Count("overhead_cost_links", distinct=True),
         )
 
     # вычисляемые колонки для спискового вида
@@ -248,6 +330,12 @@ class EstimateAdmin(admin.ModelAdmin):
     @admin.display(description=_("ТК в смете"))
     def tc_links_count_annot(self, obj):
         return obj._tc_links_count
+
+    @admin.display(description=_("НР"))
+    def overhead_costs_count_annot(self, obj):
+        if hasattr(obj, "_overhead_count"):
+            return obj._overhead_count
+        return obj.overhead_cost_links.filter(is_active=True).count()
 
     # ---------- URLS: роутинг ----------
     # это нужно будет вынести отсюда. можно использовать DRF
@@ -736,7 +824,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 request, context, add, change, form_url, obj
             )
 
-        # источники данных
+        # ========== ГРУППЫ И ТК ==========
         group_qs = Group.objects.filter(estimate=obj).order_by(
             "parent_id", "order", "id"
         )
@@ -747,6 +835,8 @@ class EstimateAdmin(admin.ModelAdmin):
             )
             .order_by("group_id", "order", "id")
         )
+
+        # Создаём дефолтную группу если её нет
         if not group_qs.exists():
             Group.objects.get_or_create(
                 estimate=obj,
@@ -757,14 +847,49 @@ class EstimateAdmin(admin.ModelAdmin):
                 "parent_id", "order", "id"
             )
 
-        # POST: валидируем и сохраняем оба формсета
+        # ========== НАКЛАДНЫЕ РАСХОДЫ ==========
+        overhead_qs = (
+            EstimateOverheadCostLink.objects.filter(estimate=obj)
+            .select_related("overhead_cost_container")
+            .order_by("order", "id")
+        )
+
+        # POST: валидируем и сохраняем формсеты
         if request.method == "POST":
             gfs = GroupFormSet(request.POST, queryset=group_qs, prefix="grp")
             lfs = LinkFormSet(request.POST, queryset=link_qs, prefix="lnk")
-            if gfs.is_valid() and lfs.is_valid():
+
+            # Формсет для накладных расходов
+            from django.forms import modelformset_factory
+
+            OverheadFormSet = modelformset_factory(
+                EstimateOverheadCostLink,
+                fields=["order", "overhead_cost_container", "is_active"],
+                extra=1,
+                can_delete=True,
+            )
+            ofs = OverheadFormSet(request.POST, queryset=overhead_qs, prefix="overhead")
+
+            # Валидация всех формсетов
+            if gfs.is_valid() and lfs.is_valid() and ofs.is_valid():
                 with transaction.atomic():
                     gfs.save()
                     lfs.save()
+
+                    # Сохраняем накладные расходы
+                    for form in ofs.forms:
+                        if form.cleaned_data and not form.cleaned_data.get(
+                            "DELETE", False
+                        ):
+                            instance = form.save(commit=False)
+                            instance.estimate = obj
+                            instance.save()
+
+                    # Удаляем помеченные
+                    for form in ofs.deleted_forms:
+                        if form.instance.pk:
+                            form.instance.delete()
+
                 self.message_user(
                     request, _("Изменения сохранены"), level=messages.SUCCESS
                 )
@@ -777,7 +902,18 @@ class EstimateAdmin(admin.ModelAdmin):
             gfs = GroupFormSet(queryset=group_qs, prefix="grp")
             lfs = LinkFormSet(queryset=link_qs, prefix="lnk")
 
-        # строим дерево групп (parent → children), и маппим формы по pk
+            # Формсет для накладных расходов (GET)
+            from django.forms import modelformset_factory
+
+            OverheadFormSet = modelformset_factory(
+                EstimateOverheadCostLink,
+                fields=["order", "overhead_cost_container", "is_active"],
+                extra=1,
+                can_delete=True,
+            )
+            ofs = OverheadFormSet(queryset=overhead_qs, prefix="overhead")
+
+        # ========== ПОСТРОЕНИЕ ДЕРЕВА ГРУПП ==========
         groups = list(group_qs)
         children = {}
         for g in groups:
@@ -807,12 +943,17 @@ class EstimateAdmin(admin.ModelAdmin):
 
         tree = build(None)
 
+        # ========== КОНТЕКСТ ==========
         context.update(
             {
                 "title": f"Смета: {obj.name}",
                 "tree": tree,
                 "group_formset": gfs,
                 "link_formset": lfs,
+                "overhead_formset": ofs,  # НОВОЕ
+                "overhead_links": list(
+                    overhead_qs
+                ),  # НОВОЕ: для удобного доступа в шаблоне
                 "list_url": reverse(
                     f"admin:{Estimate._meta.app_label}_{Estimate._meta.model_name}_changelist"
                 ),
