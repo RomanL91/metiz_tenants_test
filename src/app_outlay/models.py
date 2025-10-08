@@ -11,6 +11,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from decimal import Decimal
+
 
 class Estimate(models.Model):
     name = models.CharField(
@@ -73,6 +75,81 @@ class Estimate(models.Model):
             for link in self.active_overhead_costs
         )
         return total
+
+    def calculate_totals_with_overhead(
+        self, base_materials: Decimal, base_works: Decimal
+    ) -> dict:
+        """
+        Рассчитывает итоги с учётом накладных расходов.
+
+        :param base_materials: Базовая сумма материалов из ТК
+        :param base_works: Базовая сумма работ из ТК
+        :return: dict с ключами:
+            - base_materials: исходная сумма материалов
+            - base_works: исходная сумма работ
+            - base_total: исходная общая сумма
+            - overhead_materials: доп. сумма на материалы от НР
+            - overhead_works: доп. сумма на работы от НР
+            - overhead_total: общая сумма НР
+            - final_materials: итоговая сумма материалов
+            - final_works: итоговая сумма работ
+            - final_total: итоговая общая сумма
+            - overhead_details: список деталей по каждому НР
+        """
+
+        # Базовые суммы
+        result = {
+            "base_materials": base_materials,
+            "base_works": base_works,
+            "base_total": base_materials + base_works,
+            "overhead_materials": Decimal("0.00"),
+            "overhead_works": Decimal("0.00"),
+            "overhead_total": Decimal("0.00"),
+            "overhead_details": [],
+        }
+
+        # Проходим по всем активным НР
+        active_overheads = self.overhead_cost_links.filter(
+            is_active=True
+        ).select_related("overhead_cost_container")
+
+        for link in active_overheads:
+            # Берём снапшот суммы (зафиксированную при применении)
+            total_amount = link.snapshot_total_amount or Decimal("0.00")
+
+            # Берём снапшот процентов распределения
+            mat_pct = link.snapshot_materials_percentage or Decimal("0.00")
+            work_pct = link.snapshot_works_percentage or Decimal("0.00")
+
+            # Рассчитываем распределение
+            materials_part = total_amount * (mat_pct / Decimal("100.00"))
+            works_part = total_amount * (work_pct / Decimal("100.00"))
+
+            # Накапливаем
+            result["overhead_materials"] += materials_part
+            result["overhead_works"] += works_part
+            result["overhead_total"] += total_amount
+
+            # Сохраняем детали для вывода
+            result["overhead_details"].append(
+                {
+                    "name": link.overhead_cost_container.name,
+                    "total": total_amount,
+                    "materials_part": materials_part,
+                    "works_part": works_part,
+                    "materials_pct": mat_pct,
+                    "works_pct": work_pct,
+                }
+            )
+
+        # Итоговые суммы с учётом НР
+        result["final_materials"] = (
+            result["base_materials"] + result["overhead_materials"]
+        )
+        result["final_works"] = result["base_works"] + result["overhead_works"]
+        result["final_total"] = result["final_materials"] + result["final_works"]
+
+        return result
 
 
 class Group(models.Model):

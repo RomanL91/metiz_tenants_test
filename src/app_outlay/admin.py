@@ -27,7 +27,11 @@
 - Безопасность: все кастомные урлы проходят через `admin_site.admin_view`.
 """
 
+import json
 import nested_admin as na
+
+from decimal import Decimal
+
 
 from django.db import transaction, models
 from django.db.models import Count
@@ -451,13 +455,31 @@ class EstimateAdmin(admin.ModelAdmin):
 
             data = json.loads(request.body)
             mappings = data.get("mappings", [])
+            deletions = data.get("deletions", [])  # НОВОЕ
+            print(f"[DEBUG] deletions --> {deletions}")
 
-            if not mappings:
+            if not mappings and not deletions:
                 return _json_error(_("Нет данных для сохранения"), 400)
 
             from app_technical_cards.models import TechnicalCard
 
             with transaction.atomic():
+                created_count = 0
+                updated_count = 0
+                deleted_count = 0  # НОВОЕ
+
+                # НОВОЕ: Удаляем сопоставления
+                if deletions:
+                    deleted_links = GroupTechnicalCardLink.objects.filter(
+                        group__estimate=est, source_row_index__in=deletions
+                    )
+                    deleted_count = deleted_links.count()
+                    deleted_links.delete()
+
+                    print(
+                        f"Удалено {deleted_count} сопоставлений для строк: {deletions}"
+                    )
+
                 # Группируем по секциям
                 by_section = {}
                 for m in mappings:
@@ -465,9 +487,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     if section not in by_section:
                         by_section[section] = []
                     by_section[section].append(m)
-
-                created_count = 0
-                updated_count = 0
 
                 # Кеш созданных групп для избежания дублей
                 groups_cache = {}
@@ -577,6 +596,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     {
                         "created": created_count,
                         "updated": updated_count,
+                        "deleted": deleted_count,  # НОВОЕ
                         "total": created_count + updated_count,
                     }
                 )
@@ -962,8 +982,6 @@ class EstimateAdmin(admin.ModelAdmin):
         return super().render_change_form(request, context, add, change, form_url, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
-        import json
-        from django.urls import reverse
 
         extra = dict(extra_context or {})
         est = self.get_object(request, object_id)
@@ -1159,6 +1177,45 @@ class EstimateAdmin(admin.ModelAdmin):
                             "quantity": float(link.quantity),
                         }
 
+        base_materials = Decimal("0.00")
+        base_works = Decimal("0.00")
+        overhead_calc = None
+        overhead_calc_json = "null"
+
+        if est:
+            # Суммируем все ТК в смете
+            links = GroupTechnicalCardLink.objects.filter(
+                group__estimate=est
+            ).select_related("technical_card_version")
+
+            for link in links:
+                base_materials += link.total_cost_materials or Decimal("0.00")
+                base_works += link.total_cost_works or Decimal("0.00")
+
+            # Получаем расчёт с НР
+            overhead_calc = est.calculate_totals_with_overhead(
+                base_materials, base_works
+            )
+
+            # НОВОЕ: Сериализуем для JavaScript
+            if overhead_calc:
+                overhead_calc_json = json.dumps(
+                    {
+                        "base_materials": float(overhead_calc["base_materials"]),
+                        "base_works": float(overhead_calc["base_works"]),
+                        "base_total": float(overhead_calc["base_total"]),
+                        "overhead_materials": float(
+                            overhead_calc["overhead_materials"]
+                        ),
+                        "overhead_works": float(overhead_calc["overhead_works"]),
+                        "overhead_total": float(overhead_calc["overhead_total"]),
+                        "final_materials": float(overhead_calc["final_materials"]),
+                        "final_works": float(overhead_calc["final_works"]),
+                        "final_total": float(overhead_calc["final_total"]),
+                    },
+                    ensure_ascii=False,
+                )
+
         # --- 8) Отдаём контекст в шаблон
         extra.update(
             {
@@ -1176,6 +1233,8 @@ class EstimateAdmin(admin.ModelAdmin):
                 "existing_mappings_json": json.dumps(
                     existing_mappings, ensure_ascii=False
                 ),
+                "overhead_calculation": overhead_calc,
+                "overhead_calculation_json": overhead_calc_json,
             }
         )
         return super().change_view(request, object_id, form_url, extra_context=extra)
