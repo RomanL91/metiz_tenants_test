@@ -78,18 +78,21 @@ def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     for mi in v.material_items.select_related("material").all():
         # Проверяем: есть ли связь И заполнена ли цена в живом справочнике
         if mi.material and mi.material.price_per_unit is not None:
-            live_price = _dec(mi.material.price_per_unit)
+            # ранее считали себестоимость, заменили на окончательную - маржинальную
+            # live_price = _dec(mi.material.price_per_unit)
+            margin_price = _dec(v.materials_sale_price_per_unit)
             qty = _dec(mi.qty_per_unit or 0)
-            m_sum += live_price * qty
+            m_sum += margin_price * qty
         # Иначе: вклад этой строки = 0
 
     w_sum = Decimal("0")
     for wi in v.work_items.select_related("work").all():
         # Проверяем: есть ли связь И заполнена ли цена в живом справочнике
         if wi.work and wi.work.price_per_unit is not None:
-            live_price = _dec(wi.work.price_per_unit)
+            # live_price = _dec(wi.work.price_per_unit)
+            margin_price = _dec(v.works_sale_price_per_unit)
             qty = _dec(wi.qty_per_unit or 0)
-            w_sum += live_price * qty
+            w_sum += margin_price * qty
         # Иначе: вклад этой строки = 0
 
     return UnitCosts(mat=m_sum, work=w_sum)

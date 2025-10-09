@@ -3,6 +3,7 @@ from django.db.models import Sum, F, DecimalField
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from decimal import Decimal
 
 
 class TechnicalCard(models.Model):
@@ -24,6 +25,47 @@ class TechnicalCard(models.Model):
         help_text=_("ед. выпуска ТК (напр. 'м', 'м2')"),
     )
 
+    # ========== НАДБАВКИ И РАСХОДЫ (в процентах) ==========
+    materials_markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Надбавка на материалы (%)"),
+        help_text=_("Например, 15.50 для 15.5%"),
+    )
+    works_markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Надбавка на работы (%)"),
+        help_text=_("Например, 20.00 для 20%"),
+    )
+    transport_costs_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Транспортные расходы (%)"),
+        help_text=_(
+            "Применяется к чистой себестоимости материалов и работ (до надбавок)"
+        ),
+    )
+
+    # ========== МАРЖИНАЛЬНОСТЬ (в процентах) ==========
+    materials_margin_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Маржинальность материалов (%)"),
+        help_text=_("Применяется к общей стоимости материалов"),
+    )
+    works_margin_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Маржинальность работ (%)"),
+        help_text=_("Применяется к общей стоимости работ"),
+    )
+
     class Meta:
         verbose_name = _("Техкарта")
         verbose_name_plural = _("Техкарты")
@@ -39,13 +81,19 @@ class TechnicalCard(models.Model):
         """
         Создать новую версию ТК.
         Версия автоматически генерируется на основе даты/времени.
+        Все проценты копируются в версию как снапшот.
         """
-        # Генерируем версию: YYYYMMDD-HHMMSS
         version_string = timezone.now().strftime("%Y%m%d-%H%M%S")
 
         new_version = TechnicalCardVersion.objects.create(
             card=self,
             version=version_string,
+            # Копируем проценты как снапшот
+            materials_markup_percent=self.materials_markup_percent,
+            works_markup_percent=self.works_markup_percent,
+            transport_costs_percent=self.transport_costs_percent,
+            materials_margin_percent=self.materials_margin_percent,
+            works_margin_percent=self.works_margin_percent,
         )
 
         return new_version
@@ -67,7 +115,6 @@ class TechnicalCardVersion(models.Model):
         verbose_name=_("Техкарта"),
     )
 
-    # Версия генерируется автоматически: YYYYMMDD-HHMMSS или просто created_at
     version = models.CharField(
         max_length=64,
         verbose_name=_("Версия"),
@@ -83,24 +130,102 @@ class TechnicalCardVersion(models.Model):
         verbose_name=_("Опубликована"),
     )
 
-    # Денормализованные агрегаты (на 1 ед. выпуска ТК):
+    # ========== СНАПШОТЫ ПРОЦЕНТОВ из TechnicalCard ==========
+    materials_markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Надбавка на материалы (%)"),
+    )
+    works_markup_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Надбавка на работы (%)"),
+    )
+    transport_costs_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Транспортные расходы (%)"),
+    )
+    materials_margin_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Маржинальность материалов (%)"),
+    )
+    works_margin_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Маржинальность работ (%)"),
+    )
+
+    # ========== СЕБЕСТОИМОСТЬ (базовая) ==========
     materials_cost_per_unit = models.DecimalField(
         max_digits=14,
         decimal_places=2,
         default=0,
-        verbose_name=_("Стоимость материалов за ед."),
+        verbose_name=_("Себестоимость материалов за ед."),
     )
     works_cost_per_unit = models.DecimalField(
         max_digits=14,
         decimal_places=2,
         default=0,
-        verbose_name=_("Стоимость работ за ед."),
+        verbose_name=_("Себестоимость работ за ед."),
     )
     total_cost_per_unit = models.DecimalField(
         max_digits=14,
         decimal_places=2,
         default=0,
-        verbose_name=_("Общая стоимость за ед."),
+        verbose_name=_("Общая себестоимость за ед."),
+    )
+
+    # ========== ОБЩАЯ СТОИМОСТЬ (с надбавками + транспорт) ==========
+    materials_total_cost_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Общая стоимость материалов за ед."),
+        help_text=_("С учетом надбавок и транспорта"),
+    )
+    works_total_cost_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Общая стоимость работ за ед."),
+        help_text=_("С учетом надбавок и транспорта"),
+    )
+    total_cost_with_markups_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Общая стоимость техкарты за ед."),
+        help_text=_("Материалы + работы с надбавками и транспортом"),
+    )
+
+    # ========== ЦЕНА ПРОДАЖИ (с маржинальностью) ==========
+    materials_sale_price_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Цена продажи материалов за ед."),
+        help_text=_("С учетом маржинальности"),
+    )
+    works_sale_price_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Цена продажи работ за ед."),
+        help_text=_("С учетом маржинальности"),
+    )
+    total_sale_price_per_unit = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Цена продажи техкарты за ед."),
+        help_text=_("Итоговая цена продажи"),
     )
 
     class Meta:
@@ -113,12 +238,23 @@ class TechnicalCardVersion(models.Model):
         return f"{self.card.name} [{self.version}]"
 
     def save(self, *args, **kwargs):
-        """Автоматически генерируем версию если её нет."""
+        """Автоматически генерируем версию и копируем проценты если это новая версия."""
+        is_new = not self.pk
+
         if not self.version:
             self.version = timezone.now().strftime("%Y%m%d-%H%M%S")
+
+        # Если это новая версия И проценты не установлены, копируем из техкарты
+        if is_new and self.card_id:
+            if self.materials_markup_percent == 0 and self.works_markup_percent == 0:
+                self.materials_markup_percent = self.card.materials_markup_percent
+                self.works_markup_percent = self.card.works_markup_percent
+                self.transport_costs_percent = self.card.transport_costs_percent
+                self.materials_margin_percent = self.card.materials_margin_percent
+                self.works_margin_percent = self.card.works_margin_percent
+
         super().save(*args, **kwargs)
 
-    # Свойства для удобного доступа к данным карточки
     @property
     def name(self):
         """Название берётся из родительской карточки."""
@@ -130,44 +266,93 @@ class TechnicalCardVersion(models.Model):
         return self.card.output_unit
 
     def recalc_totals(self, save=True):
-        """Пересчитать агрегаты на 1 ед. выпуска ТК из строк состава."""
-        m_sum = (
-            self.material_items.annotate(
-                line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
-            ).aggregate(
-                s=Coalesce(
-                    Sum("line"),
-                    0.0,
-                    output_field=DecimalField(max_digits=14, decimal_places=2),
-                )
-            )[
-                "s"
-            ]
-            or 0
+        """
+        Пересчитать все агрегаты на 1 ед. выпуска ТК.
+
+        Порядок расчета:
+        1. Себестоимость (базовая)
+        2. Общая стоимость (себестоимость + надбавки + транспорт; транспорт начисляется на чистую себестоимость)
+        3. Цена продажи (общая стоимость + маржинальность)
+        """
+        # 1. СЕБЕСТОИМОСТЬ (базовая сумма из строк состава)
+        materials_base = self.material_items.annotate(
+            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
+        ).aggregate(
+            s=Coalesce(
+                Sum("line"),
+                0.0,
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )[
+            "s"
+        ] or Decimal(
+            "0"
         )
-        w_sum = (
-            self.work_items.annotate(
-                line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
-            ).aggregate(
-                s=Coalesce(
-                    Sum("line"),
-                    0.0,
-                    output_field=DecimalField(max_digits=14, decimal_places=2),
-                )
-            )[
-                "s"
-            ]
-            or 0
+
+        works_base = self.work_items.annotate(
+            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
+        ).aggregate(
+            s=Coalesce(
+                Sum("line"),
+                0.0,
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            )
+        )[
+            "s"
+        ] or Decimal(
+            "0"
         )
-        self.materials_cost_per_unit = m_sum
-        self.works_cost_per_unit = w_sum
-        self.total_cost_per_unit = (m_sum or 0) + (w_sum or 0)
+
+        self.materials_cost_per_unit = materials_base
+        self.works_cost_per_unit = works_base
+        self.total_cost_per_unit = materials_base + works_base
+
+        # 2. ОБЩАЯ СТОИМОСТЬ (с надбавками + транспорт)
+        # ТРАНСПОРТ НАЧИСЛЯЕТСЯ НА ЧИСТУЮ СЕБЕСТОИМОСТЬ:
+        # materials_total = materials_base * (1 + materials_markup% + transport%)
+        # works_total     = works_base     * (1 + works_markup%     + transport%)
+        materials_total = materials_base * (
+            Decimal("1")
+            + self.materials_markup_percent / Decimal("100")
+            + self.transport_costs_percent / Decimal("100")
+        )
+        works_total = works_base * (
+            Decimal("1")
+            + self.works_markup_percent / Decimal("100")
+            + self.transport_costs_percent / Decimal("100")
+        )
+
+        self.materials_total_cost_per_unit = materials_total
+        self.works_total_cost_per_unit = works_total
+        self.total_cost_with_markups_per_unit = materials_total + works_total
+
+        # 3. ЦЕНА ПРОДАЖИ (общая стоимость × (1 + маржа%))
+        materials_sale = materials_total * (
+            Decimal("1") + self.materials_margin_percent / Decimal("100")
+        )
+        works_sale = works_total * (
+            Decimal("1") + self.works_margin_percent / Decimal("100")
+        )
+
+        self.materials_sale_price_per_unit = materials_sale
+        self.works_sale_price_per_unit = works_sale
+        self.total_sale_price_per_unit = materials_sale + works_sale
+
         if save:
             self.save(
                 update_fields=[
+                    # Себестоимость
                     "materials_cost_per_unit",
                     "works_cost_per_unit",
                     "total_cost_per_unit",
+                    # Общая стоимость
+                    "materials_total_cost_per_unit",
+                    "works_total_cost_per_unit",
+                    "total_cost_with_markups_per_unit",
+                    # Цена продажи
+                    "materials_sale_price_per_unit",
+                    "works_sale_price_per_unit",
+                    "total_sale_price_per_unit",
                 ]
             )
 
@@ -187,7 +372,6 @@ class TechnicalCardVersionMaterial(models.Model):
         verbose_name=_("Версия ТК"),
     )
 
-    # Связь на живой справочник - ОСНОВНОЕ ПОЛЕ для редактирования
     material = models.ForeignKey(
         "app_materials.Material",
         on_delete=models.PROTECT,
@@ -195,11 +379,11 @@ class TechnicalCardVersionMaterial(models.Model):
         help_text=_("Выберите материал из справочника"),
     )
 
-    # СНАПШОТЫ (заполняются автоматически из material при сохранении)
+    # СНАПШОТЫ
     material_name = models.CharField(
         max_length=255,
         verbose_name=_("Название (снапшот)"),
-        editable=False,  # Не показывать в формах
+        editable=False,
         help_text=_("Заполняется автоматически"),
     )
     unit = models.CharField(
@@ -218,7 +402,6 @@ class TechnicalCardVersionMaterial(models.Model):
         editable=False,
     )
 
-    # Норма расхода на 1 ед. выпуска ТК - ЕДИНСТВЕННОЕ редактируемое поле
     qty_per_unit = models.DecimalField(
         max_digits=16,
         decimal_places=6,
@@ -271,7 +454,6 @@ class TechnicalCardVersionWork(models.Model):
         verbose_name=_("Версия ТК"),
     )
 
-    # Связь на живой справочник - ОСНОВНОЕ ПОЛЕ для редактирования
     work = models.ForeignKey(
         "app_works.Work",
         on_delete=models.PROTECT,
@@ -279,7 +461,7 @@ class TechnicalCardVersionWork(models.Model):
         help_text=_("Выберите работу из справочника"),
     )
 
-    # СНАПШОТЫ (заполняются автоматически из work при сохранении)
+    # СНАПШОТЫ
     work_name = models.CharField(
         max_length=255,
         verbose_name=_("Название (снапшот)"),
@@ -302,7 +484,6 @@ class TechnicalCardVersionWork(models.Model):
         editable=False,
     )
 
-    # Норма трудозатрат на 1 ед. выпуска ТК - ЕДИНСТВЕННОЕ редактируемое поле
     qty_per_unit = models.DecimalField(
         max_digits=16,
         decimal_places=6,
@@ -341,7 +522,6 @@ class TechnicalCardVersionWork(models.Model):
 
 
 # СИГНАЛЫ
-# Автоматический пересчёт агрегатов версии ТК при изменении состава
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
