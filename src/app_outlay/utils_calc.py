@@ -1,8 +1,10 @@
-# utils_calc.py
 from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
+
+from django.db.models.functions import Coalesce
+from django.db.models import F, Sum, DecimalField, Value, ExpressionWrapper
 
 from app_technical_cards.models import (
     TechnicalCard,
@@ -66,36 +68,88 @@ class UnitCosts:
 
 def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     """
-    Стоимость на 1 ед. выпуска ТК СТРОГО по живым ценам из справочников.
-
-    Логика:
-    - Берём нормы расхода (qty_per_unit) из строк версии ТК
-    - Цены берём ТОЛЬКО из живых справочников Material/Work
-    - Если нет связи на справочник ИЛИ цена NULL → вклад = 0
-    - НИКАКИХ фолбэков на снапшоты (price_per_unit из строк версии)
+    Стоимость на 1 ед. выпуска ТК по ЖИВЫМ ценам из справочников (Material/Work).
+    Порядок расчёта как в recalc_totals():
+      1) База = сумма(qty_per_unit * live_price)
+      2) Общая стоимость = база * (1 + markup% + transport%)  [транспорт ТОЛЬКО на базу]
+      3) Цена продажи = общая стоимость * (1 + margin%)
+    Возвращаем продажные цены за ед. выпуска: UnitCosts(mat=<materials_sale>, work=<works_sale>)
     """
-    m_sum = Decimal("0")
-    for mi in v.material_items.select_related("material").all():
-        # Проверяем: есть ли связь И заполнена ли цена в живом справочнике
-        if mi.material and mi.material.price_per_unit is not None:
-            # ранее считали себестоимость, заменили на окончательную - маржинальную
-            # live_price = _dec(mi.material.price_per_unit)
-            margin_price = _dec(v.materials_sale_price_per_unit)
-            qty = _dec(mi.qty_per_unit or 0)
-            m_sum += margin_price * qty
-        # Иначе: вклад этой строки = 0
+    # ------- 1) БАЗА по живым ценам (ORM-агрегации) -------
+    # Материалы
+    m_q = Coalesce(F("qty_per_unit"), Value(0))
+    m_p = Coalesce(F("material__price_per_unit"), Value(0))
+    m_line = ExpressionWrapper(
+        m_q * m_p, output_field=DecimalField(max_digits=18, decimal_places=6)
+    )
+    m_base = v.material_items.select_related("material").annotate(
+        line=m_line
+    ).aggregate(
+        s=Coalesce(
+            Sum("line"),
+            Value(0),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )
+    ).get(
+        "s"
+    ) or Decimal(
+        "0"
+    )
 
-    w_sum = Decimal("0")
-    for wi in v.work_items.select_related("work").all():
-        # Проверяем: есть ли связь И заполнена ли цена в живом справочнике
-        if wi.work and wi.work.price_per_unit is not None:
-            # live_price = _dec(wi.work.price_per_unit)
-            margin_price = _dec(v.works_sale_price_per_unit)
-            qty = _dec(wi.qty_per_unit or 0)
-            w_sum += margin_price * qty
-        # Иначе: вклад этой строки = 0
+    # Работы
+    w_q = Coalesce(F("qty_per_unit"), Value(0))
+    w_p = Coalesce(F("work__price_per_unit"), Value(0))
+    w_line = ExpressionWrapper(
+        w_q * w_p, output_field=DecimalField(max_digits=18, decimal_places=6)
+    )
+    w_base = v.work_items.select_related("work").annotate(line=w_line).aggregate(
+        s=Coalesce(
+            Sum("line"),
+            Value(0),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )
+    ).get("s") or Decimal("0")
 
-    return UnitCosts(mat=m_sum, work=w_sum)
+    # ------- Проценты из «живой головы» ТК (а не из снапшота версии) -------
+    tc = getattr(v, "card", None) or getattr(v, "technical_card", None)
+
+    m_markup = (
+        _dec(getattr(tc, "materials_markup_percent", 0)) / Decimal("100")
+        if tc
+        else Decimal("0")
+    )
+    w_markup = (
+        _dec(getattr(tc, "works_markup_percent", 0)) / Decimal("100")
+        if tc
+        else Decimal("0")
+    )
+    transport = (
+        _dec(getattr(tc, "transport_costs_percent", 0)) / Decimal("100")
+        if tc
+        else Decimal("0")
+    )
+    m_margin = (
+        _dec(getattr(tc, "materials_margin_percent", 0)) / Decimal("100")
+        if tc
+        else Decimal("0")
+    )
+    w_margin = (
+        _dec(getattr(tc, "works_margin_percent", 0)) / Decimal("100")
+        if tc
+        else Decimal("0")
+    )
+
+    # ------- 2) ОБЩАЯ СТОИМОСТЬ (надбавки + транспорт на базу) -------
+    # materials_total = m_base * (1 + m_markup + transport)
+    # works_total     = w_base * (1 + w_markup + transport)
+    m_total = m_base * (Decimal("1") + m_markup + transport)
+    w_total = w_base * (Decimal("1") + w_markup + transport)
+
+    # ------- 3) ПРОДАЖА (маржинальность) -------
+    m_sale = m_total * (Decimal("1") + m_margin)
+    w_sale = w_total * (Decimal("1") + w_margin)
+
+    return UnitCosts(mat=m_sale, work=w_sale)
 
 
 def calc_for_tc(tc_or_ver_id: int, qty) -> tuple[dict, list[str]]:

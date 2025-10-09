@@ -58,9 +58,28 @@
       z-index:5;
     }
     .tc-open-link:hover{ background:#138496; }
+
+    /* Единые карточки метрик для обеих секций табло */
+    .metrics{display:flex;gap:16px;flex-wrap:wrap}
+    .metric-card{
+      background:#fff;border:1px solid #dee2e6;border-radius:6px;
+      padding:10px 12px;min-width:220px;box-shadow:0 1px 2px rgba(0,0,0,.03)
+    }
+    .metric-title{font-weight:600;color:#495057;font-size:12px;margin-bottom:2px}
+    .metric-value{font-weight:700;font-size:18px;color:#212529}
+    .metric-stack{margin-top:6px}
+    .metric-step{
+      display:flex;justify-content:space-between;
+      font-size:12px;margin:3px 0;color:#495057
+    }
+    .metric-step .label{color:#6c757d}
+    .metric-step.plus .label{color:#8a6d3b}      /* шаг «+ НР» */
+    .metric-step.total .value{color:#0d6efd}     /* финал */
+    .summary-note{font-size:10px;color:#6c757d;margin:6px 0}
+    
   </style>
 {% endblock %}
-
+{% block submit_buttons_bottom %}{% endblock %}
 {% block content %}
   {{ block.super }}
 
@@ -81,63 +100,25 @@
     </div>
 
     <!-- ИТОГОВАЯ ПАНЕЛЬ -->
-    <div id="summary-panel" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px;">
+    <div id="summary-panel" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:13px">
 
-      <!-- СТРОКА 1: Базовые итоги -->
-      <div style="margin-bottom: 16px;">
-        <div style="font-weight: 600; color: #495057; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #dee2e6;">
+      <!-- Секция 1: Базовые итоги (единые карточки) -->
+      <div style="margin-bottom:16px">
+        <div style="font-weight:600;color:#495057;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">
           📋 Базовые итоги
         </div>
-
-        <div style="display: flex; gap: 24px; align-items: center;">
-          <!-- Количество строк -->
-          <div>
-            <div style="font-size: 11px; color: #6c757d;">Строк</div>
-            <div style="font-weight: 600; color: #212529;" id="summary-rows">0</div>
-          </div>
-
-          <!-- Итоги по колонкам (JavaScript заполнит) -->
-          <div id="summary-totals" style="display: flex; gap: 20px; flex: 1;">
-            <!-- JavaScript заполнит итоги по колонкам -->
-          </div>
-        </div>
+        <div id="summary-note-base" class="summary-note"></div>
+        <div id="metrics-base" class="metrics"></div>
       </div>
 
-      <!-- СТРОКА 2: С учётом накладных расходов -->
+      <!-- Секция 2: С учётом НР (тот же макет) -->
       {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
-      <div style="padding-top: 16px; border-top: 2px solid #dee2e6;">
-        <div style="font-weight: 600; color: #856404; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #ffc107;">
+      <div style="padding-top:16px;border-top:2px solid #dee2e6">
+        <div style="font-weight:600;color:#856404;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #ffc107">
           💰 С учётом накладных расходов
-
-          {% if overhead_calculation.overhead_details %}
-          <details style="display: inline-block; margin-left: 16px; font-size: 11px; color: #666; font-weight: normal;">
-            <summary style="cursor: pointer; user-select: none; padding: 4px 8px; background: #fff3cd; border-radius: 4px; display: inline-block;">
-              📊 Детали НР ({{ overhead_calculation.overhead_details|length }})
-            </summary>
-            <div style="position: absolute; z-index: 1000; background: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 12px; margin-top: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-width: 300px;">
-              {% for detail in overhead_calculation.overhead_details %}
-              <div style="margin-bottom: 8px; padding-bottom: 8px; {% if not forloop.last %}border-bottom: 1px solid #f0f0f0;{% endif %}">
-                <div style="font-weight: 600; color: #495057; margin-bottom: 2px;">
-                  {{ detail.name }}
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
-                  <span>Сумма: {{ detail.total|floatformat:2 }}</span>
-                </div>
-                <div style="font-size: 10px; color: #999; margin-top: 2px;">
-                  МАТ: {{ detail.materials_part|floatformat:2 }} ({{ detail.materials_pct }}%) /
-                  РАБ: {{ detail.works_part|floatformat:2 }} ({{ detail.works_pct }}%)
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-          </details>
-          {% endif %}
         </div>
-
-        <div style="display: flex; gap: 24px; align-items: flex-start;">
-          <div style="width: 60px;"></div>
-          <div id="overhead-totals" style="display: flex; gap: 20px; flex-wrap: wrap; flex: 1;"></div>
-        </div>
+        <div id="summary-note-oh" class="summary-note"></div>
+        <div id="metrics-oh" class="metrics"></div>
       </div>
       {% endif %}
     </div>
@@ -198,6 +179,14 @@
       const AUTO_MATCH_URL = window.location.pathname.replace(/\/change\/?$/, '/api/auto-match/');
       const SAVE_MAPPINGS_URL = window.location.pathname.replace(/\/change\/?$/, '/api/save-mappings/');
       const EXISTING_MAPPINGS = JSON.parse('{{ existing_mappings_json|escapejs }}' || '{}');
+
+      // CSRF: берём токен из hidden-поля или из cookie
+      function getCsrfToken(){
+        const input = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (input && input.value) return input.value;
+        const m = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+      }
 
       /* Шаблон URL изменения ТК в админке:
          ожидается, что в контексте есть tc_change_url_zero = ".../technicalcard/0/change/"
@@ -518,72 +507,131 @@
         });
       }
 
-      // ИТОГОВАЯ ПАНЕЛЬ
-      function updateSummary() {
+      // ---------- Инфо-табло: единый рендер для двух секций ----------
+
+      // Собираем базовые суммы из таблицы
+      function computeBaseTotals(){
         const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-        const summaryTotals = document.getElementById('summary-totals');
-        const summaryRows = document.getElementById('summary-rows');
-
-        if (!summaryTotals || !summaryRows) return;
-
-        summaryRows.textContent = rows.length;
-
         const totals = {};
-        CALC_ORDER.forEach(roleId => { totals[roleId] = 0; });
+        CALC_ORDER.forEach(rid => totals[rid] = 0);
 
         let calculatedRows = 0;
 
         rows.forEach(tr => {
-          const optCells = tr.querySelectorAll('.opt-cell');
+          const cells = tr.querySelectorAll('.opt-cell');
           let hasValues = false;
-
-          CALC_ORDER.forEach((roleId, idx) => {
-            const cell = optCells[idx];
-            if (!cell) return;
-
-            const sysDiv = cell.querySelector('.sys');
-            if (!sysDiv) return;
-
-            const text = sysDiv.textContent.trim();
-            if (text === '—' || text === '') return;
-
-            const value = parseFloat(text.replace(/\s/g, '').replace(',', '.'));
-            if (!isNaN(value)) {
-              totals[roleId] += value;
-              hasValues = true;
-            }
+          CALC_ORDER.forEach((rid, idx) => {
+            const cell = cells[idx]; if (!cell) return;
+            const text = (cell.querySelector('.sys')?.textContent || '').trim();
+            if (!text || text === '—') return;
+            const val = parseFloat(text.replace(/\s/g,'').replace(',', '.'));
+            if (!isNaN(val)){ totals[rid] += val; hasValues = true; }
           });
-
           if (hasValues) calculatedRows++;
         });
 
-        let html = '';
+        return {
+          rows: rows.length,
+          calculatedRows,
+          baseMat: Number(totals['PRICE_FOR_ALL_MATERIAL'] || 0),
+          baseWorks: Number(totals['PRICE_FOR_ALL_WORK'] || 0),
+          baseTotal: Number(totals['TOTAL_PRICE'] || 0),
+        };
+      }
 
-        CALC_ORDER.forEach(roleId => {
-          const total = totals[roleId];
-          if (total > 0) {
-            const colTitle = {{ role_titles|safe }}[roleId] || roleId;
-            const shortTitle = colTitle.replace('ЦЕНА ', '').replace('ИТОГО ', '');
+      // Рисуем карточки метрик (единый макет)
+      function renderMetricCards(container, {titleMat, titleWorks, titleTotal, mainMat, mainWorks, mainTotal, stackMat, stackWorks, stackTotal}){
+        const fmt = n => n.toLocaleString('ru-RU',{minimumFractionDigits:2, maximumFractionDigits:2});
+        const card = (title, main, stack=[]) => `
+          <div class="metric-card">
+            <div class="metric-title">${title}</div>
+            <div class="metric-value">${fmt(main)}</div>
+            ${
+              stack.length
+                ? `<div class="metric-stack">${
+                    stack.map(s => `
+                      <div class="metric-step ${s.kind||''}">
+                        <span class="label">${s.label}</span>
+                        <span class="value">${fmt(s.value)}</span>
+                      </div>
+                    `).join('')
+                  }</div>`
+                : ''
+            }
+          </div>
+        `;
 
-            html += `
-              <div style="margin-right: 20px;">
-                <div style="color: #6c757d; font-size: 11px; margin-bottom: 2px;">${shortTitle}</div>
-                <div style="font-weight: 600; color: #212529;">${total.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-              </div>
-            `;
-          }
-        });
+        container.innerHTML = [
+          card(titleMat,   mainMat,   stackMat   || []),
+          card(titleWorks, mainWorks, stackWorks || []),
+          card(titleTotal, mainTotal, stackTotal || []),
+        ].join('');
+      }
 
-        if (html) {
-          html = `<div style="color: #6c757d; font-size: 11px; margin-bottom: 4px;">Рассчитано строк: ${calculatedRows}</div>` + html;
-        } else {
-          html = '<div style="color: #6c757d;">Нет данных для расчёта</div>';
+      // Базовые итоги + запуск секции НР
+      function updateSummary(){
+        const base = computeBaseTotals();
+
+        // Базовые итоги — карточки без «ступенек»
+        const noteBase = document.getElementById('summary-note-base');
+        const boxBase  = document.getElementById('metrics-base');
+        if (noteBase) noteBase.textContent = `Рассчитано строк: ${base.calculatedRows} из ${base.rows}`;
+        if (boxBase){
+          renderMetricCards(boxBase, {
+            titleMat: 'Материалы',  titleWorks: 'Работы', titleTotal: 'Итого',
+            mainMat: base.baseMat,  mainWorks:  base.baseWorks, mainTotal: base.baseTotal,
+          });
         }
 
-        summaryTotals.innerHTML = html;
+        // Итоги с НР (тот же макет, но со «ступенями»)
+        updateSummaryWithOverhead(base);
+      }
 
-        // Итоги с НР
-        updateSummaryWithOverhead();
+      function updateSummaryWithOverhead(baseTotals){
+        const box = document.getElementById('metrics-oh');
+        const note = document.getElementById('summary-note-oh');
+        if (!box) return;
+
+        const oh = JSON.parse('{{ overhead_calculation_json|escapejs }}' || 'null');
+        if (!oh || !oh.overhead_total){
+          box.innerHTML = '';
+          if (note) note.textContent = '';
+          return;
+        }
+
+        const baseMat   = baseTotals.baseMat;
+        const baseWorks = baseTotals.baseWorks;
+        const baseTotal = baseTotals.baseTotal;
+
+        const plusMat   = Number(oh.overhead_materials || 0);
+        const plusWorks = Number(oh.overhead_works || 0);
+        const plusTotal = Number(oh.overhead_total || 0);
+
+        const finMat   = baseMat   + plusMat;
+        const finWorks = baseWorks + plusWorks;
+        const finTotal = baseTotal + plusTotal;
+
+        if (note) note.textContent = `Рассчитано строк: ${baseTotals.calculatedRows} из ${baseTotals.rows}`;
+
+        renderMetricCards(box, {
+          titleMat: 'Материалы', titleWorks: 'Работы', titleTotal: 'Итого',
+          mainMat: finMat,       mainWorks:  finWorks, mainTotal: finTotal,
+          stackMat: [
+            {label:'База', value: baseMat},
+            {label:'+ Накладные расходы', value: plusMat, kind:'plus'},
+            {label:'= Итого с НР', value: finMat, kind:'total'},
+          ],
+          stackWorks: [
+            {label:'База', value: baseWorks},
+            {label:'+ Накладные расходы', value: plusWorks, kind:'plus'},
+            {label:'= Итого с НР', value: finWorks, kind:'total'},
+          ],
+          stackTotal: [
+            {label:'База', value: baseTotal},
+            {label:'+ Накладные расходы', value: plusTotal, kind:'plus'},
+            {label:'= Итого с НР', value: finTotal, kind:'total'},
+          ],
+        });
       }
 
       // ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ
@@ -645,10 +693,6 @@
 
       prefillExistingMappings();
 
-      document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
-        inp.addEventListener('change', () => { setTimeout(updateSummary, 100); });
-      });
-
       // СОХРАНЕНИЕ РАСЧЕТОВ
       if (btnSaveMappings) {
         btnSaveMappings.addEventListener('click', async () => {
@@ -660,28 +704,30 @@
             if (tr.classList.contains('sec-hdr')) {
               const badge = tr.querySelector('.badge');
               if (badge) currentSection = badge.textContent.trim();
-            } else {
-              const tcInput = tr.querySelector('.js-tc-autocomplete');
-              const qtyInput = tr.querySelector('.qty-input');
-              const rowIndex = tr.dataset.row;
+              return;
+            }
 
-              if (tcInput && qtyInput && rowIndex) {
-                const tcId = parseInt(tcInput.dataset.id || '0', 10);
-                const quantity = parseFloat(qtyInput.value || '0');
-                const hadMapping = EXISTING_MAPPINGS[rowIndex];
+            const tcInput = tr.querySelector('.js-tc-autocomplete');
+            const qtyInput = tr.querySelector('.qty-input');
+            const rowIndex = parseInt(tr.dataset.row || '0', 10);
 
-                if (tcId > 0 && quantity > 0) {
-                  mappings.push({
-                    section: currentSection,
-                    tc_id: tcId,
-                    quantity: quantity,
-                    row_index: parseInt(rowIndex),
-                    tc_name: tcInput.value
-                  });
-                } else if (hadMapping) {
-                  deletions.push(parseInt(rowIndex));
-                }
-              }
+            if (!tcInput || !qtyInput || !rowIndex) return;
+
+            const tcId = parseInt(tcInput.dataset.id || '0', 10) || 0;
+            const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0; // поддержка запятой
+
+            const hadMapping = (EXISTING_MAPPINGS[String(rowIndex)] != null);
+
+            if (tcId > 0 && quantity > 0) {
+              mappings.push({
+                section: currentSection,
+                tc_id: tcId,
+                quantity,
+                row_index: rowIndex,
+                tc_name: tcInput.value
+              });
+            } else if (hadMapping) {
+              deletions.push(rowIndex);
             }
           });
 
@@ -692,8 +738,8 @@
           }
 
           const confirmMsg = deletions.length > 0
-            ? `Сохранить ${mappings.length} позиций и удалить ${deletions.length}?\n\nБудут созданы группы и связи с версиями ТК.`
-            : `Сохранить ${mappings.length} позиций в смету?\n\nБудут созданы группы и связи с версиями ТК.`;
+            ? `Сохранить ${mappings.length} позиций и удалить ${deletions.length}?`
+            : `Сохранить ${mappings.length} позиций в смету?`;
 
           if (!confirm(confirmMsg)) return;
 
@@ -706,7 +752,7 @@
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+                'X-CSRFToken': getCsrfToken(),
               },
               body: JSON.stringify({ mappings, deletions })
             });
@@ -724,113 +770,19 @@
             statusSpan.textContent = `✅ Сохранено: ${data.total} позиций (создано: ${data.created}, обновлено: ${data.updated}${deletedMsg})`;
             statusSpan.style.color = '#155724';
 
-            setTimeout(() => { window.location.reload(); }, 2000);
+            setTimeout(() => { window.location.reload(); }, 1200);
 
           } catch (e) {
+            console.error(e);
             statusSpan.textContent = '❌ Ошибка сети';
             statusSpan.style.color = '#721c24';
-            console.error(e);
             btnSaveMappings.disabled = false;
           }
         });
       }
-
-      // ========== ОБНОВЛЕНИЕ ИТОГОВ С НР ==========
-      function updateSummaryWithOverhead() {
-        const overheadTotalsContainer = document.getElementById('overhead-totals');
-        if (!overheadTotalsContainer) return;
-
-        const overheadData = JSON.parse('{{ overhead_calculation_json|escapejs }}');
-        if (!overheadData || !overheadData.overhead_total || overheadData.overhead_total === 0) return;
-
-        const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-        const totals = {};
-        CALC_ORDER.forEach(roleId => { totals[roleId] = 0; });
-
-        let calculatedRows = 0;
-
-        rows.forEach(tr => {
-          const optCells = tr.querySelectorAll('.opt-cell');
-          let hasValues = false;
-
-          CALC_ORDER.forEach((roleId, idx) => {
-            const cell = optCells[idx];
-            if (!cell) return;
-
-            const sysDiv = cell.querySelector('.sys');
-            if (!sysDiv) return;
-            const text = sysDiv.textContent.trim();
-            if (text === '—' || text === '') return;
-
-            const value = parseFloat(text.replace(/\s/g, '').replace(',', '.'));
-            if (!isNaN(value)) {
-              totals[roleId] += value;
-              hasValues = true;
-            }
-          });
-
-          if (hasValues) calculatedRows++;
-        });
-
-        const overheadMaterials = parseFloat(overheadData.overhead_materials || 0);
-        const overheadWorks = parseFloat(overheadData.overhead_works || 0);
-        const overheadTotal = parseFloat(overheadData.overhead_total || 0);
-
-        let html = `<div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Рассчитано строк: ${calculatedRows}</div>`;
-
-        CALC_ORDER.forEach(roleId => {
-          const baseValue = totals[roleId] || 0;
-          let overheadValue = 0;
-          let finalValue = baseValue;
-
-          const isUnitColumn = roleId.includes('UNIT_PRICE');
-          const isMaterialTotalColumn = roleId === 'PRICE_FOR_ALL_MATERIAL';
-          const isWorkTotalColumn = roleId === 'PRICE_FOR_ALL_WORK';
-          const isTotalColumn = roleId === 'TOTAL_PRICE';
-
-          if (isMaterialTotalColumn) {
-            overheadValue = overheadMaterials;
-            finalValue = baseValue + overheadMaterials;
-          } else if (isWorkTotalColumn) {
-            overheadValue = overheadWorks;
-            finalValue = baseValue + overheadWorks;
-          } else if (isTotalColumn) {
-            overheadValue = overheadTotal;
-            finalValue = baseValue + overheadTotal;
-          } else {
-            finalValue = baseValue;
-            overheadValue = 0;
-          }
-
-          if (baseValue === 0 && overheadValue === 0) return;
-
-          const colTitle = {{ role_titles|safe }}[roleId] || roleId;
-          const shortTitle = colTitle.replace('ЦЕНА ', '').replace('ИТОГО ', '');
-
-          let color = '#212529';
-          if (isTotalColumn) color = '#dc3545';
-          else if (isMaterialTotalColumn) color = '#28a745';
-          else if (isWorkTotalColumn) color = '#17a2b8';
-
-          html += `
-            <div style="margin-right: 20px;">
-              <div style="color: #6c757d; font-size: 11px; margin-bottom: 2px;">${shortTitle}</div>
-              <div style="display: flex; align-items: baseline; gap: 6px;">
-                <div style="font-weight: 600; color: ${color}; font-size: 14px;">
-                  ${finalValue.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                </div>
-                ${overheadValue > 0 ? `
-                  <div style="font-size: 9px; color: #999;">
-                    (${baseValue.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} + ${overheadValue.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})})
-                  </div>
-                ` : ''}
-              </div>
-            </div>
-          `;
-        });
-
-        overheadTotalsContainer.innerHTML = html;
-      }
+      document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
+        inp.addEventListener('change', () => { setTimeout(updateSummary, 100); });
+      });
     })();
   </script>
 {% endblock %}

@@ -306,6 +306,7 @@ OPTIONAL_ROLE_IDS = [
 @admin.register(Estimate)
 class EstimateAdmin(admin.ModelAdmin):
     change_form_template = "admin/app_outlay/estimate_change.html"
+    save_on_top = True
     list_per_page = 50
     list_display = (
         "id",
