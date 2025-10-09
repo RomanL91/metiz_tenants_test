@@ -22,9 +22,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = "django-insecure-p777z(q@8*(3pvh+et&!b%xk==qm@%$b1o%r&ld9&!e#(e=p9@"
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
 
 TEMPLATES = [
     {
@@ -90,6 +87,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # МОИ НАСТРОКИ ==============================================================
 # ===========================================================================
 import os
+
+
+DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 
 
 def env(name, default=None, cast=str):
@@ -188,6 +188,18 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+if not DEBUG:
+    ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    CSRF_TRUSTED_ORIGINS = [
+        x for x in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if x
+    ]
+
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+    SECURE_HSTS_SECONDS = 0
 
 
 # ===========================================================================

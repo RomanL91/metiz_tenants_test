@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Waiting for Postgres at ${POSTGRES_HOST}:${POSTGRES_PORT}..."
-until nc -z "${POSTGRES_HOST}" "${POSTGRES_PORT}"; do
-  sleep 0.5
-done
-echo "Postgres is up."
+# ждём БД 
+DBH="${DB_HOST:-${POSTGRES_HOST}}"
+DBP="${DB_PORT:-${POSTGRES_PORT:-3333}}"
 
-echo "Running migrate_schemas..."
-python manage.py migrate_schemas --shared --noinput || true
-python manage.py migrate_schemas --noinput || true
+if [ -n "${DBH}" ]; then
+  echo "Waiting for Postgres at ${DBH}:${DBP}..."
+  for i in {1..60}; do
+    (echo > /dev/tcp/${DBH}/${DBP}) >/dev/null 2>&1 && break
+    sleep 1
+  done
+fi
 
-echo "Collecting static..."
+cd /app/src
+
+# миграции для django-tenants
+python manage.py migrate_schemas --shared --noinput
+# при необходимости можно мигрировать и тенантов (когда они уже созданы)
+# python manage.py migrate_schemas --executor tenant --noinput || true
+
+# собрать статику
 python manage.py collectstatic --noinput
 
-echo "Starting Django on 0.0.0.0:8000 ..."
-python manage.py runserver 0.0.0.0:8000
+gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120

@@ -2,36 +2,39 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    # Poetry — ставим в system site-packages (без отдельных venv),
-    # чтобы entrypoint мог звать "python manage.py …" без "poetry run".
-    POETRY_VERSION=1.8.3 \
-    POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# системные зависимости для psycopg2 и nc
+# системные зависимости (psycopg, pillow и т.п.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev netcat-traditional curl \
+    build-essential libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем Poetry в системное окружение
-RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+# ставим Poetry
+RUN pip install "poetry==1.8.*" && poetry --version
 
-# Сначала только манифесты зависимостей — максимально кешируем слой
+# чтобы poetry ставил пакеты в системное окружение контейнера (без venv)
+RUN poetry config virtualenvs.create false
+
+# сперва только спецификации — это ускоряет кеш
 COPY pyproject.toml poetry.lock* /app/
-# Ставим зависимости проекта (без установки самого проекта, т.е. --no-root)
-# Если нужны dev-зависимости — добавь:  --with dev
-RUN poetry install --no-root --no-ansi
 
-# Теперь весь код
-COPY . /app
+# прод-вариант: только основные зависимости
+# dev-вариант: --with dev (если у тебя есть [tool.poetry.group.dev])
+ARG POETRY_WITH=
+RUN if [ -n "$POETRY_WITH" ]; then \
+    poetry install --no-interaction --no-ansi --no-root --with "$POETRY_WITH"; \
+    else \
+    poetry install --no-interaction --no-ansi --no-root --only main; \
+    fi
 
-# Папки под статику и медиа (совпадают с Django settings)
-RUN mkdir -p /app/staticfiles /app/media
+# исходники
+COPY src/ /app/src/
 
-# entrypoint кладём вне /app, чтобы volume с кодом его не «перекрыл»
-COPY entrypoint.sh /entrypoint.sh
+# entrypoint
+COPY /entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]
