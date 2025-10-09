@@ -47,6 +47,7 @@ from app_outlay.models import (
     GroupTechnicalCardLink,
     EstimateOverheadCostLink,
 )
+from app_technical_cards.models import TechnicalCard as _TC
 
 # ---------- Импорты для ENDPOINTS  ----------
 import json
@@ -1216,6 +1217,11 @@ class EstimateAdmin(admin.ModelAdmin):
                     ensure_ascii=False,
                 )
 
+        tc_change_url_zero = reverse(
+            f"admin:{_TC._meta.app_label}_{_TC._meta.model_name}_change",
+            args=[0],
+        )
+
         # --- 8) Отдаём контекст в шаблон
         extra.update(
             {
@@ -1235,6 +1241,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 ),
                 "overhead_calculation": overhead_calc,
                 "overhead_calculation_json": overhead_calc_json,
+                "tc_change_url_zero": tc_change_url_zero,
             }
         )
         return super().change_view(request, object_id, form_url, extra_context=extra)
