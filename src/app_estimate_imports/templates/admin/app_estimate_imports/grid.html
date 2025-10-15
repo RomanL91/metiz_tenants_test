@@ -18,18 +18,18 @@
 
   /* Липкая колонка управления (чекбокс + иерархия + бейджи) */
   .control-col { width: 48px; position: sticky; left: 0; background: #f8f8f8; z-index: 4; }
-  .control-cell { position: sticky; left: 0; background: #fff; z-index: 3; padding: 0 4px !important; overflow: visible; } /* бейдж может выходить вправо */
+  .control-cell { position: sticky; left: 0; background: #fff; z-index: 3; padding: 0 4px !important; overflow: visible; }
   .ctrl-wrap { position: relative; min-height: 22px; padding-top: 2px; }
-  .ctrl-wrap .cb { position: relative; z-index: 2; } /* чекбокс над линиями */
+  .ctrl-wrap .cb { position: relative; z-index: 2; }
 
   /* Рисуем «рёбра» иерархии в той же ячейке */
   .hier { position: absolute; inset: 0 0 0 0; z-index: 1; pointer-events: none; }
   .hier .lvl {
     position: absolute;
     top: 0;
-    bottom: 0;             /* линия растягивается на всю высоту строки */
-    width: 3px;            /* толщина линии */
-    background: var(--lvl-color, #9e9e9e); /* цвет задаём из JS */
+    bottom: 0;
+    width: 3px;
+    background: var(--lvl-color, #9e9e9e);
     border-radius: 1px;
     opacity: .95;
   }
@@ -184,6 +184,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const GROUPS_LIST   = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/list/");
   const GROUPS_CREATE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/create/");
   const GROUPS_DELETE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/delete/");
+  const AUTO_GROUPS_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/auto-groups-from-colors/");
 
   // sheet + show_all controls
   document.getElementById('sheet')?.addEventListener('change', (e)=> navigateWith({sheet: e.target.value}));
@@ -201,6 +202,67 @@ document.addEventListener('DOMContentLoaded', function () {
     return Array.from(document.querySelectorAll('.role-select'))
       .filter(sel => sel.value === roleId)
       .map(sel => parseInt(sel.dataset.col, 10));
+  }
+
+  // Функция для автоматического создания групп по цветам
+  async function autoCreateGroupsFromColors(nameColIndex, force = false) {
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    
+    try {
+      const resp = await fetch(AUTO_GROUPS_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+        body: JSON.stringify({
+          sheet_index: parseInt(sheet, 10) || 0,
+          name_of_work_col: nameColIndex,
+          force: force
+        })
+      });
+      
+      const data = await resp.json();
+      
+      // Требуется подтверждение
+      if (data.requires_confirmation) {
+        const confirmed = confirm(
+          data.message + '\n\n' +
+          'Продолжить? Все существующие группы будут удалены и созданы заново на основе цветов.'
+        );
+        
+        if (confirmed) {
+          // Повторный вызов с force=true
+          return await autoCreateGroupsFromColors(nameColIndex, true);
+        } else {
+          return { ok: false, cancelled: true };
+        }
+      }
+      
+      // Обработка результата
+      if (data.ok) {
+        let message = `Автоматически создано групп: ${data.groups_created}`;
+        
+        if (data.had_existing_groups) {
+          message += '\n(Предыдущие группы были удалены)';
+        }
+        
+        if (data.warnings && data.warnings.length > 0) {
+          message += '\n\nПредупреждения:\n' + data.warnings.join('\n');
+        }
+        
+        alert(message);
+        
+        // Перерисовываем группы
+        await repaintGroups();
+        
+        return data;
+      } else {
+        alert('Ошибка создания групп: ' + (data.error || 'неизвестная ошибка'));
+        return data;
+      }
+      
+    } catch (error) {
+      alert('Ошибка запроса: ' + error.message);
+      return { ok: false, error: error.message };
+    }
   }
 
   // colorize headers by selected role color
@@ -222,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (/^(м\^?2|м2|квм|мкв|квадратн\w*метр\w*)$/.test(compact)) return 'м2';
     if (/^(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)$/.test(compact)) return 'м3';
     if (/^(шт|штука|штуки|штук)$/.test(compact)) return 'шт';
-    if (/^(пм|погм|погонныйметр|погонныхметров)$/.test(compact)) return 'пм';
+    if (/^(пм|погм|погонныйметр|погонных\s*метров)$/.test(compact)) return 'пм';
     if (/^(компл|комплект|комплекта|комплектов)$/.test(compact)) return 'компл';
     return compact;
   }
@@ -332,10 +394,52 @@ document.addEventListener('DOMContentLoaded', function () {
     applyRowHints();
   }
 
-  // события селектов/параметров
-  document.querySelectorAll('.role-select').forEach(sel=>{
-    sel.addEventListener('change', refreshUI);
+  // ВАЖНО: События селектов/параметров с проверкой роли NAME_OF_WORK
+  document.querySelectorAll('.role-select').forEach(sel => {
+    sel.addEventListener('change', async (e) => {
+      const newRole = e.target.value;
+      const colIndex = parseInt(e.target.dataset.col, 10);
+      
+      // Если назначена роль NAME_OF_WORK
+      if (newRole === 'NAME_OF_WORK') {
+        // Спрашиваем у пользователя
+        const shouldAuto = confirm(
+          'Обнаружена колонка "НАИМЕНОВАНИЕ РАБОТ/ТК".\n\n' +
+          'Запустить автоматическое создание групп на основе цветовой разметки?\n' +
+          '(Требуются назначенные роли UNIT и QTY для фильтрации)'
+        );
+        
+        if (shouldAuto) {
+          // ВАЖНО: Сначала сохраняем схему с текущими ролями
+          const col_roles = collectRoles();
+          const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+          
+          const saveResp = await fetch(SAVE_URL, {
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+            body: JSON.stringify({
+              col_roles,
+              sheet_index: parseInt(sheet,10)||0,
+              unit_allow_raw: getUnitAllowRaw(),
+              require_qty: getRequireQty(),
+            })
+          });
+          
+          const saveData = await saveResp.json();
+          if (!saveData.ok) {
+            alert('Ошибка сохранения схемы: '+(saveData.error||'unknown'));
+            return;
+          }
+          
+          // Теперь запускаем автосоздание групп
+          await autoCreateGroupsFromColors(colIndex);
+        }
+      }
+      
+      refreshUI();
+    });
   });
+
   document.getElementById('unit-allow')?.addEventListener('input', applyRowHints);
   document.getElementById('require-qty')?.addEventListener('change', applyRowHints);
 

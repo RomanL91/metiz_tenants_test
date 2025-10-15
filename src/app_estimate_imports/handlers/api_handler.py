@@ -13,6 +13,7 @@ import json
 from django.http import HttpRequest, HttpResponse
 
 from app_estimate_imports.handlers.base_handler import BaseHandler
+from app_estimate_imports.services.color_group_service import ColorGroupService
 
 
 class ApiHandler(BaseHandler):
@@ -119,6 +120,31 @@ class ApiHandler(BaseHandler):
             self.schema_service.save_schema_config(
                 markup, sheet_i, col_roles, unit_allow_raw, require_qty
             )
+
+            return self._success_response()
+        except Exception as e:
+            return self._error_response(str(e), 400)
+
+    def extract_from_grid_api(self, request: HttpRequest, pk: int) -> HttpResponse:
+        """
+        API для извлечения разметки из таблицы.
+
+        Ожидаемый JSON-payload:
+        {
+            "col_roles": [...],
+            "sheet_index": int,
+            "unit_allow_raw": str,
+            "require_qty": bool
+        }
+        """
+        obj = self.get_object_or_error(request, pk)
+        if not obj:
+            return self._error_response("file_not_found", 404)
+
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            # TODO: Implement extraction logic
+            # This would need to be implemented based on your requirements
 
             return self._success_response()
         except Exception as e:
@@ -239,6 +265,96 @@ class ApiHandler(BaseHandler):
             return self._success_response()
         except Exception as e:
             return self._error_response(str(e), 500)
+
+    def auto_groups_from_colors_api(
+        self, request: HttpRequest, pk: int
+    ) -> HttpResponse:
+        """
+        API для автоматического создания групп на основе цветов.
+
+        POST данные:
+        {
+            "sheet_index": int,
+            "name_of_work_col": int,
+            "force": bool  // true если пользователь подтвердил перезапись
+        }
+
+        Возвращает:
+        {
+            "ok": bool,
+            "groups_created": int,
+            "had_existing_groups": bool,
+            "warnings": list,
+            "error": str (опционально),
+            "requires_confirmation": bool (опционально),
+            "message": str (опционально)
+        }
+        """
+        # Используем правильный метод из BaseHandler
+        obj = self.get_object_or_error(request, pk)
+        if not obj:
+            return self._error_response("file_not_found", 404)
+
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+            sheet_index = payload.get("sheet_index", 0)
+            name_col = payload.get("name_of_work_col")
+            force = payload.get("force", False)
+
+            if name_col is None:
+                return self._error_response("Не указана колонка NAME_OF_WORK", 400)
+
+            # Проверяем наличие разметки (используем сервис из self)
+            markup = self.markup_service.ensure_markup_exists(obj)
+
+            # Запускаем анализ (создаем новый инстанс ColorGroupService)
+            color_service = ColorGroupService()
+            result = color_service.analyze_colors_and_create_groups(
+                markup=markup,
+                sheet_index=sheet_index,
+                name_of_work_col_index=name_col,
+                warn_if_groups_exist=not force,
+            )
+
+            # Если требуется подтверждение
+            if not result.get("ok") and result.get("requires_confirmation"):
+                return HttpResponse(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "requires_confirmation": True,
+                            "message": result.get("error"),
+                            "had_existing_groups": result.get(
+                                "had_existing_groups", False
+                            ),
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+            # Собираем предупреждения из сервиса
+            warnings = []
+            if hasattr(color_service, "_warnings"):
+                warnings = color_service._warnings
+
+            # Возвращаем результат
+            return HttpResponse(
+                json.dumps(
+                    {
+                        "ok": result.get("ok", False),
+                        "groups_created": result.get("groups_created", 0),
+                        "had_existing_groups": result.get("had_existing_groups", False),
+                        "warnings": warnings,
+                        "error": result.get("error"),
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        except json.JSONDecodeError:
+            return self._error_response("Invalid JSON", 400)
+        except Exception as e:
+            return self._error_response(f"Ошибка создания групп: {str(e)}", 500)
 
     def _success_response(self) -> HttpResponse:
         """

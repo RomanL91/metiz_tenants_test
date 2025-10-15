@@ -252,6 +252,13 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self._delegate("graph", "graph_data_api")),
                 name="imports_graph_data",
             ),
+            path(
+                "<int:pk>/api/auto-groups-from-colors/",
+                self.admin_site.admin_view(
+                    self._delegate("api", "auto_groups_from_colors_api")
+                ),
+                name="imports_api_auto_groups_colors",
+            ),
         ]
 
         return custom_urls + urls

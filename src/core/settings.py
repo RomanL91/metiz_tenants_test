@@ -89,7 +89,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 import os
 
 
-DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
+# DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
+DEBUG = True
 
 
 def env(name, default=None, cast=str):
@@ -190,18 +191,32 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 
-if not DEBUG:
-    ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-    CSRF_TRUSTED_ORIGINS = [
-        x for x in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if x
-    ]
+# if not DEBUG:
+#     ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+#     CSRF_TRUSTED_ORIGINS = [
+#         x for x in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if x
+#     ]
 
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
-    SECURE_SSL_REDIRECT = False
-    SECURE_HSTS_SECONDS = 0
+#     SESSION_COOKIE_SECURE = False
+#     CSRF_COOKIE_SECURE = False
+#     SECURE_SSL_REDIRECT = False
+#     SECURE_HSTS_SECONDS = 0
 
-
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "app_estimate_imports": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+        },
+    },
+}
 # ===========================================================================
 # ===========================================================================
 # ===========================================================================
