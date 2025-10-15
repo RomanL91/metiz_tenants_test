@@ -73,12 +73,11 @@
       font-size:12px;margin:3px 0;color:#495057
     }
     .metric-step .label{color:#6c757d}
-    .metric-step.plus .label{color:#8a6d3b}      /* шаг «+ НР» */
-    .metric-step.total .value{color:#0d6efd}     /* финал */
     .summary-note{font-size:10px;color:#6c757d;margin:6px 0}
     
   </style>
 {% endblock %}
+{% block submit_buttons_top %}{% endblock %}
 {% block submit_buttons_bottom %}{% endblock %}
 {% block content %}
   {{ block.super }}
@@ -99,26 +98,49 @@
       <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
     </div>
 
-    <!-- ИТОГОВАЯ ПАНЕЛЬ -->
+    <!-- ИТОГОВАЯ ПАНЕЛЬ (с учетом НР) -->
     <div id="summary-panel" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:13px">
 
-      <!-- Секция 1: Базовые итоги (единые карточки) -->
+      <!-- Секция 1: Текущие расчеты (УЖЕ включают НР) -->
       <div style="margin-bottom:16px">
         <div style="font-weight:600;color:#495057;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">
-          📋 Базовые итоги
+          📋 Текущие расчеты
         </div>
         <div id="summary-note-base" class="summary-note"></div>
         <div id="metrics-base" class="metrics"></div>
+        
+        {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
+        <div class="summary-note" style="margin-top:8px;color:#856404;font-size:11px">
+          ℹ️ Цены в таблице уже включают накладные расходы ({{ overhead_calculation.overhead_total|floatformat:2 }} ₽), 
+          рассчитанные пропорционально на основе сохраненных ТК.
+          {% if overhead_calculation.overhead_details %}
+          Распределение: МАТ {{ overhead_calculation.overhead_details.0.materials_pct|default:0|floatformat:0 }}% / 
+          РАБ {{ overhead_calculation.overhead_details.0.works_pct|default:0|floatformat:0 }}%
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
 
-      <!-- Секция 2: С учётом НР (тот же макет) -->
+      <!-- Секция 2: Параметры НР (информационная) -->
       {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
       <div style="padding-top:16px;border-top:2px solid #dee2e6">
         <div style="font-weight:600;color:#856404;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #ffc107">
-          💰 С учётом накладных расходов
+          💰 Параметры накладных расходов
         </div>
-        <div id="summary-note-oh" class="summary-note"></div>
-        <div id="metrics-oh" class="metrics"></div>
+        <div style="font-size:12px;color:#6c757d">
+          <div style="margin-bottom:4px">
+            <strong>Общая сумма НР:</strong> {{ overhead_calculation.overhead_total|floatformat:2 }} ₽
+          </div>
+          {% for detail in overhead_calculation.overhead_details %}
+          <div style="margin-left:12px;margin-bottom:2px">
+            • {{ detail.name }}: {{ detail.total|floatformat:2 }} ₽ 
+            (МАТ: {{ detail.materials_pct|floatformat:0 }}%, РАБ: {{ detail.works_pct|floatformat:0 }}%)
+          </div>
+          {% endfor %}
+          <div style="margin-top:8px;font-size:11px;font-style:italic">
+            Накладные расходы автоматически распределяются пропорционально базовой стоимости каждой ТК.
+          </div>
+        </div>
       </div>
       {% endif %}
     </div>
@@ -188,10 +210,7 @@
         return m ? decodeURIComponent(m[1]) : '';
       }
 
-      /* Шаблон URL изменения ТК в админке:
-         ожидается, что в контексте есть tc_change_url_zero = ".../technicalcard/0/change/"
-         если нет — graceful fallback.
-      */
+      /* Шаблон URL изменения ТК в админке */
       const TC_CHANGE_URL_TMPL = "{{ tc_change_url_zero|default:'' }}";
       function tcChangeUrl(id){
         if (!TC_CHANGE_URL_TMPL) return '#';
@@ -347,31 +366,6 @@
         updateOpenLink();
       });
 
-      // Очистка dataset.id при ручном редактировании — (дублирующий safety net)
-      document.querySelectorAll('.js-tc-autocomplete').forEach(input => {
-        input.addEventListener('input', () => {
-          const currentValue = input.value.trim();
-          const datasetText = input.dataset.text || '';
-          if (currentValue !== datasetText) {
-            input.dataset.id = '';
-            input.dataset.text = '';
-            const tr = input.closest('tr');
-            if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
-            setTimeout(updateSummary, 100);
-          }
-        });
-        input.addEventListener('blur', () => {
-          if (!input.value.trim()) {
-            input.dataset.id = '';
-            input.dataset.text = '';
-            input.style.background = '';
-            const tr = input.closest('tr');
-            if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
-            setTimeout(updateSummary, 100);
-          }
-        });
-      });
-
       async function triggerRowCalc(tr){
         if (!tr) return;
         const inpTC = tr.querySelector('.js-tc-autocomplete');
@@ -397,6 +391,9 @@
               : '—';
             td.querySelector('.sys').textContent = val;
           });
+          
+          // Обновляем summary после расчета строки
+          setTimeout(updateSummary, 100);
         }catch(e){
           console.error('Calc error:', e);
         }
@@ -507,9 +504,9 @@
         });
       }
 
-      // ---------- Инфо-табло: единый рендер для двух секций ----------
+      // ---------- SUMMARY: расчет итогов ----------
 
-      // Собираем базовые суммы из таблицы
+      // Собираем базовые суммы из таблицы (УЖЕ включают НР)
       function computeBaseTotals(){
         const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
         const totals = {};
@@ -540,39 +537,27 @@
       }
 
       // Рисуем карточки метрик (единый макет)
-      function renderMetricCards(container, {titleMat, titleWorks, titleTotal, mainMat, mainWorks, mainTotal, stackMat, stackWorks, stackTotal}){
+      function renderMetricCards(container, {titleMat, titleWorks, titleTotal, mainMat, mainWorks, mainTotal}){
         const fmt = n => n.toLocaleString('ru-RU',{minimumFractionDigits:2, maximumFractionDigits:2});
-        const card = (title, main, stack=[]) => `
+        const card = (title, main) => `
           <div class="metric-card">
             <div class="metric-title">${title}</div>
             <div class="metric-value">${fmt(main)}</div>
-            ${
-              stack.length
-                ? `<div class="metric-stack">${
-                    stack.map(s => `
-                      <div class="metric-step ${s.kind||''}">
-                        <span class="label">${s.label}</span>
-                        <span class="value">${fmt(s.value)}</span>
-                      </div>
-                    `).join('')
-                  }</div>`
-                : ''
-            }
           </div>
         `;
 
         container.innerHTML = [
-          card(titleMat,   mainMat,   stackMat   || []),
-          card(titleWorks, mainWorks, stackWorks || []),
-          card(titleTotal, mainTotal, stackTotal || []),
+          card(titleMat,   mainMat),
+          card(titleWorks, mainWorks),
+          card(titleTotal, mainTotal),
         ].join('');
       }
 
-      // Базовые итоги + запуск секции НР
+      // Обновление summary (НР УЖЕ учтены в ценах таблицы!)
       function updateSummary(){
         const base = computeBaseTotals();
 
-        // Базовые итоги — карточки без «ступенек»
+        // Текущие расчеты — карточки без «ступенек»
         const noteBase = document.getElementById('summary-note-base');
         const boxBase  = document.getElementById('metrics-base');
         if (noteBase) noteBase.textContent = `Рассчитано строк: ${base.calculatedRows} из ${base.rows}`;
@@ -582,56 +567,6 @@
             mainMat: base.baseMat,  mainWorks:  base.baseWorks, mainTotal: base.baseTotal,
           });
         }
-
-        // Итоги с НР (тот же макет, но со «ступенями»)
-        updateSummaryWithOverhead(base);
-      }
-
-      function updateSummaryWithOverhead(baseTotals){
-        const box = document.getElementById('metrics-oh');
-        const note = document.getElementById('summary-note-oh');
-        if (!box) return;
-
-        const oh = JSON.parse('{{ overhead_calculation_json|escapejs }}' || 'null');
-        if (!oh || !oh.overhead_total){
-          box.innerHTML = '';
-          if (note) note.textContent = '';
-          return;
-        }
-
-        const baseMat   = baseTotals.baseMat;
-        const baseWorks = baseTotals.baseWorks;
-        const baseTotal = baseTotals.baseTotal;
-
-        const plusMat   = Number(oh.overhead_materials || 0);
-        const plusWorks = Number(oh.overhead_works || 0);
-        const plusTotal = Number(oh.overhead_total || 0);
-
-        const finMat   = baseMat   + plusMat;
-        const finWorks = baseWorks + plusWorks;
-        const finTotal = baseTotal + plusTotal;
-
-        if (note) note.textContent = `Рассчитано строк: ${baseTotals.calculatedRows} из ${baseTotals.rows}`;
-
-        renderMetricCards(box, {
-          titleMat: 'Материалы', titleWorks: 'Работы', titleTotal: 'Итого',
-          mainMat: finMat,       mainWorks:  finWorks, mainTotal: finTotal,
-          stackMat: [
-            {label:'База', value: baseMat},
-            {label:'+ Накладные расходы', value: plusMat, kind:'plus'},
-            {label:'= Итого с НР', value: finMat, kind:'total'},
-          ],
-          stackWorks: [
-            {label:'База', value: baseWorks},
-            {label:'+ Накладные расходы', value: plusWorks, kind:'plus'},
-            {label:'= Итого с НР', value: finWorks, kind:'total'},
-          ],
-          stackTotal: [
-            {label:'База', value: baseTotal},
-            {label:'+ Накладные расходы', value: plusTotal, kind:'plus'},
-            {label:'= Итого с НР', value: finTotal, kind:'total'},
-          ],
-        });
       }
 
       // ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ
@@ -693,9 +628,14 @@
 
       prefillExistingMappings();
 
-      // СОХРАНЕНИЕ РАСЧЕТОВ
+      // СОХРАНЕНИЕ РАСЧЕТОВ (работает как Save and continue editing)
       if (btnSaveMappings) {
         btnSaveMappings.addEventListener('click', async () => {
+          btnSaveMappings.disabled = true;
+          statusSpan.textContent = 'Сохранение...';
+          statusSpan.style.color = '#666';
+
+          // 1. Собираем данные сопоставлений ТК
           const mappings = [];
           const deletions = [];
           let currentSection = 'Без группы';
@@ -714,7 +654,7 @@
             if (!tcInput || !qtyInput || !rowIndex) return;
 
             const tcId = parseInt(tcInput.dataset.id || '0', 10) || 0;
-            const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0; // поддержка запятой
+            const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0;
 
             const hadMapping = (EXISTING_MAPPINGS[String(rowIndex)] != null);
 
@@ -731,58 +671,82 @@
             }
           });
 
-          if (mappings.length === 0 && deletions.length === 0) {
-            statusSpan.textContent = '⚠️ Нет данных для сохранения';
-            statusSpan.style.color = '#856404';
-            return;
-          }
+          // 2. Сначала сохраняем сопоставления ТК через AJAX
+          if (mappings.length > 0 || deletions.length > 0) {
+            try {
+              const resp = await fetch(SAVE_MAPPINGS_URL, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': getCsrfToken(),
+                },
+                body: JSON.stringify({ mappings, deletions })
+              });
 
-          const confirmMsg = deletions.length > 0
-            ? `Сохранить ${mappings.length} позиций и удалить ${deletions.length}?`
-            : `Сохранить ${mappings.length} позиций в смету?`;
+              const data = await resp.json();
 
-          if (!confirm(confirmMsg)) return;
+              if (!data.ok) {
+                statusSpan.textContent = '❌ Ошибка сопоставлений: ' + (data.error || 'unknown');
+                statusSpan.style.color = '#721c24';
+                btnSaveMappings.disabled = false;
+                return;
+              }
 
-          btnSaveMappings.disabled = true;
-          statusSpan.textContent = 'Сохранение...';
-          statusSpan.style.color = '#666';
+              const deletedMsg = data.deleted > 0 ? `, удалено: ${data.deleted}` : '';
+              console.log(`Сопоставления сохранены: ${data.total} позиций (создано: ${data.created}, обновлено: ${data.updated}${deletedMsg})`);
 
-          try {
-            const resp = await fetch(SAVE_MAPPINGS_URL, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken(),
-              },
-              body: JSON.stringify({ mappings, deletions })
-            });
-
-            const data = await resp.json();
-
-            if (!data.ok) {
-              statusSpan.textContent = '❌ Ошибка: ' + (data.error || 'unknown');
+            } catch (e) {
+              console.error('Ошибка сохранения сопоставлений:', e);
+              statusSpan.textContent = '❌ Ошибка сети (сопоставления)';
               statusSpan.style.color = '#721c24';
               btnSaveMappings.disabled = false;
               return;
             }
+          }
 
-            const deletedMsg = data.deleted > 0 ? `, удалено: ${data.deleted}` : '';
-            statusSpan.textContent = `✅ Сохранено: ${data.total} позиций (создано: ${data.created}, обновлено: ${data.updated}${deletedMsg})`;
-            statusSpan.style.color = '#155724';
-
-            setTimeout(() => { window.location.reload(); }, 1200);
-
-          } catch (e) {
-            console.error(e);
-            statusSpan.textContent = '❌ Ошибка сети';
-            statusSpan.style.color = '#721c24';
-            btnSaveMappings.disabled = false;
+          // 3. Затем отправляем основную форму Django Admin (как Save and continue editing)
+          statusSpan.textContent = 'Сохранение формы...';
+          
+          const adminForm = document.querySelector('form#estimate_form');
+          if (!adminForm) {
+            // Fallback: ищем любую форму на странице
+            const forms = document.querySelectorAll('form');
+            const mainForm = Array.from(forms).find(f => f.querySelector('[name=csrfmiddlewaretoken]'));
+            
+            if (mainForm) {
+              // Добавляем hidden input для "_continue" (Save and continue editing)
+              let continueInput = mainForm.querySelector('input[name="_continue"]');
+              if (!continueInput) {
+                continueInput = document.createElement('input');
+                continueInput.type = 'hidden';
+                continueInput.name = '_continue';
+                continueInput.value = 'Save and continue editing';
+                mainForm.appendChild(continueInput);
+              }
+              
+              // Submit формы
+              mainForm.submit();
+            } else {
+              // Если форма не найдена - просто перезагружаем страницу
+              statusSpan.textContent = '✅ Сопоставления сохранены';
+              statusSpan.style.color = '#155724';
+              setTimeout(() => { window.location.reload(); }, 800);
+            }
+          } else {
+            // Нашли форму с ID - отправляем её
+            let continueInput = adminForm.querySelector('input[name="_continue"]');
+            if (!continueInput) {
+              continueInput = document.createElement('input');
+              continueInput.type = 'hidden';
+              continueInput.name = '_continue';
+              continueInput.value = 'Save and continue editing';
+              adminForm.appendChild(continueInput);
+            }
+            
+            adminForm.submit();
           }
         });
       }
-      document.querySelectorAll('#tc-map .qty-input').forEach(inp => {
-        inp.addEventListener('change', () => { setTimeout(updateSummary, 100); });
-      });
     })();
   </script>
 {% endblock %}

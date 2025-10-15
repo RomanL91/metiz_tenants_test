@@ -378,7 +378,15 @@ class EstimateAdmin(admin.ModelAdmin):
     # также лучше вынести из модуля, например во view|contrillers etc
 
     def api_calc(self, request, object_id: str):
+        """
+        API для расчета показателей по версии ТК с учетом накладных расходов сметы.
 
+        GET параметры:
+        - tc: ID технической карты
+        - qty: количество
+
+        Возвращает расчеты с учетом НР, если они есть у сметы.
+        """
         try:
             tc_id = int(request.GET.get("tc", "0"))
             qty_raw = (request.GET.get("qty") or "0").replace(",", ".")
@@ -388,7 +396,82 @@ class EstimateAdmin(admin.ModelAdmin):
         except Exception:
             return _json_error(_("Некорректные параметры"), 400)
 
-        calc, order = calc_for_tc(tc_id, qty)
+        # Получаем смету для расчета контекста НР
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+
+        # ------- РАСЧЕТ КОНТЕКСТА НР -------
+        overhead_context = None
+
+        # 1. Получаем активные НР сметы
+        overhead_links = est.overhead_cost_links.filter(is_active=True).select_related(
+            "overhead_cost_container"
+        )
+
+        if overhead_links.exists():
+            # 2. Суммируем все НР
+            total_overhead = Decimal("0")
+            weighted_mat_pct = Decimal("0")
+            weighted_work_pct = Decimal("0")
+
+            for link in overhead_links:
+                amount = (
+                    link.snapshot_total_amount
+                    or link.overhead_cost_container.total_amount
+                )
+                mat_pct = (
+                    link.snapshot_materials_percentage
+                    or link.overhead_cost_container.materials_percentage
+                )
+                work_pct = (
+                    link.snapshot_works_percentage
+                    or link.overhead_cost_container.works_percentage
+                )
+
+                total_overhead += amount
+                weighted_mat_pct += mat_pct * amount
+                weighted_work_pct += work_pct * amount
+
+            # Средневзвешенные проценты распределения
+            if total_overhead > 0:
+                avg_mat_pct = weighted_mat_pct / total_overhead
+                avg_work_pct = weighted_work_pct / total_overhead
+            else:
+                avg_mat_pct = Decimal("0")
+                avg_work_pct = Decimal("0")
+
+            # 3. Рассчитываем общую базу из сохраненных ТК в смете
+            from app_technical_cards.models import TechnicalCardVersion
+            from app_outlay.utils_calc import _base_costs_live, _dec
+
+            total_base_mat = Decimal("0")
+            total_base_work = Decimal("0")
+
+            # Получаем все связи ТК в смете
+            tc_links = GroupTechnicalCardLink.objects.filter(
+                group__estimate=est
+            ).select_related("technical_card_version")
+
+            for link in tc_links:
+                ver = link.technical_card_version
+                base = _base_costs_live(ver)
+
+                # Умножаем на количество для этой ТК в смете
+                total_base_mat += base.mat * _dec(link.quantity)
+                total_base_work += base.work * _dec(link.quantity)
+
+            # Формируем контекст НР
+            overhead_context = {
+                "total_base_mat": total_base_mat,
+                "total_base_work": total_base_work,
+                "overhead_amount": total_overhead,
+                "overhead_mat_pct": avg_mat_pct,
+                "overhead_work_pct": avg_work_pct,
+            }
+
+        # ------- РАСЧЕТ С УЧЕТОМ НР -------
+        calc, order = calc_for_tc(tc_id, qty, overhead_context=overhead_context)
         resp_calc = {k: float(v) for k, v in calc.items()}
         return _json_ok({"calc": resp_calc, "order": order})
 
