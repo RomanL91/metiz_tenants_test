@@ -51,6 +51,106 @@
   .group-badge { font-size:11px; padding:2px 6px; border-radius:10px; display:inline-block; margin: 2px 0 0 0; cursor: pointer; white-space:nowrap; position: relative; z-index: 3; max-width: 280px; }
   .group-badge:hover { filter: brightness(0.95); }
   tr[data-group~="1"] td { background-image: linear-gradient(0deg, rgba(0,0,0,0.02), rgba(0,0,0,0.02)); }
+
+  /* Стиль для кнопки "Создать смету" */
+  .btn-create-estimate {
+    background: #417690;
+    color: white;
+    font-weight: 500;
+    border: none;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .btn-create-estimate:hover {
+    background: #345a6d;
+    color: white;
+  }
+
+  /* Floating Action Bar */
+  .floating-action-bar {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.1);
+    padding: 12px;
+    min-width: 280px;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+  .floating-action-bar.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .fab-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .fab-counter {
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+  }
+  .fab-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .fab-btn {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .fab-btn:hover {
+    background: #e8e8e8;
+  }
+  .fab-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .fab-btn:disabled:hover {
+    background: #f5f5f5;
+  }
+  .fab-btn-primary {
+    background: #417690;
+    color: white;
+    border-color: #417690;
+  }
+  .fab-btn-primary:hover:not(:disabled) {
+    background: #345a6d;
+  }
+  .fab-btn-danger {
+    background: #dc3545;
+    color: white;
+    border-color: #dc3545;
+  }
+  .fab-btn-danger:hover:not(:disabled) {
+    background: #c82333;
+  }
+  .fab-icon {
+    font-style: normal;
+    font-size: 14px;
+  }
 </style>
 {% endblock %}
 
@@ -77,12 +177,7 @@
     <a class="button" id="btn-save">Сохранить схему</a>
     <a class="button" id="btn-extract">Сформировать разметку из таблицы</a>
 
-    <a class="button" id="btn-hide-rows">Скрыть выбранные строки</a>
-    <a class="button" id="btn-hide-cols">Скрыть отмеченные колонки</a>
-    <a class="button" id="btn-show-all">Показать всё</a>
-
     <!-- Группы -->
-    <a class="button" id="btn-group-create">Создать группу из выделенных</a>
     <a class="button" id="btn-group-tree">Дерево групп</a>
 
     <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
@@ -95,6 +190,11 @@
         <input id="require-qty" type="checkbox" {% if require_qty %}checked{% endif %}>
         Требовать КОЛ-ВО &gt; 0
       </label>
+      
+      <!-- Кнопка "Создать смету" -->
+      <a href="#" class="btn-create-estimate" id="btn-materialize" title="Создать смету из разметки">
+        Создать смету
+      </a>
     </span>
   </div>
 
@@ -159,6 +259,31 @@
     Обязательные роли: <strong>НАИМЕНОВАНИЕ РАБОТ/ТК</strong>, <strong>ЕД. ИЗМ.</strong>, <strong>КОЛ-ВО</strong>.<br>
     Для групп: выделите строки (можно с Shift) → «Создать группу из выделенных». Бейдж кликабелен — удаляет группу (с её потомками) после подтверждения.
   </p>
+
+  <!-- Floating Action Bar -->
+  <div class="floating-action-bar" id="fab">
+    <div class="fab-header">
+      Действия с выделением
+      <div class="fab-counter" id="fab-counter">Ничего не выбрано</div>
+    </div>
+    <div class="fab-actions">
+      <button class="fab-btn fab-btn-danger" id="fab-hide-rows" disabled>
+        <span class="fab-icon">🗑️</span> Скрыть строки
+      </button>
+      <button class="fab-btn fab-btn-primary" id="fab-create-group" disabled>
+        <span class="fab-icon">📁</span> Создать группу
+      </button>
+      <button class="fab-btn fab-btn-danger" id="fab-hide-cols" disabled>
+        <span class="fab-icon">❌</span> Скрыть колонки
+      </button>
+      <button class="fab-btn" id="fab-show-all">
+        <span class="fab-icon">👁️</span> Показать всё
+      </button>
+      <button class="fab-btn" id="fab-clear-selection">
+        <span class="fab-icon">↩️</span> Снять выделение
+      </button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -181,10 +306,14 @@ document.addEventListener('DOMContentLoaded', function () {
   // endpoints
   const SAVE_URL      = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
   const EXTRACT_URL   = window.location.pathname.replace(/\/grid\/?$/, "/api/extract-from-grid/");
+  const MATERIALIZE_URL = window.location.pathname.replace(/\/grid\/?$/, "/materialize/");
   const GROUPS_LIST   = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/list/");
   const GROUPS_CREATE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/create/");
   const GROUPS_DELETE = window.location.pathname.replace(/\/grid\/?$/, "/api/groups/delete/");
   const AUTO_GROUPS_URL = window.location.pathname.replace(/\/grid\/?$/, "/api/auto-groups-from-colors/");
+
+  // Флаг наличия разметки (из контекста Django)
+  const HAS_MARKUP = {{ has_markup|yesno:"true,false" }};
 
   // sheet + show_all controls
   document.getElementById('sheet')?.addEventListener('change', (e)=> navigateWith({sheet: e.target.value}));
@@ -394,7 +523,7 @@ document.addEventListener('DOMContentLoaded', function () {
     applyRowHints();
   }
 
-  // ВАЖНО: События селектов/параметров с проверкой роли NAME_OF_WORK
+  // ВАЖНО: События селекторов/параметров с проверкой роли NAME_OF_WORK
   document.querySelectorAll('.role-select').forEach(sel => {
     sel.addEventListener('change', async (e) => {
       const newRole = e.target.value;
@@ -486,22 +615,136 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!data.ok) alert('Ошибка извлечения: '+(data.error||'unknown')); else alert('Разметка построена. Открой «Граф» или «Разметить».');
   };
 
-  // hide/show UI
-  document.getElementById('btn-hide-rows').onclick = ()=> {
-    document.querySelectorAll('.row-check:checked').forEach(cb=> cb.closest('tr')?.classList.add('hidden-row'));
+  // Создать смету
+  document.getElementById('btn-materialize').onclick = (e) => {
+    e.preventDefault();
+    
+    if (!HAS_MARKUP) {
+      const proceed = confirm(
+        'Разметка ещё не создана!\n\n' +
+        'Для создания сметы необходимо:\n' +
+        '1. Назначить роли колонкам (NAME_OF_WORK, UNIT, QTY)\n' +
+        '2. Нажать "Сформировать разметку из таблицы"\n\n' +
+        'Продолжить создание сметы? (Может создать пустую или неполную смету)'
+      );
+      
+      if (!proceed) {
+        return;
+      }
+    }
+    
+    // Переходим на страницу материализации
+    window.location.href = MATERIALIZE_URL;
   };
-  document.getElementById('btn-hide-cols').onclick = ()=> {
-    document.querySelectorAll('.col-check:checked').forEach(cb=>{
+
+  /* =========================
+     FLOATING ACTION BAR
+     ========================= */
+
+  function updateFAB() {
+    const selectedRows = document.querySelectorAll('.row-check:checked').length;
+    const selectedCols = document.querySelectorAll('.col-check:checked').length;
+    const hasSelection = selectedRows > 0 || selectedCols > 0;
+    
+    const fab = document.getElementById('fab');
+    const counter = document.getElementById('fab-counter');
+    const btnHideRows = document.getElementById('fab-hide-rows');
+    const btnCreateGroup = document.getElementById('fab-create-group');
+    const btnHideCols = document.getElementById('fab-hide-cols');
+    
+    // Показать/скрыть FAB
+    if (hasSelection) {
+      fab.classList.add('visible');
+    } else {
+      fab.classList.remove('visible');
+    }
+    
+    // Обновить счетчик
+    let counterText = [];
+    if (selectedRows > 0) counterText.push(`${selectedRows} строк`);
+    if (selectedCols > 0) counterText.push(`${selectedCols} колонок`);
+    counter.textContent = counterText.length > 0 ? `Выделено: ${counterText.join(', ')}` : 'Ничего не выбрано';
+    
+    // Активировать/деактивировать кнопки
+    btnHideRows.disabled = selectedRows === 0;
+    btnHideRows.innerHTML = selectedRows > 0 ? `<span class="fab-icon">🗑️</span> Скрыть ${selectedRows} строк` : '<span class="fab-icon">🗑️</span> Скрыть строки';
+    
+    btnCreateGroup.disabled = selectedRows === 0;
+    btnCreateGroup.innerHTML = selectedRows > 0 ? `<span class="fab-icon">📁</span> Создать группу из ${selectedRows} строк` : '<span class="fab-icon">📁</span> Создать группу';
+    
+    btnHideCols.disabled = selectedCols === 0;
+    btnHideCols.innerHTML = selectedCols > 0 ? `<span class="fab-icon">❌</span> Скрыть ${selectedCols} колонок` : '<span class="fab-icon">❌</span> Скрыть колонки';
+  }
+
+  // Привязка событий к чекбоксам
+  document.querySelectorAll('.row-check, .col-check').forEach(cb => {
+    cb.addEventListener('change', updateFAB);
+  });
+
+  // Привязка действий FAB
+  document.getElementById('fab-hide-rows').onclick = () => {
+    document.querySelectorAll('.row-check:checked').forEach(cb => {
+      cb.closest('tr')?.classList.add('hidden-row');
+      cb.checked = false;
+    });
+    updateFAB();
+  };
+
+  document.getElementById('fab-hide-cols').onclick = () => {
+    document.querySelectorAll('.col-check:checked').forEach(cb => {
       const col = parseInt(cb.dataset.col, 10);
       document.querySelector(`#grid thead th[data-col="${col}"]`)?.classList.add('hidden-col');
-      document.querySelectorAll(`#grid tbody td[data-col="${col}"]`).forEach(td=> td.classList.add('hidden-col'));
+      document.querySelectorAll(`#grid tbody td[data-col="${col}"]`).forEach(td => td.classList.add('hidden-col'));
+      cb.checked = false;
     });
+    updateFAB();
   };
-  document.getElementById('btn-show-all').onclick = ()=> {
-    document.querySelectorAll('.hidden-row').forEach(el=> el.classList.remove('hidden-row'));
-    document.querySelectorAll('.hidden-col').forEach(el=> el.classList.remove('hidden-col'));
-    document.querySelectorAll('.row-check, .col-check').forEach(cb=> cb.checked = false);
+
+  document.getElementById('fab-create-group').onclick = async () => {
+    const ranges = selectedRanges();
+    if (!ranges.length) { 
+      alert('Сначала выделите строки (чекбоксы, можно с Shift).'); 
+      return; 
+    }
+    
+    const cfg = await promptCreateGroup(ranges);
+    if (!cfg) return;
+    
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    const resp = await fetch(GROUPS_CREATE, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+      body: JSON.stringify({ 
+        sheet_index: parseInt(sheet, 10) || 0, 
+        name: cfg.name, 
+        rows: ranges, 
+        parent_uid: cfg.parent_uid, 
+        color: cfg.color 
+      })
+    });
+    
+    const data = await resp.json();
+    if (!data.ok) { 
+      alert('Ошибка создания группы: ' + (data.error || 'unknown')); 
+      return; 
+    }
+    
+    await repaintGroups();
+    document.querySelectorAll('.row-check:checked').forEach(cb => cb.checked = false);
+    updateFAB();
+  };
+
+  document.getElementById('fab-show-all').onclick = () => {
+    document.querySelectorAll('.hidden-row').forEach(el => el.classList.remove('hidden-row'));
+    document.querySelectorAll('.hidden-col').forEach(el => el.classList.remove('hidden-col'));
+    document.querySelectorAll('.row-check, .col-check').forEach(cb => cb.checked = false);
+    updateFAB();
     refreshUI();
+  };
+
+  document.getElementById('fab-clear-selection').onclick = () => {
+    document.querySelectorAll('.row-check, .col-check').forEach(cb => cb.checked = false);
+    updateFAB();
   };
 
   /* =========================
@@ -520,6 +763,7 @@ document.addEventListener('DOMContentLoaded', function () {
           const ri = parseInt(r.dataset.row, 10);
           if (ri>=a && ri<=b) r.querySelector('.row-check').checked = true;
         });
+        updateFAB();
       }
       lastRowClicked = idx;
     });
@@ -576,24 +820,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const color = palette[Math.floor(Math.random()*palette.length)];
     return {name, parent_uid, color};
   }
-
-  // Создать группу из выделенных
-  document.getElementById('btn-group-create').onclick = async ()=>{
-    const ranges = selectedRanges();
-    if (!ranges.length){ alert('Сначала выделите строки (чекбоксы, можно с Shift).'); return; }
-    const cfg = await promptCreateGroup(ranges);
-    if (!cfg) return;
-    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
-    const resp = await fetch(GROUPS_CREATE, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body: JSON.stringify({ sheet_index: parseInt(sheet,10)||0, name: cfg.name, rows: ranges, parent_uid: cfg.parent_uid, color: cfg.color })
-    });
-    const data = await resp.json();
-    if (!data.ok){ alert('Ошибка создания группы: '+(data.error||'unknown')); return; }
-    await repaintGroups();
-    document.querySelectorAll('.row-check:checked').forEach(cb=> cb.checked=false);
-  };
 
   // Быстрое дерево групп (alert)
   document.getElementById('btn-group-tree').onclick = async ()=>{
@@ -725,9 +951,10 @@ document.addEventListener('DOMContentLoaded', function () {
     renderHierarchyInControl(groups);
   }
 
-  // первый рендер
+  // Инициализация при загрузке
   refreshUI();
   repaintGroups();
+  updateFAB(); // Инициализируем FAB
 });
 </script>
 {% endblock %}

@@ -165,6 +165,9 @@ class GridHandler(BaseHandler):
         # Заголовки колонок
         col_headers = self._extract_column_headers(rows, max_cols)
 
+        # Проверяем наличие markup с данными (не пустой)
+        has_valid_markup = hasattr(obj, "markup") and obj.markup.annotation
+
         return dict(
             self.admin.admin_site.each_context(request),
             title=f"Таблица: {obj.original_name}",
@@ -180,6 +183,7 @@ class GridHandler(BaseHandler):
             total_rows=len(rows),
             unit_allow_raw=",".join(unit_allow_set),
             require_qty=require_qty,
+            has_markup=has_valid_markup,  # Добавлено для кнопки "Создать смету"
         )
 
     def _extract_column_headers(self, rows, max_cols: int):
