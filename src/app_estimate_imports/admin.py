@@ -10,6 +10,7 @@ from app_estimate_imports.handlers import HandlerFactory
 from app_estimate_imports.utils.file_utils import FileUtils
 from app_estimate_imports.models import ImportedEstimateFile, ParseResult, ParseMarkup
 from app_estimate_imports.services.materialization_service import MaterializationService
+from app_estimate_imports.services.parse_service import ParseService
 
 
 class ParseMarkupInline(admin.StackedInline):
@@ -107,11 +108,14 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
 
     def actions_col(self, obj):
         """Генерирует кнопки действий"""
-        buttons = [
-            format_html(
-                '<a class="button" href="{}">Распарсить</a>', f"./{obj.pk}/parse/"
-            )
-        ]
+        buttons = []
+
+        # # Кнопка "Распарсить" - оставляем для возможности ре-парсинга
+        # buttons.append(
+        #     format_html(
+        #         '<a class="button" href="{}">Перепарсить</a>', f"./{obj.pk}/parse/"
+        #     )
+        # )
 
         if hasattr(obj, "parse_result"):
             buttons.extend(
@@ -291,38 +295,6 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
 
     parse_now.short_description = "Распарсить (синхронно)"
 
-    # def generate_markup_skeleton(self, request, queryset):
-    #     """Генерирует скелет разметки для выбранных файлов"""
-    #     ok = 0
-    #     for file_obj in queryset:
-    #         try:
-    #             if not hasattr(file_obj, "parse_result"):
-    #                 messages.warning(request, f"[{file_obj}] нет ParseResult")
-    #                 continue
-
-    #             handler = HandlerFactory.create("markup", self)
-    #             # Вызываем через сервис или напрямую
-    #             from .services_markup import build_markup_skeleton, ensure_markup_exists
-    #             from .utils_markup import ensure_uids_in_tree
-
-    #             file_obj.parse_result.data = ensure_uids_in_tree(
-    #                 file_obj.parse_result.data
-    #             )
-    #             file_obj.parse_result.save(update_fields=["data"])
-
-    #             markup = ensure_markup_exists(file_obj)
-    #             markup.annotation = build_markup_skeleton(file_obj.parse_result)
-    #             markup.save(update_fields=["annotation"])
-
-    #             ok += 1
-    #         except Exception as e:
-    #             messages.error(request, f"[{file_obj}] ошибка: {e!r}")
-
-    #     if ok:
-    #         messages.success(request, f"Скелет разметки создан: {ok}")
-
-    # generate_markup_skeleton.short_description = "Сгенерировать черновик разметки"
-
     def create_estimate_from_markup(self, request, queryset):
         """Создает сметы из разметки"""
         ok = 0
@@ -351,21 +323,71 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
     # --- Сохранение модели ---
 
     def save_model(self, request, obj: ImportedEstimateFile, form, change):
-        """Обновляет метаданные при сохранении"""
+        """Обновляет метаданные и автоматически запускает парсинг при сохранении"""
+        # Проверяем, изменился ли файл
+        file_changed = False
+        old_sha256 = None
+
+        if change:  # Это обновление существующего объекта
+            try:
+                old_obj = ImportedEstimateFile.objects.get(pk=obj.pk)
+                old_sha256 = old_obj.sha256
+            except ImportedEstimateFile.DoesNotExist:
+                pass
+
+        # Сохраняем объект
         super().save_model(request, obj, form, change)
 
-        # При первичном аплоаде обновляем метаданные
-        if obj.file and (not obj.sha256 or not obj.size_bytes or not obj.sheet_count):
+        # Обновляем метаданные при загрузке/замене файла
+        if obj.file and (not obj.sha256 or not obj.size_bytes):
             try:
                 with obj.file.open("rb") as f:
                     obj.size_bytes = obj.file.size or 0
-                    obj.sha256 = FileUtils.compute_sha256(f)
+                    new_sha256 = FileUtils.compute_sha256(f)
 
-                # Подсчет листов
-                from .utils import count_sheets_safely
+                    # Проверяем, изменился ли файл
+                    if old_sha256 and new_sha256 != old_sha256:
+                        file_changed = True
+                    elif not old_sha256:
+                        file_changed = True
 
-                obj.sheet_count = count_sheets_safely(obj.file.path)
+                    obj.sha256 = new_sha256
 
-                obj.save(update_fields=["size_bytes", "sha256", "sheet_count"])
+                obj.save(update_fields=["size_bytes", "sha256"])
             except Exception as e:
                 messages.warning(request, f"Не удалось обновить метаданные: {e}")
+                return
+
+        # Автоматический парсинг
+        if obj.file and (
+            not change or file_changed or not hasattr(obj, "parse_result")
+        ):
+            parse_service = ParseService()
+
+            try:
+                success = parse_service.parse_file(obj)
+
+                if success:
+                    # Обновляем sheet_count из результата парсинга
+                    if hasattr(obj, "parse_result") and obj.parse_result.data:
+                        sheet_count = obj.parse_result.data.get("file", {}).get(
+                            "sheets", 0
+                        )
+                        if sheet_count:
+                            obj.sheet_count = sheet_count
+                            obj.save(update_fields=["sheet_count"])
+
+                    messages.success(request, "✅ Файл успешно загружен и распарсен")
+                else:
+                    # Показываем ошибки из сервиса
+                    parse_service.add_messages_to_request(request)
+                    messages.warning(
+                        request,
+                        "⚠️ Файл сохранен, но парсинг завершился с ошибками. "
+                        "Попробуйте перепарсить позже.",
+                    )
+            except Exception as e:
+                messages.error(
+                    request,
+                    f"⚠️ Файл сохранен, но произошла ошибка при автопарсинге: {e!r}",
+                )
