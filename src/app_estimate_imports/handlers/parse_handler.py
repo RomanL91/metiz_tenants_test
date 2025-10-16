@@ -5,7 +5,6 @@
 ----------
 - Запуск парсинга загруженного файла и сохранение результата в JSON (ParseResult).
 - Пакетный парсинг выбранных файлов из списка в админке.
-- Выдача JSON пользователю для скачивания.
 - Материализация (создание сущностей сметы) на основе сохранённой разметки.
 
 Особенности
@@ -15,8 +14,6 @@
   * MaterializationService — материализация сметы из разметки.
 - Handler отвечает за получение объекта, сообщения пользователю и HTTP-ответы.
 """
-
-import json
 
 from django.urls import reverse
 from django.contrib import messages
@@ -74,29 +71,6 @@ class ParseHandler(BaseHandler):
                   - с ошибками: количество файлов, завершившихся с ошибкой.
         """
         return self.parse_service.parse_multiple_files(queryset)
-
-    def download_json(self, request: HttpRequest, pk: int) -> HttpResponse:
-        """
-        Отдаёт на скачивание JSON-результат парсинга.
-
-        Если ParseResult отсутствует — выводит предупреждение и перенаправляет назад.
-
-        :param request: Текущий HTTP-запрос.
-        :param pk: Первичный ключ импортированного файла.
-        :returns: HttpResponse с application/json (attachment) или redirect обратно.
-        """
-        obj = self.get_object_or_error(request, pk)
-        if not obj or not hasattr(obj, "parse_result"):
-            messages.warning(request, "JSON ещё не создан")
-            return self.redirect_back_or_change(request, obj)
-
-        payload = json.dumps(obj.parse_result.data, ensure_ascii=False, indent=2)
-        response = HttpResponse(payload, content_type="application/json; charset=utf-8")
-
-        safe_name = (obj.original_name or f"file_{obj.pk}").rsplit(".", 1)[0]
-        response["Content-Disposition"] = f'attachment; filename="{safe_name}.json"'
-
-        return response
 
     def materialize(self, request: HttpRequest, pk: int) -> HttpResponse:
         """

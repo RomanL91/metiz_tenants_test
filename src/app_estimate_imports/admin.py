@@ -87,7 +87,7 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
     search_fields = ("original_name", "sha256")
     readonly_fields = ("uploaded_at", "size_bytes", "sha256", "sheet_count")
     inlines = (ParseResultInline, ParseMarkupInline)
-    actions = ("parse_now", "generate_markup_skeleton", "create_estimate_from_markup")
+    actions = ("parse_now", "create_estimate_from_markup")
 
     # --- Методы отображения ---
 
@@ -110,33 +110,14 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
         """Генерирует кнопки действий"""
         buttons = []
 
-        # # Кнопка "Распарсить" - оставляем для возможности ре-парсинга
-        # buttons.append(
-        #     format_html(
-        #         '<a class="button" href="{}">Перепарсить</a>', f"./{obj.pk}/parse/"
-        #     )
-        # )
-
         if hasattr(obj, "parse_result"):
             buttons.extend(
                 [
-                    format_html(
-                        '<a class="button" href="{}">Сгенерировать разметку</a>',
-                        f"./{obj.pk}/generate-markup/",
-                    ),
-                    format_html(
-                        '<a class="button" href="{}">Разметить</a>',
-                        f"./{obj.pk}/labeler/",
-                    ),
                     format_html(
                         '<a class="button" href="{}">График</a>', f"./{obj.pk}/graph/"
                     ),
                     format_html(
                         '<a class="button" href="{}">Таблица</a>', f"./{obj.pk}/grid/"
-                    ),
-                    format_html(
-                        '<a class="button" href="{}">Скачать JSON</a>',
-                        f"./{obj.pk}/download-json/",
                     ),
                 ]
             )
@@ -167,23 +148,6 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 name="imports_parse",
             ),
             path(
-                "<int:pk>/generate-markup/",
-                self.admin_site.admin_view(
-                    self._delegate("markup", "generate_skeleton")
-                ),
-                name="imports_generate_markup",
-            ),
-            path(
-                "<int:pk>/labeler/",
-                self.admin_site.admin_view(self._delegate("markup", "show_labeler")),
-                name="imports_labeler",
-            ),
-            path(
-                "<int:pk>/set-label/",
-                self.admin_site.admin_view(self._delegate("markup", "set_label")),
-                name="imports_set_label",
-            ),
-            path(
                 "<int:pk>/compose/",
                 self.admin_site.admin_view(self._delegate("compose", "show_compose")),
                 name="imports_compose",
@@ -203,27 +167,7 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self._delegate("parse", "materialize")),
                 name="imports_materialize",
             ),
-            path(
-                "<int:pk>/download-json/",
-                self.admin_site.admin_view(self._delegate("parse", "download_json")),
-                name="imports_download_json",
-            ),
-            path(
-                "<int:pk>/uids/",
-                self.admin_site.admin_view(self._delegate("markup", "show_uids")),
-                name="imports_uids",
-            ),
             # API endpoints
-            path(
-                "<int:pk>/api/set-label/",
-                self.admin_site.admin_view(self._delegate("api", "set_label_api")),
-                name="imports_api_set_label",
-            ),
-            path(
-                "<int:pk>/api/attach-members/",
-                self.admin_site.admin_view(self._delegate("api", "attach_members_api")),
-                name="imports_api_attach_members",
-            ),
             path(
                 "<int:pk>/api/save-schema/",
                 self.admin_site.admin_view(self._delegate("api", "save_schema_api")),
@@ -320,6 +264,36 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
 
     create_estimate_from_markup.short_description = "Создать смету из разметки"
 
+    # --- Редиректы после сохранения ---
+
+    def response_add(self, request, obj, post_url_continue=None):
+        """
+        Переопределяет редирект после создания нового объекта.
+
+        После загрузки файла всегда перенаправляет на таблицу для работы с данными.
+        """
+        if obj.file:
+            # Файл загружен - идём на таблицу (парсинг уже выполнен в save_model)
+            # Из /add/ нужно подняться на уровень вверх: ../{pk}/grid/
+            return HttpResponseRedirect(f"../{obj.pk}/grid/")
+
+        # Стандартное поведение для случаев без файла (не должно происходить в норме)
+        return super().response_add(request, obj, post_url_continue)
+
+    def response_change(self, request, obj):
+        """
+        Переопределяет редирект после изменения существующего объекта.
+
+        После сохранения всегда перенаправляет на таблицу для работы с данными.
+        """
+        if obj.file:
+            # Файл есть - идём на таблицу (парсинг выполнен в save_model при необходимости)
+            # Из /{pk}/change/ переходим в /{pk}/grid/
+            return HttpResponseRedirect(f"../grid/")
+
+        # Стандартное поведение для случаев без файла
+        return super().response_change(request, obj)
+
     # --- Сохранение модели ---
 
     def save_model(self, request, obj: ImportedEstimateFile, form, change):
@@ -358,10 +332,13 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 messages.warning(request, f"Не удалось обновить метаданные: {e}")
                 return
 
-        # Автоматический парсинг
-        if obj.file and (
+        # ОБЯЗАТЕЛЬНЫЙ автоматический парсинг
+        # Парсим в случаях: новый файл, изменён файл, или нет результата
+        should_parse = obj.file and (
             not change or file_changed or not hasattr(obj, "parse_result")
-        ):
+        )
+
+        if should_parse:
             parse_service = ParseService()
 
             try:
@@ -390,4 +367,20 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 messages.error(
                     request,
                     f"⚠️ Файл сохранен, но произошла ошибка при автопарсинге: {e!r}",
+                )
+
+        # Гарантируем наличие ParseResult для редиректа на /grid/
+        # Если по какой-то причине ParseResult нет - создаём принудительно
+        if obj.file and not hasattr(obj, "parse_result"):
+            messages.info(
+                request, "Запуск принудительного парсинга для создания данных..."
+            )
+            parse_service = ParseService()
+            try:
+                parse_service.parse_file(obj)
+            except Exception as e:
+                messages.error(
+                    request,
+                    f"⚠️ Не удалось создать ParseResult: {e!r}. "
+                    "Таблица может быть недоступна.",
                 )

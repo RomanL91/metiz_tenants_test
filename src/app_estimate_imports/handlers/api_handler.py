@@ -2,8 +2,8 @@
 REST API endpoints для использования в окружении админки.
 
 Назначение модуля:
-- Предоставляет набор HTTP-эндпоинтов (JSON) для операций разметки и группировки,
-  которые вызываются из UI в админке (через fetch/AJAX).
+- Предоставляет набор HTTP-эндпоинтов (JSON) для операций со схемой колонок
+  и группировки строк, которые вызываются из UI в админке (через fetch/AJAX).
 - Все обработчики наследуются от BaseHandler и потому имеют доступ к доменным
   сервисам (MarkupService, SchemaService, GroupService) и вспомогательным методам.
 """
@@ -18,70 +18,6 @@ from app_estimate_imports.services.color_group_service import ColorGroupService
 
 class ApiHandler(BaseHandler):
     """Обработчик API endpoints"""
-
-    def set_label_api(self, request: HttpRequest, pk: int) -> HttpResponse:
-        """
-        API для установки меток (labels) на узлы.
-
-        Ожидаемый JSON-payload в теле запроса:
-        {
-            "uid": "<идентификатор узла>",
-            "label": "<значение метки, например TECH_CARD/WORK/MATERIAL/GROUP>",
-            "title": "<необязательное человекочитаемое название>"
-        }
-
-        :param request: текущий HttpRequest
-        :param pk: первичный ключ импортированного файла
-        :return: JSON {"ok": true} при успехе или {"ok": false, "error": "..."} при ошибке
-        """
-        obj = self.get_object_or_error(request, pk)
-        if not obj:
-            return self._error_response("file_not_found", 404)
-
-        try:
-            # Разбираем JSON из тела запроса (UTF-8)
-            payload = json.loads(request.body.decode("utf-8"))
-            uid = payload["uid"]
-            label = payload["label"]
-            title = payload.get("title", "")
-
-            # Делегируем доменной логике
-            self.markup_service.set_label(obj, uid, label, title)
-            return self._success_response()
-        except Exception as e:
-            # Любая ошибка сериализуется как текст в "error"
-            # Такое себе решение, но пока лучше, чем ничего
-            return self._error_response(str(e), 400)
-
-    def attach_members_api(self, request: HttpRequest, pk: int) -> HttpResponse:
-        """
-        API для привязки членов техкарты (WORK/MATERIAL к TECH_CARD).
-
-        Ожидаемый JSON-payload:
-        {
-            "tc_uid": "<uid техкарты>",
-            "works": ["<uid>", ...],       // опционально
-            "materials": ["<uid>", ...]    // опционально
-        }
-
-        :param request: текущий HttpRequest
-        :param pk: первичный ключ импортированного файла
-        :return: JSON {"ok": true} при успехе или {"ok": false, "error": "..."} при ошибке
-        """
-        obj = self.get_object_or_error(request, pk)
-        if not obj:
-            return self._error_response("file_not_found", 404)
-
-        try:
-            payload = json.loads(request.body.decode("utf-8"))
-            tc_uid = payload["tc_uid"]
-            works = payload.get("works", [])
-            materials = payload.get("materials", [])
-
-            self.markup_service.set_tech_card_members(obj, tc_uid, works, materials)
-            return self._success_response()
-        except Exception as e:
-            return self._error_response(str(e), 400)
 
     def save_schema_api(self, request: HttpRequest, pk: int) -> HttpResponse:
         """
@@ -290,7 +226,6 @@ class ApiHandler(BaseHandler):
             "message": str (опционально)
         }
         """
-        # Используем правильный метод из BaseHandler
         obj = self.get_object_or_error(request, pk)
         if not obj:
             return self._error_response("file_not_found", 404)
