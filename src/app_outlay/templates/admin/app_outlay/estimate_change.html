@@ -95,6 +95,9 @@
       <button type="button" id="btn-save-mappings" class="button default" style="margin-left: 8px;">
         💾 Сохранить расчеты
       </button>
+      <button type="button" id="btn-export-excel" class="button" style="margin-left: 8px; background: #28a745; color: white;">
+        📥 Скачать файл с расчетами
+      </button>
       <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
     </div>
 
@@ -745,6 +748,28 @@
             
             adminForm.submit();
           }
+        });
+      }
+      // ========== ЭКСПОРТ В EXCEL ==========
+      const btnExportExcel = document.getElementById('btn-export-excel');
+      if (btnExportExcel) {
+        btnExportExcel.addEventListener('click', () => {
+          // Формируем URL для экспорта
+          const exportUrl = window.location.pathname.replace(/\/change\/?$/, '/api/export-excel/');
+          
+          // Показываем индикатор загрузки
+          statusSpan.textContent = '⏳ Формирование файла...';
+          statusSpan.style.color = '#666';
+          btnExportExcel.disabled = true;
+          
+          // Переходим на URL экспорта (файл скачается автоматически)
+          window.location.href = exportUrl;
+          
+          // Через 2 секунды убираем индикатор
+          setTimeout(() => {
+            statusSpan.textContent = '';
+            btnExportExcel.disabled = false;
+          }, 2000);
         });
       }
     })();

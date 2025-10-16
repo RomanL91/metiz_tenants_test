@@ -371,11 +371,478 @@ class EstimateAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.api_save_mappings),
                 name="estimate_save_mappings",
             ),
+            path(
+                "<path:object_id>/api/export-excel/",
+                self.admin_site.admin_view(self.api_export_excel),
+                name="estimate_export_excel",
+            ),
         ]
         return custom + urls
 
     # ---------- ENDPOINTS: ... ----------
     # также лучше вынести из модуля, например во view|contrillers etc
+
+    def api_export_excel(self, request, object_id: str):
+        """
+        Экспорт сметы с расчетами обратно в Excel.
+        С детальным выводом через print() для отладки.
+        """
+        from openpyxl import load_workbook
+        from openpyxl.styles import numbers
+        from django.http import HttpResponse
+        from decimal import Decimal
+        import tempfile
+        import os
+
+        print("\n" + "=" * 80)
+        print(f"========== НАЧАЛО ЭКСПОРТА СМЕТЫ #{object_id} ==========")
+        print("=" * 80)
+
+        # Получаем смету
+        est = self.get_object(request, object_id)
+        if not est:
+            print("❌ ОШИБКА: Смета не найдена")
+            messages.error(request, "Смета не найдена")
+            return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+        print(f"✓ Смета найдена: {est.name}")
+
+        # Проверяем наличие исходного файла
+        if not est.source_file or not est.source_file.file:
+            print("❌ ОШИБКА: Исходный файл не найден")
+            messages.error(request, "Исходный файл не найден")
+            return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+        print(f"✓ Исходный файл: {est.source_file.original_name}")
+        print(f"  Путь: {est.source_file.file.path}")
+
+        # Проверяем наличие разметки
+        if not hasattr(est.source_file, "markup"):
+            print("❌ ОШИБКА: Разметка файла не найдена")
+            messages.error(request, "Разметка файла не найдена")
+            return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+        print("✓ Разметка найдена")
+
+        try:
+            markup = est.source_file.markup
+            sheet_index = est.source_sheet_index or 0
+            print(f"✓ Индекс листа: {sheet_index}")
+
+            # Получаем схему колонок из разметки
+            try:
+                from app_estimate_imports.services.schema_service import (
+                    SchemaService as _SS,
+                )
+
+                col_roles, _, _ = _SS().read_sheet_schema(markup, sheet_index)
+                print("✓ Схема колонок получена через SchemaService")
+            except Exception as e:
+                print(f"⚠ SchemaService не сработал: {e}")
+                print("  Используем fallback из annotation")
+                schema = (
+                    (markup.annotation or {})
+                    .get("schema", {})
+                    .get("sheets", {})
+                    .get(str(sheet_index), {})
+                )
+                col_roles = schema.get("col_roles") or []
+                print("✓ Схема колонок получена из annotation")
+
+            print(f"\n📊 Всего колонок в схеме: {len(col_roles)}")
+            print(f"📊 Первые 25 ролей: {col_roles[:25]}")
+
+            if not col_roles:
+                print("❌ ОШИБКА: Не удалось определить структуру колонок")
+                messages.error(request, "Не удалось определить структуру колонок")
+                return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+            # Загружаем Excel файл
+            xlsx_path = est.source_file.file.path
+            print(f"\n📂 Загрузка Excel: {xlsx_path}")
+
+            wb = load_workbook(xlsx_path)
+            print(f"✓ Файл загружен, листов: {len(wb.worksheets)}")
+
+            try:
+                ws = wb.worksheets[sheet_index]
+                print(f"✓ Выбран лист: '{ws.title}'")
+            except IndexError:
+                ws = wb.active
+                print(
+                    f"⚠ Индекс {sheet_index} не найден, используем активный: '{ws.title}'"
+                )
+
+            print(f"✓ Размер листа: {ws.max_row} строк × {ws.max_column} колонок")
+
+            # ========== ПОДГОТОВКА КОНТЕКСТА НР ==========
+            print("\n" + "-" * 80)
+            print("💰 НАКЛАДНЫЕ РАСХОДЫ")
+            print("-" * 80)
+
+            overhead_context = None
+            overhead_links = est.overhead_cost_links.filter(
+                is_active=True
+            ).select_related("overhead_cost_container")
+
+            print(f"Найдено активных НР: {overhead_links.count()}")
+
+            if overhead_links.exists():
+                total_overhead = Decimal("0")
+                weighted_mat_pct = Decimal("0")
+                weighted_work_pct = Decimal("0")
+
+                for link in overhead_links:
+                    amount = (
+                        link.snapshot_total_amount
+                        or link.overhead_cost_container.total_amount
+                    )
+                    mat_pct = (
+                        link.snapshot_materials_percentage
+                        or link.overhead_cost_container.materials_percentage
+                    )
+                    work_pct = (
+                        link.snapshot_works_percentage
+                        or link.overhead_cost_container.works_percentage
+                    )
+
+                    print(f"  • {link.overhead_cost_container.name}")
+                    print(f"    Сумма: {amount}, МАТ: {mat_pct}%, РАБ: {work_pct}%")
+
+                    total_overhead += amount
+                    weighted_mat_pct += mat_pct * amount
+                    weighted_work_pct += work_pct * amount
+
+                if total_overhead > 0:
+                    avg_mat_pct = weighted_mat_pct / total_overhead
+                    avg_work_pct = weighted_work_pct / total_overhead
+                else:
+                    avg_mat_pct = Decimal("0")
+                    avg_work_pct = Decimal("0")
+
+                print(f"\n📈 ИТОГО НР: {total_overhead}")
+                print(f"   Средневзвешенный МАТ%: {avg_mat_pct:.2f}")
+                print(f"   Средневзвешенный РАБ%: {avg_work_pct:.2f}")
+
+                # Рассчитываем общую базу из сохраненных ТК
+                from app_outlay.utils_calc import _base_costs_live, _dec
+
+                total_base_mat = Decimal("0")
+                total_base_work = Decimal("0")
+
+                tc_links = GroupTechnicalCardLink.objects.filter(
+                    group__estimate=est
+                ).select_related("technical_card_version")
+
+                print(f"\n🔢 Подсчет базы из {tc_links.count()} ТК:")
+
+                for idx, link in enumerate(tc_links[:5], 1):  # показываем первые 5
+                    ver = link.technical_card_version
+                    base = _base_costs_live(ver)
+                    link_base_mat = base.mat * _dec(link.quantity)
+                    link_base_work = base.work * _dec(link.quantity)
+                    total_base_mat += link_base_mat
+                    total_base_work += link_base_work
+
+                    print(f"  {idx}. {ver.card.name[:40]}")
+                    print(f"     МАТ: {base.mat} × {link.quantity} = {link_base_mat}")
+                    print(f"     РАБ: {base.work} × {link.quantity} = {link_base_work}")
+
+                if tc_links.count() > 5:
+                    print(f"  ... и еще {tc_links.count() - 5} ТК")
+                    # считаем остальные
+                    for link in tc_links[5:]:
+                        ver = link.technical_card_version
+                        base = _base_costs_live(ver)
+                        total_base_mat += base.mat * _dec(link.quantity)
+                        total_base_work += base.work * _dec(link.quantity)
+
+                print(f"\n📊 ОБЩАЯ БАЗА:")
+                print(f"   МАТ: {total_base_mat}")
+                print(f"   РАБ: {total_base_work}")
+                print(f"   ВСЕГО: {total_base_mat + total_base_work}")
+
+                overhead_context = {
+                    "total_base_mat": total_base_mat,
+                    "total_base_work": total_base_work,
+                    "overhead_amount": total_overhead,
+                    "overhead_mat_pct": avg_mat_pct,
+                    "overhead_work_pct": avg_work_pct,
+                }
+                print("✓ Контекст НР создан")
+            else:
+                print("ℹ НР не используются")
+
+            # ========== ПОЛУЧАЕМ ВСЕ СОПОСТАВЛЕНИЯ ==========
+            print("\n" + "-" * 80)
+            print("🔗 СОПОСТАВЛЕНИЯ ТК")
+            print("-" * 80)
+
+            mappings = {}  # {row_index: {tc_version, quantity}}
+
+            all_links = GroupTechnicalCardLink.objects.filter(
+                group__estimate=est
+            ).select_related("technical_card_version", "technical_card_version__card")
+
+            print(f"Всего связей ТК в смете: {all_links.count()}")
+
+            links_with_row = 0
+            links_without_row = 0
+
+            for link in all_links:
+                if link.source_row_index:
+                    mappings[link.source_row_index] = {
+                        "tc_version": link.technical_card_version,
+                        "quantity": link.quantity,
+                    }
+                    links_with_row += 1
+                    if links_with_row <= 10:  # показываем первые 10
+                        print(
+                            f"  ✓ Строка {link.source_row_index}: {link.technical_card_version.card.name[:40]} × {link.quantity}"
+                        )
+                else:
+                    links_without_row += 1
+                    if links_without_row <= 3:
+                        print(
+                            f"  ⚠ БЕЗ row_index: {link.technical_card_version.card.name[:40]}"
+                        )
+
+            if links_with_row > 10:
+                print(f"  ... и еще {links_with_row - 10} сопоставлений")
+
+            if links_without_row > 3:
+                print(f"  ... и еще {links_without_row - 3} без row_index")
+
+            print(f"\n📊 Итого:")
+            print(f"   С row_index: {links_with_row}")
+            print(f"   Без row_index: {links_without_row}")
+
+            if not mappings:
+                print("\n❌ НЕТ СОПОСТАВЛЕНИЙ ДЛЯ ЭКСПОРТА!")
+                messages.warning(
+                    request,
+                    "⚠️ Нет сопоставлений для экспорта. Сначала выполните сопоставление и сохраните.",
+                )
+                wb.close()
+                return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+            # ========== ЗАПОЛНЯЕМ EXCEL ==========
+            print("\n" + "-" * 80)
+            print("📝 ЗАПОЛНЕНИЕ EXCEL")
+            print("-" * 80)
+
+            updated_count = 0
+
+            # Создаем маппинг роль -> индекс колонки
+            role_to_col = {}
+            target_roles = [
+                "QTY",
+                "UNIT_PRICE_OF_MATERIAL",
+                "UNIT_PRICE_OF_WORK",
+                "UNIT_PRICE_OF_MATERIALS_AND_WORKS",
+                "PRICE_FOR_ALL_MATERIAL",
+                "PRICE_FOR_ALL_WORK",
+                "TOTAL_PRICE",
+            ]
+
+            for idx, role in enumerate(col_roles):
+                if role in target_roles:
+                    role_to_col[role] = idx
+                    col_letter = chr(65 + idx) if idx < 26 else f"A{chr(65 + idx - 26)}"
+                    print(f"  📌 Колонка {idx} ({col_letter}): {role}")
+
+            print(f"\n✓ Найдено колонок для заполнения: {len(role_to_col)}")
+
+            if not role_to_col:
+                print("❌ НЕТ РАЗМЕЧЕННЫХ КОЛОНОК ДЛЯ ЗАПИСИ!")
+                messages.error(request, "❌ Нет размеченных колонок для записи данных")
+                wb.close()
+                return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+            # Проходим по всем сопоставлениям
+            print(f"\n🔄 Обработка {len(mappings)} сопоставлений:\n")
+
+            for idx, (row_index, mapping) in enumerate(mappings.items(), 1):
+                tc_version = mapping["tc_version"]
+                quantity = mapping["quantity"]
+
+                print(f"{idx}. СТРОКА {row_index} {'='*60}")
+                print(f"   ТК: {tc_version.card.name}")
+                print(f"   ID карточки: {tc_version.card_id}")
+                print(f"   Количество: {quantity}")
+
+                if "QTY" in role_to_col:
+                    col_idx = role_to_col["QTY"]
+                    excel_row = row_index
+                    excel_col = col_idx + 1
+
+                    col_letter = (
+                        chr(65 + col_idx)
+                        if col_idx < 26
+                        else f"A{chr(65 + col_idx - 26)}"
+                    )
+                    cell_address = f"{col_letter}{excel_row}"
+
+                    try:
+                        cell = ws.cell(row=excel_row, column=excel_col)
+                        old_qty = cell.value
+
+                        # Записываем количество как число
+                        cell.value = float(quantity)
+                        cell.number_format = "#,##0.000"
+
+                        print(
+                            f"   📊 {cell_address} (QTY): {old_qty} → {float(quantity):.3f}"
+                        )
+                    except Exception as e:
+                        print(f"   ❌ Ошибка записи количества в {cell_address}: {e}")
+
+                # Вызываем расчет с НР
+                try:
+                    calc, _ = calc_for_tc(
+                        tc_version.card_id, quantity, overhead_context=overhead_context
+                    )
+                    print(f"   ✓ Расчет выполнен:")
+                    for key, val in calc.items():
+                        print(f"      {key}: {val}")
+                except Exception as e:
+                    print(f"   ❌ ОШИБКА РАСЧЕТА: {e}")
+                    import traceback
+
+                    print(traceback.format_exc())
+                    continue
+
+                # Записываем значения в соответствующие колонки
+                cells_written = 0
+                for role, value in calc.items():
+                    if role in role_to_col:
+                        col_idx = role_to_col[role]
+                        excel_row = row_index
+                        excel_col = col_idx + 1
+
+                        col_letter = (
+                            chr(65 + col_idx)
+                            if col_idx < 26
+                            else f"A{chr(65 + col_idx - 26)}"
+                        )
+                        cell_address = f"{col_letter}{excel_row}"
+
+                        try:
+                            cell = ws.cell(row=excel_row, column=excel_col)
+                            old_value = cell.value
+
+                            # Записываем значение как число
+                            cell.value = float(value)
+                            cell.number_format = "#,##0.000"
+
+                            print(
+                                f"      ✓ {cell_address}: {old_value} → {float(value):.3f}"
+                            )
+                            cells_written += 1
+
+                        except Exception as e:
+                            print(f"      ❌ Ошибка записи в {cell_address}: {e}")
+
+                if cells_written > 0:
+                    updated_count += 1
+                    print(f"   ✓ Записано ячеек: {cells_written}")
+                else:
+                    print(f"   ⚠ НИ ОДНОЙ ЯЧЕЙКИ НЕ ЗАПИСАНО!")
+
+                print()  # пустая строка между записями
+
+                # Показываем только первые 5 детально
+                if idx >= 5 and len(mappings) > 5:
+                    print(
+                        f"... обрабатываются остальные {len(mappings) - 5} строк ...\n"
+                    )
+                    # обрабатываем остальные без детального вывода
+                    for row_index2, mapping2 in list(mappings.items())[5:]:
+                        tc_version2 = mapping2["tc_version"]
+                        quantity2 = mapping2["quantity"]
+                        try:
+                            calc2, _ = calc_for_tc(
+                                tc_version2.card_id,
+                                quantity2,
+                                overhead_context=overhead_context,
+                            )
+                            for role, value in calc2.items():
+                                if role in role_to_col:
+                                    col_idx = role_to_col[role]
+                                    excel_row = row_index2
+                                    excel_col = col_idx + 1
+                                    cell = ws.cell(row=excel_row, column=excel_col)
+                                    cell.value = float(value)
+                                    cell.number_format = "#,##0.000"
+                            updated_count += 1
+                        except Exception as e:
+                            print(f"   ❌ Ошибка в строке {row_index2}: {e}")
+                    break
+
+            print("\n" + "=" * 80)
+            print(f"✅ ИТОГО ОБРАБОТАНО СТРОК: {updated_count} из {len(mappings)}")
+            print("=" * 80)
+
+            # ========== СОХРАНЯЕМ ФАЙЛ ==========
+            print("\n💾 Сохранение файла...")
+
+            temp_dir = tempfile.gettempdir()
+            original_name = os.path.splitext(est.source_file.original_name)[0]
+            output_filename = f"{original_name}_calculated.xlsx"
+            temp_path = os.path.join(temp_dir, output_filename)
+
+            print(f"   Временный путь: {temp_path}")
+
+            wb.save(temp_path)
+            print(f"   ✓ Файл сохранен")
+
+            wb.close()
+            print(f"   ✓ Workbook закрыт")
+
+            # Читаем и отправляем
+            with open(temp_path, "rb") as f:
+                file_content = f.read()
+                file_size = len(file_content)
+                print(f"   ✓ Размер: {file_size:,} байт")
+
+                response = HttpResponse(
+                    file_content,
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{output_filename}"'
+                )
+
+            # Удаляем временный файл
+            try:
+                os.unlink(temp_path)
+                print(f"   ✓ Временный файл удален")
+            except Exception as e:
+                print(f"   ⚠ Не удалось удалить временный файл: {e}")
+
+            messages.success(
+                request,
+                f"✅ Экспорт выполнен успешно! Обновлено строк: {updated_count}",
+            )
+
+            print("\n" + "=" * 80)
+            print("✅ ЭКСПОРТ ЗАВЕРШЕН УСПЕШНО")
+            print("=" * 80 + "\n")
+
+            return response
+
+        except Exception as e:
+            import traceback
+
+            error_details = traceback.format_exc()
+            print("\n" + "=" * 80)
+            print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА ЭКСПОРТА ❌❌❌")
+            print("=" * 80)
+            print(f"Ошибка: {e}")
+            print(error_details)
+            print("=" * 80 + "\n")
+            messages.error(request, f"Ошибка экспорта: {e!r}")
+            return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
     def api_calc(self, request, object_id: str):
         """
