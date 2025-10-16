@@ -13,14 +13,14 @@ from app_estimate_imports.services.materialization_service import Materializatio
 from app_estimate_imports.services.parse_service import ParseService
 
 
-class ParseMarkupInline(admin.StackedInline):
+class ParseMarkupInline(admin.TabularInline):
     """Инлайн для просмотра JSON разметки"""
 
     model = ParseMarkup
     can_delete = False
     extra = 0
     readonly_fields = ("updated_at", "annotation_pretty")
-    fields = ("annotation", "updated_at", "annotation_pretty")
+    fields = ("updated_at", "annotation_pretty")
 
     def annotation_pretty(self, instance: ParseMarkup):
         if not instance or not instance.annotation:
@@ -37,14 +37,14 @@ class ParseMarkupInline(admin.StackedInline):
     annotation_pretty.short_description = "Просмотр JSON разметки"
 
 
-class ParseResultInline(admin.StackedInline):
+class ParseResultInline(admin.TabularInline):
     """Инлайн для просмотра результатов парсинга"""
 
     model = ParseResult
     can_delete = False
     extra = 0
-    readonly_fields = ("estimate_name", "created_at", "pretty_json")
-    fields = ("estimate_name", "created_at", "pretty_json")
+    readonly_fields = ("created_at", "pretty_json")
+    fields = ("created_at", "pretty_json")
 
     def has_add_permission(self, request, obj=None) -> bool:
         return False
@@ -74,20 +74,20 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
 
     # Конфигурация отображения
     list_display = (
-        "id",
+        # "id",
         "original_name",
-        "size_kb",
+        "actions_col",
         "sheet_count",
+        "size_kb",
         "uploaded_at",
         "sha256_short",
-        "has_result",
-        "actions_col",
     )
-    list_display_links = ("id", "original_name")
+    list_display_links = ("original_name",)
     search_fields = ("original_name", "sha256")
     readonly_fields = ("uploaded_at", "size_bytes", "sha256", "sheet_count")
     inlines = (ParseResultInline, ParseMarkupInline)
     actions = ("parse_now", "create_estimate_from_markup")
+    date_hierarchy = "uploaded_at"
 
     # --- Методы отображения ---
 
@@ -100,11 +100,6 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
         return (obj.sha256 or "")[:12] + "…" if obj.sha256 else "—"
 
     sha256_short.short_description = "SHA256"
-
-    def has_result(self, obj: ImportedEstimateFile) -> str:
-        return "✅" if hasattr(obj, "parse_result") else "—"
-
-    has_result.short_description = "JSON"
 
     def actions_col(self, obj):
         """Генерирует кнопки действий"""
