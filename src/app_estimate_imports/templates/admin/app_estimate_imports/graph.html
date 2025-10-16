@@ -3,13 +3,143 @@
 
 {% block extrastyle %}
 <style>
-  .graph-toolbar { margin:0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  #cy { width:100%; height: calc(100vh - 240px); border:1px solid #e0e0e0; border-radius:4px; background:#fafafa; }
-  .legend { font-size:12px; color:#555; display:flex; gap:16px; align-items:center; }
-  .chip { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ddd; background:#fff; }
-  .info { margin-top:8px; font-size:12px; color:#666; }
-  .sidepanel { padding:8px 10px; border:1px solid #e0e0e0; border-radius:4px; background:#fff; }
-  .muted { color:#888; }
+  .graph-container { display: flex; gap: 12px; height: calc(100vh - 200px); }
+  .graph-main { flex: 1; display: flex; flex-direction: column; }
+  .graph-toolbar { margin:0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#f8f8f8; padding:10px; border-radius:4px; }
+  .control-panel { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px 0; }
+  .control-group { display:flex; gap:4px; align-items:center; border-right:1px solid #ddd; padding-right:8px; margin-right:4px; }
+  .control-group:last-child { border-right:none; }
+  
+  #cy { flex:1; border:1px solid #e0e0e0; border-radius:4px; background:#fafafa; }
+  
+  .sidepanel { 
+    width: 280px; 
+    border:1px solid #e0e0e0; 
+    border-radius:4px; 
+    background:#fff; 
+    padding:12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sidepanel-hidden { display: none; }
+  .panel-section { 
+    border-bottom: 1px solid #e0e0e0; 
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+  .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
+  .panel-title { font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; }
+  .panel-item { font-size: 12px; color: #555; margin: 4px 0; }
+  .panel-label { color: #888; display: inline-block; min-width: 70px; }
+  .panel-value { color: #212121; font-weight: 500; }
+  .breadcrumbs { 
+    font-size: 11px; 
+    color: #666; 
+    padding: 6px 8px; 
+    background: #f5f5f5; 
+    border-radius: 3px;
+    word-break: break-word;
+  }
+  
+  .legend { font-size:12px; color:#555; display:flex; gap:12px; align-items:center; }
+  .chip { 
+    display:inline-flex; 
+    align-items:center;
+    gap:4px;
+    padding:4px 10px; 
+    border-radius:999px; 
+    border:1px solid #ddd; 
+    background:#fff;
+    font-size:11px;
+  }
+  .chip-icon { font-style: normal; }
+  
+  .btn { 
+    padding: 6px 12px; 
+    border: 1px solid #ddd; 
+    background: #fff; 
+    border-radius: 3px; 
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: #f5f5f5; border-color: #999; }
+  .btn:active { background: #e8e8e8; }
+  .btn-icon { padding: 6px 8px; }
+  
+  .filter-group { 
+    display: flex; 
+    gap: 8px; 
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-checkboxes {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+  
+  .stats { 
+    background: #e3f2fd; 
+    padding: 8px 12px; 
+    border-radius: 4px;
+    font-size: 12px;
+    color: #1565c0;
+  }
+  .stats-item { margin: 2px 0; }
+  
+  .info { margin-top:8px; font-size:12px; color:#666; padding:8px; background:#f9f9f9; border-radius:4px; }
+  
+  /* Slider стили */
+  input[type="range"] {
+    width: 120px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #ddd;
+    outline: none;
+    border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #417690;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #417690;
+    cursor: pointer;
+    border-radius: 50%;
+    border: none;
+  }
+  
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .slider-label {
+    font-size: 11px;
+    color: #666;
+  }
+  .slider-value {
+    font-size: 11px;
+    color: #417690;
+    font-weight: 500;
+  }
 </style>
 {% endblock %}
 
@@ -28,27 +158,119 @@
       </select>
     </label>
 
-    <a class="button" id="btn-reload">Перестроить</a>
+    <button class="btn" id="btn-reload">🔄 Перестроить</button>
 
     <label>Макет:&nbsp;
       <select id="layout">
-        <option value="dagre" selected>Иерархический (TB)</option>
+        <option value="dagre" selected>Иерархический (dagre)</option>
         <option value="cose">Силовой (CoSE)</option>
       </select>
     </label>
+    
+    <label id="direction-group">Направление:&nbsp;
+      <select id="direction">
+        <option value="TB" selected>Сверху вниз (TB)</option>
+        <option value="LR">Слева направо (LR)</option>
+        <option value="BT">Снизу вверх (BT)</option>
+        <option value="RL">Справа налево (RL)</option>
+      </select>
+    </label>
 
-    <label>Фильтр:&nbsp;<input type="text" id="filter" placeholder="поиск по метке" style="width:220px"></label>
-
-    <span class="legend" style="margin-left:auto;">
-      <span class="chip">Группа</span>
-      <span class="chip">ТК</span>
-    </span>
+    <button class="btn" id="btn-toggle-panel">📊 Панель</button>
   </div>
 
-  <div id="cy"></div>
+  <div class="control-panel">
+    <div class="control-group">
+      <button class="btn btn-icon" id="btn-zoom-in" title="Увеличить">🔍+</button>
+      <button class="btn btn-icon" id="btn-zoom-out" title="Уменьшить">🔍−</button>
+      <button class="btn btn-icon" id="btn-fit" title="По размеру">⛶</button>
+      <button class="btn btn-icon" id="btn-reset" title="Сброс">🔄</button>
+    </div>
+    
+    <div class="control-group filter-group">
+      <div class="filter-checkboxes">
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-groups" checked>
+          <span>📁 Группы</span>
+        </label>
+        <label class="filter-checkbox">
+          <input type="checkbox" id="filter-tc" checked>
+          <span>📋 ТК</span>
+        </label>
+      </div>
+      
+      <label style="font-size:12px;">
+        Глубина:
+        <select id="depth-filter">
+          <option value="all">Все</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5+</option>
+        </select>
+      </label>
+      
+      <input type="text" id="search-filter" placeholder="🔍 Поиск..." style="width:180px; padding:4px 8px; border:1px solid #ddd; border-radius:3px; font-size:12px;">
+    </div>
+    
+    <div class="control-group" id="spacing-controls" style="display:none;">
+      <div class="slider-group">
+        <label class="slider-label">Узлы: <span class="slider-value" id="node-sep-value">25</span></label>
+        <input type="range" id="node-sep" min="10" max="100" value="25">
+      </div>
+      <div class="slider-group">
+        <label class="slider-label">Ранги: <span class="slider-value" id="rank-sep-value">60</span></label>
+        <input type="range" id="rank-sep" min="30" max="150" value="60">
+      </div>
+    </div>
+  </div>
+
+  <div class="graph-container">
+    <div class="graph-main">
+      <div id="cy"></div>
+    </div>
+
+    <div class="sidepanel" id="sidepanel">
+      <div class="panel-section">
+        <div class="panel-title">📊 Статистика графа</div>
+        <div class="stats" id="stats">
+          <div class="stats-item">Загрузка...</div>
+        </div>
+      </div>
+
+      <div class="panel-section" id="node-info" style="display:none;">
+        <div class="panel-title">ℹ️ Информация об узле</div>
+        <div class="panel-item">
+          <span class="panel-label">Тип:</span>
+          <span class="panel-value" id="node-type">—</span>
+        </div>
+        <div class="panel-item">
+          <span class="panel-label">ID:</span>
+          <span class="panel-value" id="node-id">—</span>
+        </div>
+        <div class="panel-item" style="margin-top:8px;">
+          <span class="panel-label" style="display:block; margin-bottom:4px;">Название:</span>
+          <div class="panel-value" id="node-label" style="word-break:break-word;">—</div>
+        </div>
+        <div class="panel-item">
+          <span class="panel-label">Детей:</span>
+          <span class="panel-value" id="node-children">—</span>
+        </div>
+        <div class="panel-item" style="margin-top:8px;">
+          <span class="panel-label" style="display:block; margin-bottom:4px;">Путь:</span>
+          <div class="breadcrumbs" id="node-breadcrumbs">—</div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <button class="btn" style="width:100%;" id="btn-export">📸 Экспорт PNG</button>
+      </div>
+    </div>
+  </div>
 
   <div class="info">
-    Клик по узлу — подсветка соседей; двойной клик — центрировать. Выделение по фильтру скрывает остальные узлы/рёбра.
+    💡 <strong>Управление:</strong> Клик — выбор узла; Двойной клик — центрирование; Колесо мыши — масштаб; Перетаскивание — перемещение
   </div>
 </div>
 {% endblock %}
@@ -61,6 +283,38 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function(){
+  
+  /* =========================
+     PERSISTENCE
+     ========================= */
+  
+  function getStorageKey(suffix) {
+    const pk = window.location.pathname.match(/\/(\d+)\/graph/)?.[1];
+    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
+    return `graph_state_${pk}_${sheet}_${suffix}`;
+  }
+  
+  function saveState(key, value) {
+    try {
+      localStorage.setItem(getStorageKey(key), JSON.stringify(value));
+    } catch (e) {
+      console.warn('Не удалось сохранить состояние:', e);
+    }
+  }
+  
+  function loadState(key, defaultValue) {
+    try {
+      const stored = localStorage.getItem(getStorageKey(key));
+      return stored ? JSON.parse(stored) : defaultValue;
+    } catch (e) {
+      return defaultValue;
+    }
+  }
+  
+  /* =========================
+     NAVIGATION
+     ========================= */
+  
   function navigateWith(params){
     const base = window.location.pathname;
     const p = new URLSearchParams(window.location.search);
@@ -68,11 +322,16 @@ document.addEventListener('DOMContentLoaded', function(){
     const qs = p.toString();
     window.location.assign(qs ? (base + '?' + qs) : base);
   }
+  
   const sheetSel = document.getElementById('sheet');
   sheetSel?.addEventListener('change', e => navigateWith({sheet: e.target.value}));
 
   const API_URL = window.location.pathname.replace(/\/graph\/?$/, "/api/graph-data/");
 
+  /* =========================
+     CYTOSCAPE SETUP
+     ========================= */
+  
   let cy = cytoscape({
     container: document.getElementById('cy'),
     wheelSensitivity: 0.2,
@@ -88,8 +347,8 @@ document.addEventListener('DOMContentLoaded', function(){
           'color': '#212121',
           'font-size': 12,
           'padding': '8px',
-          'border-width': 1,
-          'border-color': '#9e9e9e'
+          'border-width': 2,
+          'border-color': '#5d4037'
         }
       },
       {
@@ -112,7 +371,7 @@ document.addEventListener('DOMContentLoaded', function(){
         selector: 'node[type="tc"]',
         style: {
           'shape': 'ellipse',
-          'background-color': 'data(color)',
+          'background-color': '#c8e6c9',
           'label': 'data(label)',
           'text-valign': 'center',
           'text-halign': 'center',
@@ -120,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function(){
           'font-size': 11,
           'padding': '4px',
           'border-width': 1,
-          'border-color': '#a5d6a7'
+          'border-color': '#81c784'
         }
       },
       {
@@ -133,82 +392,344 @@ document.addEventListener('DOMContentLoaded', function(){
           'curve-style': 'bezier'
         }
       },
-      { selector: '.faded', style: { 'opacity': 0.12 } },
+      { selector: '.faded', style: { 'opacity': 0.15 } },
+      { selector: '.hidden', style: { 'display': 'none' } },
       { selector: '.highlight', style: { 'line-color': '#607d8b', 'target-arrow-color': '#607d8b', 'width': 3 } },
-      { selector: 'node.selected', style: { 'border-color': '#37474f', 'border-width': 2 } }
+      { selector: 'node.selected', style: { 'border-color': '#f57c00', 'border-width': 3, 'z-index': 999 } }
     ]
   });
 
-  function layoutOptions(name){
-    const sheetDir = 'TB'; // можно сделать UI-переключатель TB/LR
+  /* =========================
+     LAYOUT
+     ========================= */
+  
+  function layoutOptions(){
+    const name = document.getElementById('layout').value;
+    const direction = document.getElementById('direction').value;
+    const nodeSep = parseInt(document.getElementById('node-sep').value, 10);
+    const rankSep = parseInt(document.getElementById('rank-sep').value, 10);
+    
     if (name === 'dagre') {
-      return { name: 'dagre', rankDir: sheetDir, nodeSep: 25, rankSep: 60, edgeSep: 10, padding: 20, fit: true, animate: false };
+      return { 
+        name: 'dagre', 
+        rankDir: direction, 
+        nodeSep: nodeSep, 
+        rankSep: rankSep, 
+        edgeSep: 10, 
+        padding: 20, 
+        fit: true, 
+        animate: false 
+      };
     }
     if (name === 'cose') {
-      return { name: 'cose', fit: true, animate: false, nodeOverlap: 10, nodeRepulsion: 800000, idealEdgeLength: 100 };
+      return { 
+        name: 'cose', 
+        fit: true, 
+        animate: false, 
+        nodeOverlap: 10, 
+        nodeRepulsion: 800000, 
+        idealEdgeLength: 100 
+      };
     }
     return { name: 'grid' };
   }
 
+  function runLayout(){
+    const name = document.getElementById('layout').value;
+    cy.layout(layoutOptions()).run();
+    saveState('layout', name);
+    saveState('direction', document.getElementById('direction').value);
+    saveState('nodeSep', document.getElementById('node-sep').value);
+    saveState('rankSep', document.getElementById('rank-sep').value);
+  }
+
+  /* =========================
+     DATA LOADING
+     ========================= */
+  
+  let graphData = { nodes: [], edges: [] };
+  
   async function loadGraph(){
     const sheet = new URLSearchParams(location.search).get('sheet') || '0';
     const resp = await fetch(`${API_URL}?sheet_index=${sheet}`);
     const data = await resp.json();
+    
     if (!data.ok){ 
       alert('Не удалось получить данные графа'); 
       console.error('Graph API error:', data);
-      
       return;
     }
 
+    graphData = data;
+    
     cy.elements().remove();
     const elements = []
       .concat((data.nodes || []).map(n => ({ data: n.data })))
       .concat((data.edges || []).map(e => ({ data: e.data })));
     cy.add(elements);
 
+    updateStats();
+    applyFilters();
     runLayout();
+    
+    // Восстанавливаем zoom/pan
+    const savedZoom = loadState('zoom', null);
+    const savedPan = loadState('pan', null);
+    if (savedZoom) cy.zoom(savedZoom);
+    if (savedPan) cy.pan(savedPan);
   }
 
-  function runLayout(){
-    const name = document.getElementById('layout').value;
-    cy.layout(layoutOptions(name)).run();
+  /* =========================
+     STATS
+     ========================= */
+  
+  function updateStats() {
+    const nodes = cy.nodes();
+    const groups = nodes.filter('[type="group"]').length;
+    const tcs = nodes.filter('[type="tc"]').length;
+    const roots = nodes.filter('[type="root"]').length;
+    
+    // Вычисляем максимальную глубину
+    let maxDepth = 0;
+    nodes.forEach(n => {
+      let depth = 0;
+      let current = n;
+      while (current.incomers('node').length > 0) {
+        depth++;
+        current = current.incomers('node')[0];
+      }
+      maxDepth = Math.max(maxDepth, depth);
+    });
+    
+    const leaves = nodes.filter(n => n.outdegree() === 0).length;
+    
+    document.getElementById('stats').innerHTML = `
+      <div class="stats-item"><strong>Узлов:</strong> ${nodes.length} (📁 ${groups}, 📋 ${tcs})</div>
+      <div class="stats-item"><strong>Глубина:</strong> ${maxDepth} ${maxDepth === 1 ? 'уровень' : 'уровней'}</div>
+      <div class="stats-item"><strong>Листьев:</strong> ${leaves}</div>
+      <div class="stats-item"><strong>Рёбер:</strong> ${cy.edges().length}</div>
+    `;
   }
 
-  // фильтр по подстроке
-  function applyFilter(){
-    const q = (document.getElementById('filter').value || '').trim().toLowerCase();
-    cy.elements().removeClass('faded');
-    if (!q) return;
-    const matched = cy.nodes().filter(n => (n.data('label') || '').toLowerCase().includes(q));
-    const neighborhood = matched.closedNeighborhood();
-    cy.elements().not(neighborhood).addClass('faded');
+  /* =========================
+     FILTERS
+     ========================= */
+  
+  function applyFilters() {
+    const showGroups = document.getElementById('filter-groups').checked;
+    const showTCs = document.getElementById('filter-tc').checked;
+    const depthFilter = document.getElementById('depth-filter').value;
+    const searchQuery = document.getElementById('search-filter').value.trim().toLowerCase();
+    
+    cy.elements().removeClass('faded hidden');
+    
+    // Фильтр по типу
+    if (!showGroups) {
+      cy.nodes('[type="group"]').addClass('hidden');
+    }
+    if (!showTCs) {
+      cy.nodes('[type="tc"]').addClass('hidden');
+    }
+    
+    // Фильтр по глубине
+    if (depthFilter !== 'all') {
+      const maxDepth = depthFilter === '5' ? 999 : parseInt(depthFilter, 10);
+      cy.nodes().forEach(n => {
+        let depth = 0;
+        let current = n;
+        while (current.incomers('node').length > 0) {
+          depth++;
+          current = current.incomers('node')[0];
+        }
+        if (depth > maxDepth) {
+          n.addClass('hidden');
+        }
+      });
+    }
+    
+    // Поисковый фильтр
+    if (searchQuery) {
+      const matched = cy.nodes().filter(n => {
+        const label = (n.data('label') || '').toLowerCase();
+        const id = (n.data('id') || '').toLowerCase();
+        return label.includes(searchQuery) || id.includes(searchQuery);
+      });
+      
+      if (matched.length > 0) {
+        const neighborhood = matched.closedNeighborhood();
+        cy.elements().not(neighborhood).addClass('faded');
+      }
+    }
+    
+    // Скрываем рёбра к скрытым узлам
+    cy.edges().forEach(edge => {
+      const source = edge.source();
+      const target = edge.target();
+      if (source.hasClass('hidden') || target.hasClass('hidden')) {
+        edge.addClass('hidden');
+      }
+    });
   }
 
-  // интерактив
+  /* =========================
+     NODE SELECTION
+     ========================= */
+  
+  function showNodeInfo(node) {
+    const nodeInfo = document.getElementById('node-info');
+    nodeInfo.style.display = 'block';
+    
+    const type = node.data('type');
+    const typeLabels = { 'root': '🏠 Корень', 'group': '📁 Группа', 'tc': '📋 ТК' };
+    
+    document.getElementById('node-type').textContent = typeLabels[type] || type;
+    document.getElementById('node-id').textContent = node.data('id') || '—';
+    document.getElementById('node-label').textContent = node.data('label') || '—';
+    
+    const children = node.outdegree();
+    document.getElementById('node-children').textContent = children;
+    
+    // Строим breadcrumbs
+    const path = [];
+    let current = node;
+    while (current) {
+      path.unshift(current.data('label') || current.data('id'));
+      const parents = current.incomers('node');
+      current = parents.length > 0 ? parents[0] : null;
+    }
+    document.getElementById('node-breadcrumbs').textContent = path.join(' → ');
+  }
+  
+  function hideNodeInfo() {
+    document.getElementById('node-info').style.display = 'none';
+  }
+
+  /* =========================
+     INTERACTIVITY
+     ========================= */
+  
   cy.on('tap', 'node', function(evt){
     const n = evt.target;
     cy.elements().removeClass('selected highlight');
     n.addClass('selected');
     n.connectedEdges().addClass('highlight');
     n.connectedEdges().connectedNodes().addClass('selected');
+    showNodeInfo(n);
   });
+  
   cy.on('tap', function(evt){
     if (evt.target === cy){
       cy.elements().removeClass('selected highlight');
+      hideNodeInfo();
     }
   });
+  
   cy.on('dbltap', 'node', function(evt){
     const n = evt.target;
-    cy.center(n);
-    cy.zoom({level: 1.0, renderedPosition: n.renderedPosition()});
+    cy.animate({
+      center: { eles: n },
+      zoom: 1.5,
+      duration: 300
+    });
+  });
+  
+  // Сохранение zoom/pan при изменениях
+  cy.on('zoom pan', function() {
+    saveState('zoom', cy.zoom());
+    saveState('pan', cy.pan());
   });
 
+  /* =========================
+     CONTROLS
+     ========================= */
+  
   document.getElementById('btn-reload').addEventListener('click', loadGraph);
-  document.getElementById('layout').addEventListener('change', runLayout);
-  document.getElementById('filter').addEventListener('input', applyFilter);
+  document.getElementById('layout').addEventListener('change', function() {
+    const isdagre = this.value === 'dagre';
+    document.getElementById('direction-group').style.display = isdagre ? 'inline' : 'none';
+    document.getElementById('spacing-controls').style.display = isdagre ? 'flex' : 'none';
+    runLayout();
+  });
+  document.getElementById('direction').addEventListener('change', runLayout);
+  
+  document.getElementById('btn-zoom-in').addEventListener('click', () => {
+    cy.zoom(cy.zoom() * 1.2);
+    cy.center();
+  });
+  
+  document.getElementById('btn-zoom-out').addEventListener('click', () => {
+    cy.zoom(cy.zoom() * 0.8);
+    cy.center();
+  });
+  
+  document.getElementById('btn-fit').addEventListener('click', () => {
+    cy.fit(null, 30);
+  });
+  
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    cy.elements().removeClass('selected highlight faded hidden');
+    hideNodeInfo();
+    cy.fit(null, 30);
+  });
+  
+  document.getElementById('btn-toggle-panel').addEventListener('click', () => {
+    const panel = document.getElementById('sidepanel');
+    panel.classList.toggle('sidepanel-hidden');
+  });
+  
+  document.getElementById('btn-export').addEventListener('click', () => {
+    const png = cy.png({ full: true, scale: 2 });
+    const link = document.createElement('a');
+    link.href = png;
+    link.download = `graph_${new Date().getTime()}.png`;
+    link.click();
+  });
+  
+  // Фильтры
+  document.getElementById('filter-groups').addEventListener('change', applyFilters);
+  document.getElementById('filter-tc').addEventListener('change', applyFilters);
+  document.getElementById('depth-filter').addEventListener('change', applyFilters);
+  
+  let searchTimeout;
+  document.getElementById('search-filter').addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(applyFilters, 300);
+  });
+  
+  // Слайдеры spacing
+  document.getElementById('node-sep').addEventListener('input', (e) => {
+    document.getElementById('node-sep-value').textContent = e.target.value;
+  });
+  document.getElementById('node-sep').addEventListener('change', runLayout);
+  
+  document.getElementById('rank-sep').addEventListener('input', (e) => {
+    document.getElementById('rank-sep-value').textContent = e.target.value;
+  });
+  document.getElementById('rank-sep').addEventListener('change', runLayout);
 
-  // первый запуск
+  /* =========================
+     INITIALIZATION
+     ========================= */
+  
+  // Восстанавливаем сохранённые настройки
+  const savedLayout = loadState('layout', 'dagre');
+  const savedDirection = loadState('direction', 'TB');
+  const savedNodeSep = loadState('nodeSep', 25);
+  const savedRankSep = loadState('rankSep', 60);
+  
+  document.getElementById('layout').value = savedLayout;
+  document.getElementById('direction').value = savedDirection;
+  document.getElementById('node-sep').value = savedNodeSep;
+  document.getElementById('rank-sep').value = savedRankSep;
+  document.getElementById('node-sep-value').textContent = savedNodeSep;
+  document.getElementById('rank-sep-value').textContent = savedRankSep;
+  
+  // Показываем/скрываем контролы в зависимости от layout
+  const isInitialDagre = savedLayout === 'dagre';
+  document.getElementById('direction-group').style.display = isInitialDagre ? 'inline' : 'none';
+  document.getElementById('spacing-controls').style.display = isInitialDagre ? 'flex' : 'none';
+  
+  // Первый запуск
   loadGraph();
 });
 </script>
