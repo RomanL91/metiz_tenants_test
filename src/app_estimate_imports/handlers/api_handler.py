@@ -61,30 +61,30 @@ class ApiHandler(BaseHandler):
         except Exception as e:
             return self._error_response(str(e), 400)
 
-    def extract_from_grid_api(self, request: HttpRequest, pk: int) -> HttpResponse:
-        """
-        API для извлечения разметки из таблицы.
+    # def extract_from_grid_api(self, request: HttpRequest, pk: int) -> HttpResponse:
+    #     """
+    #     API для извлечения разметки из таблицы.
 
-        Ожидаемый JSON-payload:
-        {
-            "col_roles": [...],
-            "sheet_index": int,
-            "unit_allow_raw": str,
-            "require_qty": bool
-        }
-        """
-        obj = self.get_object_or_error(request, pk)
-        if not obj:
-            return self._error_response("file_not_found", 404)
+    #     Ожидаемый JSON-payload:
+    #     {
+    #         "col_roles": [...],
+    #         "sheet_index": int,
+    #         "unit_allow_raw": str,
+    #         "require_qty": bool
+    #     }
+    #     """
+    #     obj = self.get_object_or_error(request, pk)
+    #     if not obj:
+    #         return self._error_response("file_not_found", 404)
 
-        try:
-            payload = json.loads(request.body.decode("utf-8"))
-            # TODO: Implement extraction logic
-            # This would need to be implemented based on your requirements
+    #     try:
+    #         payload = json.loads(request.body.decode("utf-8"))
+    #         # TODO: Implement extraction logic
+    #         # This would need to be implemented based on your requirements
 
-            return self._success_response()
-        except Exception as e:
-            return self._error_response(str(e), 400)
+    #         return self._success_response()
+    #     except Exception as e:
+    #         return self._error_response(str(e), 400)
 
     def groups_list_api(self, request: HttpRequest, pk: int) -> HttpResponse:
         """

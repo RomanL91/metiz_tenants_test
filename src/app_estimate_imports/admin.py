@@ -173,13 +173,13 @@ class ImportedEstimateFileAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self._delegate("api", "save_schema_api")),
                 name="imports_api_save_schema",
             ),
-            path(
-                "<int:pk>/api/extract-from-grid/",
-                self.admin_site.admin_view(
-                    self._delegate("api", "extract_from_grid_api")
-                ),
-                name="imports_api_extract_from_grid",
-            ),
+            # path(
+            #     "<int:pk>/api/extract-from-grid/",
+            #     self.admin_site.admin_view(
+            #         self._delegate("api", "extract_from_grid_api")
+            #     ),
+            #     name="imports_api_extract_from_grid",
+            # ),
             path(
                 "<int:pk>/api/groups/list/",
                 self.admin_site.admin_view(self._delegate("api", "groups_list_api")),
