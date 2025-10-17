@@ -22,6 +22,9 @@ class ParseMarkupInline(admin.TabularInline):
     readonly_fields = ("updated_at", "annotation_pretty")
     fields = ("updated_at", "annotation_pretty")
 
+    def has_add_permission(self, request, obj=None) -> bool:
+        return False
+
     def annotation_pretty(self, instance: ParseMarkup):
         if not instance or not instance.annotation:
             return "—"

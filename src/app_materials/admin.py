@@ -5,7 +5,11 @@ from app_materials.models import Material
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
-    list_display = ("id", "name")
-    list_display_links = ("id", "name")
+    list_display = (
+        "name",
+        "unit",
+        "price_per_unit",
+        "is_active",
+    )
     search_fields = ("name",)
-    ordering = ("name", "id")
+    list_filter = ("unit",)

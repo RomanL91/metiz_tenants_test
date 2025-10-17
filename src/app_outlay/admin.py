@@ -36,6 +36,7 @@ from decimal import Decimal
 from django.db import transaction, models
 from django.db.models import Count
 from django.urls import reverse, path
+from django.utils.html import format_html
 from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
 from django.http import HttpResponseRedirect, JsonResponse
@@ -183,8 +184,6 @@ class EstimateOverheadCostLinkInline(admin.TabularInline):
             or obj.overhead_cost_container.works_percentage
         )
 
-        from django.utils.html import format_html
-
         return format_html(
             '<span style="font-size: 11px;">МАТ: {}% / РАБ: {}%</span>', mat, work
         )
@@ -201,10 +200,10 @@ class EstimateOverheadCostLinkInline(admin.TabularInline):
             return "—"
         total = obj.current_total_amount
 
-        from django.utils.html import format_html
-
         if obj.has_changes:
-            return format_html('<span style="color: #856404;">{:,.2f} ⚠️</span>', total)
+            return format_html(
+                f'<span style="color: #856404;">{total:,.2f} ⚠️</span>',
+            )
         return f"{total:,.2f}"
 
     # @admin.display(description=_("Изменён?"), boolean=True)
@@ -309,15 +308,20 @@ class EstimateAdmin(admin.ModelAdmin):
     save_on_top = True
     list_per_page = 50
     list_display = (
-        "id",
+        # "id",
         "name",
+        "source_file",
         "currency",
-        "groups_count_annot",
-        "tc_links_count_annot",
-        "overhead_costs_count_annot",
+        # "groups_count_annot",
+        # "tc_links_count_annot",
+        # "overhead_costs_count_annot",
     )
     search_fields = ("name",)
     inlines = [EstimateOverheadCostLinkInline]
+    readonly_fields = (
+        "source_file",
+        "source_sheet_index",
+    )
 
     # Переопределим, чтобы убрать N+1 при списковом виде
     def get_queryset(self, request):
@@ -329,19 +333,19 @@ class EstimateAdmin(admin.ModelAdmin):
         )
 
     # вычисляемые колонки для спискового вида
-    @admin.display(description=_("Групп"))
-    def groups_count_annot(self, obj):
-        return obj._groups_count
+    # @admin.display(description=_("Групп"))
+    # def groups_count_annot(self, obj):
+    #     return obj._groups_count
 
-    @admin.display(description=_("ТК в смете"))
-    def tc_links_count_annot(self, obj):
-        return obj._tc_links_count
+    # @admin.display(description=_("ТК в смете"))
+    # def tc_links_count_annot(self, obj):
+    #     return obj._tc_links_count
 
-    @admin.display(description=_("НР"))
-    def overhead_costs_count_annot(self, obj):
-        if hasattr(obj, "_overhead_count"):
-            return obj._overhead_count
-        return obj.overhead_cost_links.filter(is_active=True).count()
+    # @admin.display(description=_("НР"))
+    # def overhead_costs_count_annot(self, obj):
+    #     if hasattr(obj, "_overhead_count"):
+    #         return obj._overhead_count
+    #     return obj.overhead_cost_links.filter(is_active=True).count()
 
     # ---------- URLS: роутинг ----------
     # это нужно будет вынести отсюда. можно использовать DRF
@@ -909,7 +913,6 @@ class EstimateAdmin(admin.ModelAdmin):
                 avg_work_pct = Decimal("0")
 
             # 3. Рассчитываем общую базу из сохраненных ТК в смете
-            from app_technical_cards.models import TechnicalCardVersion
             from app_outlay.utils_calc import _base_costs_live, _dec
 
             total_base_mat = Decimal("0")
@@ -1798,15 +1801,15 @@ class EstimateAdmin(admin.ModelAdmin):
         return super().change_view(request, object_id, form_url, extra_context=extra)
 
 
-@admin.register(Group)
-class GroupAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "estimate", "parent", "order")
-    list_filter = ("estimate",)
-    search_fields = ("name",)
-    raw_id_fields = ("estimate", "parent")
-    inlines = (GroupTechnicalCardLinkInline,)
+# @admin.register(Group)
+# class GroupAdmin(admin.ModelAdmin):
+#     list_display = ("id", "name", "estimate", "parent", "order")
+#     list_filter = ("estimate",)
+#     search_fields = ("name",)
+#     raw_id_fields = ("estimate", "parent")
+#     inlines = (GroupTechnicalCardLinkInline,)
 
-    # Немного удобства: группируем по смете и порядку
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        return qs.select_related("estimate", "parent")
+#     # Немного удобства: группируем по смете и порядку
+#     def get_queryset(self, request):
+#         qs = super().get_queryset(request)
+#         return qs.select_related("estimate", "parent")

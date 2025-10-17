@@ -116,6 +116,7 @@ class TechnicalCardVersionNestedInline(
                     "works_cost_per_unit_display",
                     "total_cost_per_unit_display",
                 ),
+                "classes": ["collapse", "entity-meta"],
             },
         ),
         (
@@ -126,6 +127,7 @@ class TechnicalCardVersionNestedInline(
                     "works_total_cost_per_unit_display",
                     "total_cost_with_markups_per_unit_display",
                 ),
+                "classes": ["collapse", "entity-meta"],
             },
         ),
         (
@@ -136,6 +138,7 @@ class TechnicalCardVersionNestedInline(
                     "works_sale_price_per_unit_display",
                     "total_sale_price_per_unit_display",
                 ),
+                "classes": ["collapse", "entity-meta"],
             },
         ),
     )
@@ -336,7 +339,7 @@ class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
     latest_version_total_sale_price.short_description = "Цена продажи за 1 ед."
 
 
-@admin.register(TechnicalCardVersion)
+# @admin.register(TechnicalCardVersion)
 class TechnicalCardVersionAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
     list_display = (
         "id",
@@ -476,7 +479,7 @@ class TechnicalCardVersionAdmin(WithNestedIndentMedia, nested_admin.NestedModelA
         return resp
 
 
-@admin.register(TechnicalCardVersionMaterial)
+# @admin.register(TechnicalCardVersionMaterial)
 class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     list_display = (
         "id",
@@ -491,7 +494,7 @@ class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     readonly_fields = ("material_name", "unit", "price_per_unit")
 
 
-@admin.register(TechnicalCardVersionWork)
+# @admin.register(TechnicalCardVersionWork)
 class TechnicalCardVersionWorkAdmin(admin.ModelAdmin):
     list_display = (
         "id",

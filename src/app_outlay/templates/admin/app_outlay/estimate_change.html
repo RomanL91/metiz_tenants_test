@@ -115,11 +115,11 @@
         {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
         <div class="summary-note" style="margin-top:8px;color:#856404;font-size:11px">
           ℹ️ Цены в таблице уже включают накладные расходы ({{ overhead_calculation.overhead_total|floatformat:2 }} ₽), 
-          рассчитанные пропорционально на основе сохраненных ТК.
-          {% if overhead_calculation.overhead_details %}
+          рассчитанные пропорционально на основе сохраненных ТК. В расчет идут сапшоты.
+          {% comment %} {% if overhead_calculation.overhead_details %}
           Распределение: МАТ {{ overhead_calculation.overhead_details.0.materials_pct|default:0|floatformat:0 }}% / 
           РАБ {{ overhead_calculation.overhead_details.0.works_pct|default:0|floatformat:0 }}%
-          {% endif %}
+          {% endif %} {% endcomment %}
         </div>
         {% endif %}
       </div>
