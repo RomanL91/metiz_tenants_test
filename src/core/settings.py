@@ -26,7 +26,7 @@ SECRET_KEY = "django-insecure-p777z(q@8*(3pvh+et&!b%xk==qm@%$b1o%r&ld9&!e#(e=p9@
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -58,18 +58,6 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
-
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
-LANGUAGE_CODE = "en-us"
-
-TIME_ZONE = "UTC"
-
-USE_I18N = True
-
-USE_TZ = True
 
 
 # Static files (CSS, JavaScript, Images)
@@ -160,6 +148,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.locale.LocaleMiddleware",  # Locale
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -219,12 +208,32 @@ LOGGING = {
 }
 
 
+# Базовая настройка i18n =====================================================
+from django.utils.translation import gettext_lazy as _
+
+LANGUAGE_CODE = "ru"
+TIME_ZONE = "Asia/Almaty"
+USE_I18N = True
+USE_TZ = True
+
+# Перечень доступных языков
+LANGUAGES = (
+    ("ru", _("Русский")),
+    ("en", _("Английский")),
+    # при необходимости добавите другие
+)
+# Где храним свои .po/.mo (переводы проекта)
+# Путь указываем к директории, которую вы будете коммитить
+LOCALE_PATHS = [os.path.join(BASE_DIR, "locale")]
+
+# Тонкая настройка чисел/дат (опционально)
+USE_THOUSAND_SEPARATOR = True
+THOUSAND_SEPARATOR = " "
+DECIMAL_SEPARATOR = ","
+# Базовая настройка i18n ================================================= END
+
+
 class CustomAdminSite:
-    site_header = "ERP - METISone"
-    site_title = "Умные ERP-модули для строительства"
-    index_title = "Умные ERP-модули для строительства"
-
-
-# ===========================================================================
-# ===========================================================================
-# ===========================================================================
+    site_header = _("ERP - METISone")
+    site_title = _("Умные ERP-модули для строительства")
+    index_title = _("Умные ERP-модули для строительства")

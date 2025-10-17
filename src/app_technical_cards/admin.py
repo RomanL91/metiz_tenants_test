@@ -286,11 +286,16 @@ class TechnicalCardVersionNestedInline(
 @admin.register(TechnicalCard)
 class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
     list_display = (
-        "id",
+        # "id",
         "name",
         "output_unit",
         "latest_version_display",
         "latest_version_total_sale_price",
+        "materials_markup_percent",
+        "works_markup_percent",
+        "transport_costs_percent",
+        "materials_margin_percent",
+        "works_margin_percent",
     )
     search_fields = ("name",)
     inlines = [TechnicalCardVersionNestedInline]
@@ -336,7 +341,7 @@ class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
         v = latest.total_sale_price_per_unit
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    latest_version_total_sale_price.short_description = "Цена продажи за 1 ед."
+    latest_version_total_sale_price.short_description = "Цена продажи за 1 ед. версии"
 
 
 # @admin.register(TechnicalCardVersion)
