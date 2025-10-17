@@ -1,0 +1,65 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: METISone\n"
+"Language: ru\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=4; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : n%10==0 || (n%10>=5 && n%10<=9) || (n%100>=11 && n%100<=14) ? 2 : 3);\n"
+
+# --- Кнопки без плейсхолдера
+msgid "Choose all"
+msgstr "Выбрать всё"
+
+msgid "Remove all"
+msgstr "Удалить всё"
+
+# --- Кнопки с плейсхолдером %s
+msgid "Choose all %s"
+msgstr "Выбрать все %s"
+
+msgid "Remove all %s"
+msgstr "Убрать все %s"
+
+msgid "Choose selected %s"
+msgstr "Добавить выбранные %s"
+
+msgid "Remove selected %s"
+msgstr "Убрать выбранные %s"
+
+# --- Заголовки колонок
+msgid "Available %s"
+msgstr "Доступные %s"
+
+msgid "Chosen %s"
+msgstr "Выбранные %s"
+
+# --- Подсказки к «все сразу»
+msgid "Click to choose all %s at once."
+msgstr "Нажмите, чтобы выбрать все %s сразу."
+
+msgid "Click to remove all chosen %s at once."
+msgstr "Нажмите, чтобы удалить все выбранные %s сразу."
+
+# --- Help-тексты (варианты из SelectFilter2.js)
+msgid "Choose %s by selecting them and then select the \"Choose\" arrow button."
+msgstr "Выберите %s, выделив их и нажав стрелку «Добавить»."
+
+msgid "Remove %s by selecting them and then select the \"Remove\" arrow button."
+msgstr "Удалите %s, выделив их и нажав стрелку «Убрать»."
+
+# --- Классические длинные help-тексты
+msgid "This is the list of available %s. You may choose some by selecting them in the box below and then clicking the \"Choose\" arrow between the two boxes."
+msgstr "Это список всех доступных %s. Вы можете выбрать некоторые из них, выделив их в поле ниже и нажав «Выбрать», либо двойным щелчком."
+
+msgid "This is the list of chosen %s. You may remove some by selecting them and then clicking the \"Remove\" arrow between the two boxes."
+msgstr "Это список выбранных %s. Вы можете удалить некоторые из них, выделив и нажав «Убрать», либо двойным щелчком."
+
+# --- Фильтр + «очистить»
+msgid "Filter"
+msgstr "Фильтр"
+
+msgid " (click to clear)"
+msgstr " (очистить)"
+
+msgid "(click to clear)"
+msgstr "(очистить)"

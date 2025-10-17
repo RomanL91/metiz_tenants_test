@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+
+
+
+{# 1) jsi18n должен грузиться до админских js #}
+{% block extrahead %}
+  <script src="{% url 'admin:jsi18n' %}"></script>
+  {{ block.super }}
+{% endblock %}
+
+{# 2) Кликабельный заголовок #}
+{% block branding %}
+
+  <div id="branding">
+    <h1 id="site-name">
+        <span class="header-tagline">🏗️</span>
+      <a href="{% url 'admin:index' %}">{{ site_header }}</a>
+    </h1>
+  </div>
+{% endblock %}
