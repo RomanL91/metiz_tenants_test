@@ -171,25 +171,22 @@ ROOT_URLCONF = "core.urls"
 # django-tenants ======================================================== END
 
 
-ALLOWED_HOSTS = ["localhost", ".localhost"]
-# STATICFILES_DIRS = [BASE_DIR / "static"]  # твои исходники статики (опц.)
+ALLOWED_HOSTS = ["91.199.149.128", ".sslip.io", "localhost", "127.0.0.1", ".localhost"]
+CSRF_TRUSTED_ORIGINS = ["http://*.91-199-149-128.sslip.io", "http://91.199.149.128"]
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = False
+SECURE_SSL_REDIRECT = False
+SECURE_HSTS_SECONDS = 0
+STATICFILES_DIRS = [
+    BASE_DIR / "static",  # /app/src/static
+    (BASE_DIR.parent / "static"),  # /app/static  (корневой static за пределами src)
+]
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-
-# if not DEBUG:
-#     ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-#     CSRF_TRUSTED_ORIGINS = [
-#         x for x in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if x
-#     ]
-
-#     SESSION_COOKIE_SECURE = False
-#     CSRF_COOKIE_SECURE = False
-#     SECURE_SSL_REDIRECT = False
-#     SECURE_HSTS_SECONDS = 0
 
 LOGGING = {
     "version": 1,
