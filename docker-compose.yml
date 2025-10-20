@@ -9,13 +9,13 @@ services:
       - .env.django
     working_dir: /app/src
     volumes:
-      - ./src:/app/src:delegated
-      - ./static:/app/src/static
-      - ./media:/app/src/media
+      - /srv/metiz/static_src:/app/src/static:ro
+      - /srv/metiz/static:/app/src/staticfiles:rw
+      - /srv/metiz/media:/app/src/media:rw
     ports:
       - "8000:8000"
     networks:
-      - metiz_network
+      - metiz_networkcat
 
 networks:
   metiz_network:
