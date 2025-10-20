@@ -1,0 +1,562 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  :root{
+    --bg:#f5f7fb;--card:#fff;--muted:#6b7280;--line:#e5e7eb;--accent:#6366f1
+  }
+  .analysis-container{max-width:1480px;margin:0 auto;padding:20px}
+  .analysis-header{background:linear-gradient(135deg,#6366f1 0%,#06b6d4 100%);color:#fff;padding:22px;border-radius:14px;margin-bottom:22px}
+  .analysis-header h1{margin:0 0 4px;font-size:22px}
+  .analysis-header .subtitle{opacity:.92;font-size:13px}
+
+  .analysis-loading{text-align:center;padding:48px;color:#777}
+  .analysis-loading-spinner{border:4px solid #f3f3f3;border-top:4px solid #6366f1;border-radius:50%;width:48px;height:48px;animation:spin 1s linear infinite;margin:0 auto 16px}
+  @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+
+  .warn{background:#fff8e1;border:1px solid #ffe08a;color:#7a5b00;padding:12px 14px;border-radius:8px;margin-bottom:14px}
+  .ok{background:#e7fff1;border:1px solid #8ee5b2;color:#0b5e2b;padding:12px 14px;border-radius:8px;margin-bottom:14px}
+  .danger{background:#fdecea;border:1px solid #f7b2b8;color:#a40016;padding:12px 14px;border-radius:8px;margin-bottom:14px}
+
+  .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:16px}
+  .metric-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;box-shadow:0 2px 5px rgba(0,0,0,.04)}
+  .metric-label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+  .metric-value{font-size:26px;font-weight:800;margin-bottom:2px}
+  .metric-subtitle{font-size:12px;color:#6b7280}
+
+  .panel{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 5px rgba(0,0,0,.04)}
+  .panel-title{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;margin-bottom:12px;border-bottom:2px solid #f3f4f6;padding-bottom:8px}
+  .panel-title .muted{font-weight:500;color:#6b7280;font-size:12px}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:1000px){.grid-2{grid-template-columns:1fr}}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+  @media(max-width:1200px){.grid-3{grid-template-columns:1fr}}
+
+  .chart-container{position:relative;height:360px}
+  .chart-container.small{height:280px}
+  .chart-container.tiny{height:220px}
+
+  .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .control{display:flex;align-items:center;gap:8px}
+  .muted{color:#6b7280}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px;background:#fff}
+  .chip input{margin:0}
+  .inline-help{font-size:12px;color:#6b7280}
+
+  .table-responsive{overflow:auto}
+  table.pretty{width:100%;border-collapse:collapse;font-size:13px}
+  .pretty th,.pretty td{padding:10px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
+  .pretty th{background:#f9fafb;font-weight:700;color:#374151;position:sticky;top:0;z-index:1;cursor:pointer}
+  .pretty tr:hover{background:#fafafa}
+  .text-right{text-align:right!important}
+  .text-center{text-align:center!important}
+  .badge{display:inline-block;padding:3px 7px;border-radius:4px;font-size:11px;font-weight:700}
+  .badge-success{background:#d4edda;color:#155724}
+  .badge-warning{background:#fff3cd;color:#856404}
+  .badge-danger{background:#fdecea;color:#ab0f24}
+  .badge-info{background:#d1ecf1;color:#0c5460}
+
+  .toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin:8px 0 0}
+  .toolbar .left, .toolbar .right{display:flex;gap:12px;align-items:center}
+  .btn{appearance:none;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer}
+  .btn:active{transform:translateY(1px)}
+  .input{border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:12px}
+
+  .legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .legend .dot{width:10px;height:10px;border-radius:999px;display:inline-block}
+
+  .sticky-summary{position:sticky;bottom:8px;z-index:5;background:#ffffffe6;border:1px solid #e5e7eb;border-radius:12px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.06)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analysis-container" id="analysis-root">
+  <div class="analysis-header">
+    <h1>📊 Аналитика сметы</h1>
+    <div class="subtitle">{{ estimate.name }}</div>
+  </div>
+
+  <div id="analysis-loading" class="analysis-loading">
+    <div class="analysis-loading-spinner"></div>
+    <p>Загрузка данных анализа…</p>
+  </div>
+
+  <div id="analysis-content" style="display:none;">
+    <div id="consistency-banner" style="display:none" class="warn"></div>
+
+    <!-- KPI -->
+    <div class="metrics-grid" id="metrics-grid"></div>
+
+    <!-- Управление: симулятор НР и метод аллокации -->
+    <div class="panel">
+      <div class="panel-title">🧪 Что-если: НР и метод распределения
+        <span class="muted">(только для визуализации, исходные данные не меняются)</span>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="ohSlider" class="muted">Сумма НР:</label>
+          <input type="range" id="ohSlider" min="0" max="10000000" step="1000" value="0">
+          <span id="ohSliderValue" class="chip">0 ₽</span>
+        </div>
+        <div class="control legend">
+          <span class="muted">Метод распределения НР по группам:</span>
+          <label class="chip"><input type="radio" name="ohAlloc" value="sales" checked> по продажам</label>
+          <label class="chip"><input type="radio" name="ohAlloc" value="base"> по себестоимости</label>
+          <label class="chip"><input type="radio" name="ohAlloc" value="labor"> по РАБ (труд)</label>
+        </div>
+        <div class="control">
+          <label class="chip"><input type="checkbox" id="percentMode"> Показывать проценты</label>
+        </div>
+      </div>
+      <div class="inline-help">Если выбран «по РАБ», НР распределяются пропорционально базе работ группы. Если в группе нет РАБ, доля = 0.</div>
+    </div>
+
+    <!-- Row of charts -->
+    <div class="grid-3">
+      <div class="panel">
+        <div class="panel-title">🏗️ Формирование цены (Waterfall)</div>
+        <div class="chart-container small"><canvas id="priceFormationChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🔧 Материалы vs Работы
+          <span class="muted">(продажи без НР + сравнение с НР)</span>
+        </div>
+        <div class="chart-container tiny"><canvas id="materialsWorksChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">📈 Без НР → С НР</div>
+        <div class="chart-container tiny"><canvas id="overheadChart"></canvas></div>
+        <div class="inline-help" id="ohNote"></div>
+      </div>
+    </div>
+
+    <!-- Профит по группам -->
+    <div class="panel">
+      <div class="panel-title">📂 Профит по группам (с аллокацией НР)</div>
+      <div class="toolbar">
+        <div class="left legend">
+          <span class="muted">Легенда:</span>
+          <span><span class="dot" style="background:#6b7280"></span> База</span>
+          <span><span class="dot" style="background:#3b82f6"></span> Продажи</span>
+          <span><span class="dot" style="background:#f59e0b"></span> НР (доля)</span>
+          <span><span class="dot" style="background:#16a34a"></span> Итог</span>
+        </div>
+        <div class="right">
+          <button class="btn" id="downloadGroupsCsv">⬇︎ CSV</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="pretty" id="groupsProfitTable">
+          <thead>
+            <tr>
+              <th data-key="name">Группа</th>
+              <th class="text-right" data-key="base">База</th>
+              <th class="text-right" data-key="sales">Продажи</th>
+              <th class="text-right" data-key="oh">НР (доля)</th>
+              <th class="text-right" data-key="final">Итог</th>
+              <th class="text-right" data-key="marginAbs">Маржа, ₽</th>
+              <th class="text-right" data-key="marginPct">Маржа, %</th>
+              <th class="text-center" data-key="flags">Флаги</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="chart-container tiny" style="margin-top:10px"><canvas id="groupsMarginChart"></canvas></div>
+    </div>
+
+    <!-- TOP-10 позиций -->
+    <div class="panel">
+      <div class="panel-title">🏆 TOP-10 позиций</div>
+      <div class="toolbar">
+        <div class="left">
+          <input id="posSearch" class="input" placeholder="Поиск по наименованию/группе…">
+        </div>
+        <div class="right">
+          <button class="btn" id="downloadPositionsCsv">⬇︎ CSV</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="pretty" id="topPositionsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th data-key="name">Наименование</th>
+              <th data-key="group">Группа</th>
+              <th class="text-right" data-key="qty">Кол-во</th>
+              <th class="text-right" data-key="base">Себестоимость</th>
+              <th class="text-right" data-key="total">Итого (продажи)</th>
+              <th class="text-right" data-key="share">% от сметы</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="sticky-summary" id="stickySummary" style="display:none"></div>
+    </div>
+
+    <div style="text-align:center; margin-top:18px;">
+      <a href="{% url 'admin:app_outlay_estimate_change' estimate.pk %}" class="button" style="font-size:15px;padding:10px 20px;">← Вернуться к смете</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const API_URL = "{% url 'admin:estimate_analysis_data' estimate.pk %}";
+
+  const state = {
+    base_total:0, sales_total:0, overhead_total:0, server_final_with_oh:0,
+    mat_final:0, work_final:0,
+    groups:[],             // [{id,name,base_total,final_total}]
+    positions:[],          // top positions (from API) — we'll still allow search
+    positionsAll:[],       // full list, for filtering
+    groupAgg:{},           // {id:{name, base, sales, base_mat, base_work}}
+    oh_simulated:null,
+    allocMethod:'sales',   // 'sales' | 'base' | 'labor'
+    percentMode:false
+  };
+
+  const charts = {};
+  const fmtMoney=v=> new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v||0))+' ₽';
+  const fmtPct=v=> (Number(v||0)).toFixed(1)+'%';
+
+  document.addEventListener('DOMContentLoaded', start);
+
+  function start(){
+    waitForChart(()=>{
+      fetch(API_URL,{credentials:'same-origin'}).then(r=>r.json()).then(initFromData).catch(showError)
+    });
+  }
+  function waitForChart(cb){ if(window.Chart) cb(); else setTimeout(()=>waitForChart(cb),80) }
+  function showError(e){
+    const el=document.getElementById('analysis-loading');
+    el.innerHTML = '<div class="danger"><b>Ошибка загрузки</b><div>'+ (e?.message || e) +'</div></div>';
+  }
+
+  function initFromData(data){
+    const loading=document.getElementById('analysis-loading');
+    const content=document.getElementById('analysis-content');
+    if(!data?.ok) return showError(new Error(data?.error||'Неизвестная ошибка'));
+    if(!data?.has_data){ loading.innerHTML='<div class="warn">🔭 Нет данных для анализа</div>'; return; }
+
+    // Core summary
+    state.base_total  = n(data.summary?.base_total);
+    state.sales_total = n(data.summary?.final_before_overhead);
+    state.overhead_total = n(data.summary?.overhead_total);
+    state.server_final_with_oh = n(data.summary?.final_with_overhead);
+    state.mat_final = n(data.summary?.final_materials);
+    state.work_final= n(data.summary?.final_works);
+
+    // Groups
+    state.groups = (data.groups_distribution||[]).map(g=>({id:g.id||g.name, name:g.name, base_total:n(g.base_total), final_total:n(g.final_total)}));
+
+    // Positions (top from API) — we will also aggregate group base split using positions
+    state.positionsAll = (data.top_positions||[]); // API returns TOP-10; keep as-is but UI still useful
+    state.positions = state.positionsAll.slice();
+
+    // Build per-group base split using positions we have
+    state.groupAgg = {};
+    for(const g of state.groups){ state.groupAgg[g.id] = {name:g.name, base:g.base_total, sales:g.final_total, base_mat:0, base_work:0}; }
+    for(const p of state.positionsAll){
+      const gid = groupIdByName(p.group);
+      if(!state.groupAgg[gid]) state.groupAgg[gid] = {name:p.group, base:0, sales:0, base_mat:0, base_work:0};
+      state.groupAgg[gid].base_mat += n(p.base_mat);
+      state.groupAgg[gid].base_work += n(p.base_work);
+    }
+
+    // Consistency notice
+    const final_consistent = state.sales_total + state.overhead_total;
+    const mismatch = Math.abs(final_consistent - state.server_final_with_oh) > 1e-6;
+    const banner = document.getElementById('consistency-banner');
+    if(mismatch){
+      banner.style.display='block';
+      banner.innerHTML = `⚠️ Обнаружено расхождение итога. Бэкенд: <b>${fmtMoney(state.server_final_with_oh)}</b>; по формуле: <b>${fmtMoney(final_consistent)}</b>`;
+    }
+
+    // Init controls
+    const slider = document.getElementById('ohSlider');
+    slider.max = String(Math.max(state.overhead_total*3, 100000));
+    slider.value = String(state.overhead_total);
+    document.getElementById('ohSliderValue').textContent = fmtMoney(slider.value);
+    slider.addEventListener('input',()=>{ state.oh_simulated=n(slider.value); document.getElementById('ohSliderValue').textContent = fmtMoney(slider.value); renderAll(); });
+
+    document.querySelectorAll('input[name="ohAlloc"]').forEach(r=>{
+      r.addEventListener('change',()=>{ state.allocMethod=r.value; renderAll(); })
+    });
+    document.getElementById('percentMode').addEventListener('change',e=>{ state.percentMode=e.target.checked; renderAll(); })
+
+    // Exports & search
+    document.getElementById('downloadGroupsCsv').addEventListener('click',()=>downloadGroupsCsv());
+    document.getElementById('downloadPositionsCsv').addEventListener('click',()=>downloadTableCsv('topPositionsTable','positions.csv'));
+    document.getElementById('posSearch').addEventListener('input', onSearchPositions);
+
+    // Enable header sort
+    enableTableSort('groupsProfitTable');
+    enableTableSort('topPositionsTable');
+
+    loading.style.display='none'; content.style.display='block';
+    renderAll();
+  }
+
+  function renderAll(){
+    const oh = getOH();
+    const sales = state.sales_total;
+    const base = state.base_total;
+    const markup = Math.max(0, sales - base);
+    const final = sales + oh;
+
+    renderMetrics({ base, sales, markup, oh, final });
+    renderWaterfall({ base, markup, oh });
+    renderMaterialsWorks();
+    renderOverheadChart({ sales, oh });
+    renderGroupsProfit({ oh });
+    renderGroupsMarginChart({ oh });
+    renderTopPositions();
+  }
+
+  function getOH(){ return state.oh_simulated!=null ? state.oh_simulated : state.overhead_total }
+  function n(x){ const v = Number(x||0); return isFinite(v)?v:0 }
+  function groupIdByName(name){ const found = state.groups.find(g=>g.name===name); return found? (found.id||found.name): name }
+
+  // ==== KPI
+  function renderMetrics({base, sales, markup, oh, final}){
+    const grid = document.getElementById('metrics-grid');
+    const grossMarginAbs = sales - base;
+    const grossMarginPct = sales>0 ? (grossMarginAbs/sales*100) : 0;
+    const ohPctOfSales = sales>0 ? (oh/sales*100) : 0;
+    const cards=[
+      {label:'Себестоимость', value:fmtMoney(base), subtitle:`Мат. + Раб.`, color:'#374151'},
+      {label:'Надбавки + маржа', value:fmtMoney(markup), subtitle:`Гросс-маржа: ${fmtMoney(grossMarginAbs)} (${fmtPct(grossMarginPct)})`, color:'#0ea5e9'},
+      {label:'Накладные расходы', value:fmtMoney(oh), subtitle:`${fmtPct(ohPctOfSales)} от продаж`, color:'#ca8a04'},
+      {label:'Итоговая стоимость', value:fmtMoney(final), subtitle:`Итог = продажи + НР`, color:'#16a34a'}
+    ];
+    grid.innerHTML = cards.map(m=>`
+      <div class="metric-card">
+        <div class="metric-label">${m.label}</div>
+        <div class="metric-value" style="color:${m.color}">${m.value}</div>
+        <div class="metric-subtitle">${m.subtitle}</div>
+      </div>`).join('');
+  }
+
+  // ==== Waterfall stacked
+  function renderWaterfall({base, markup, oh}){
+    const ctx = document.getElementById('priceFormationChart').getContext('2d');
+    const data = { labels:['Формирование цены'], datasets:[
+      {label:'База', data:[base], backgroundColor:'#6b7280', stack:'x'},
+      {label:'Надбавки+маржа', data:[markup], backgroundColor:'#3b82f6', stack:'x'},
+      {label:'НР', data:[oh], backgroundColor:'#f59e0b', stack:'x'}
+    ]};
+    const options = { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'}, tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${fmtMoney(c.parsed.y)}` }}}, scales:{ y:{beginAtZero:true, ticks:{callback:v=> (v/1000).toFixed(0)+'k ₽'}, grid:{color:'rgba(0,0,0,.06)'}}, x:{stacked:true, grid:{display:false}} } };
+    if(charts.waterfall){ charts.waterfall.data=data; charts.waterfall.options=options; charts.waterfall.update(); }
+    else { charts.waterfall = new Chart(ctx,{type:'bar',data,options}); }
+  }
+
+  // ==== Materials vs Works (with/without OH overlay)
+  function renderMaterialsWorks(){
+    const ctx = document.getElementById('materialsWorksChart').getContext('2d');
+    const labels=['Материалы','Работы'];
+    const salesValues=[state.mat_final, state.work_final];
+    const after = window.__apiData?.materials_vs_works_after_oh?.values || null;
+
+    const datasets=[{ label:'Без НР (продажи)', data:salesValues.map(Number), backgroundColor:['#22c55e','#06b6d4'], borderWidth:3, borderColor:'#fff', hoverOffset:10 }];
+    if(after){ datasets.push({ label:'С НР (итог)', data:after.map(Number), backgroundColor:['#16a34a','#0ea5e9'], borderWidth:0, hoverOffset:6 }) }
+
+    const data={labels, datasets};
+    const options={ responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom',labels:{padding:10}}, tooltip:{callbacks:{ label:c=>{ const total = (c.dataset.data||[]).reduce((a,b)=>Number(a)+Number(b),0); const pct = total>0 ? (c.parsed/total*100).toFixed(1):'0.0'; return `${c.label}: ${fmtMoney(c.parsed)} (${pct}%)`; }}} } };
+
+    if(charts.matwork){ charts.matwork.data=data; charts.matwork.options=options; charts.matwork.update(); }
+    else { charts.matwork = new Chart(ctx,{type:'doughnut',data,options}); }
+  }
+
+  // ==== Without OH vs With OH
+  function renderOverheadChart({sales, oh}){
+    const ctx = document.getElementById('overheadChart').getContext('2d');
+    const data={ labels:['Без НР','С НР'], datasets:[{label:'Стоимость', data:[sales, sales+oh], backgroundColor:['#0ea5e9','#16a34a'], borderRadius:6}]};
+    const options={ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>{ let s=fmtMoney(c.parsed.y); if(c.dataIndex===1) s+=` (+${fmtMoney(oh)})`; return s; }}}}, scales:{ y:{beginAtZero:true, ticks:{callback:v=> (v/1000).toFixed(0)+'k ₽'}, grid:{color:'rgba(0,0,0,.06)'}}, x:{grid:{display:false}} } };
+    document.getElementById('ohNote').textContent = `НР учитывается как добавка к продажам: ${fmtMoney(sales)} + ${fmtMoney(oh)} = ${fmtMoney(sales+oh)}.`;
+    if(charts.oh){ charts.oh.data=data; charts.oh.options=options; charts.oh.update(); } else { charts.oh = new Chart(ctx,{type:'bar',data,options}); }
+  }
+
+  // ==== Groups profit table & OH allocation
+  function renderGroupsProfit({oh}){
+    const tbody = document.querySelector('#groupsProfitTable tbody');
+
+    // Build rows with OH allocation per selected method
+    const rows = state.groups.map(g=>{
+      const agg = state.groupAgg[g.id] || {base: g.base_total, sales: g.final_total, base_mat:0, base_work:0};
+      const share = calcOhShare(g, agg);
+      const ohAlloc = oh * share;
+      const final = g.final_total + ohAlloc;
+      const marginAbs = g.final_total - g.base_total; // до НР
+      const marginPct = g.final_total>0 ? (marginAbs/g.final_total*100) : 0;
+      return { id:g.id, name:g.name, base:g.base_total, sales:g.final_total, oh:ohAlloc, final, marginAbs, marginPct, base_work:agg.base_work };
+    });
+
+    rows.sort((a,b)=> b.sales - a.sales);
+
+    const asPct = !!state.percentMode;
+    const denom = rows.reduce((s,r)=> s + (asPct? r.final : 0), 0);
+
+    tbody.innerHTML = rows.map(r=>{
+      const flags=[];
+      if(r.sales + 1e-9 < r.base) flags.push('ниже себестоимости');
+      if(r.marginPct > 200) flags.push('аномально высокая маржа');
+
+      const cells = !asPct ? `
+        <td class="text-right">${fmtMoney(r.base)}</td>
+        <td class="text-right">${fmtMoney(r.sales)}</td>
+        <td class="text-right">${fmtMoney(r.oh)}</td>
+        <td class="text-right"><strong>${fmtMoney(r.final)}</strong></td>
+        <td class="text-right">${fmtMoney(r.marginAbs)}</td>
+        <td class="text-right">${fmtPct(r.marginPct)}</td>
+      ` : (()=>{
+        const totalFinal = rows.reduce((s,x)=>s+x.final,0) || 1;
+        const basePct = r.base>0 ? (r.base/totalFinal*100):0;
+        const salesPct = r.sales>0 ? (r.sales/totalFinal*100):0;
+        const ohPct = r.oh/totalFinal*100;
+        const finalPct = r.final/totalFinal*100;
+        return `
+          <td class="text-right">${fmtPct(basePct)}</td>
+          <td class="text-right">${fmtPct(salesPct)}</td>
+          <td class="text-right">${fmtPct(ohPct)}</td>
+          <td class="text-right"><strong>${fmtPct(finalPct)}</strong></td>
+          <td class="text-right">—</td>
+          <td class="text-right">—</td>`
+      })();
+
+      return `<tr>
+        <td>${r.name}</td>
+        ${cells}
+        <td class="text-center">${ flags.length ? flags.map(f=>`<span class="badge ${f.includes('ниже')?'badge-danger':'badge-warning'}">${f}</span>`).join(' ') : '<span class="badge badge-success">OK</span>' }
+        </td>
+      </tr>`;
+    }).join('');
+
+    // sticky summary
+    const ss = document.getElementById('stickySummary');
+    const totBase = rows.reduce((s,r)=>s+r.base,0);
+    const totSales = rows.reduce((s,r)=>s+r.sales,0);
+    const totOh = rows.reduce((s,r)=>s+r.oh,0);
+    const totFinal = rows.reduce((s,r)=>s+r.final,0);
+    ss.style.display='block';
+    ss.innerHTML = `Σ Итоги по группам: База <b>${fmtMoney(totBase)}</b> · Продажи <b>${fmtMoney(totSales)}</b> · НР <b>${fmtMoney(totOh)}</b> · Итог <b>${fmtMoney(totFinal)}</b>`;
+
+    // Save for margin chart
+    state.__groupRowsForChart = rows;
+  }
+
+  function calcOhShare(group, agg){
+    const method = state.allocMethod;
+    if(method==='sales'){
+      const total = state.groups.reduce((s,g)=> s + n(g.final_total), 0) || 1;
+      return n(group.final_total)/total;
+    }
+    if(method==='base'){
+      const total = state.groups.reduce((s,g)=> s + n(g.base_total), 0) || 1;
+      return n(group.base_total)/total;
+    }
+    if(method==='labor'){
+      const totalWork = Object.values(state.groupAgg).reduce((s,a)=> s + n(a.base_work),0) || 1;
+      return n(agg.base_work)/totalWork;
+    }
+    return 0;
+  }
+
+  // ==== Groups Margin chart (horizontal)
+  function renderGroupsMarginChart(){
+    const rows = state.__groupRowsForChart || [];
+    const ctx = document.getElementById('groupsMarginChart').getContext('2d');
+    const labels = rows.map(r=> r.name);
+    const values = rows.map(r=> Number((r.marginPct||0).toFixed(2)) );
+    const data={ labels, datasets:[{ label:'Маржа % (до НР)', data:values, backgroundColor:'#3b82f6' }] };
+    const options={ responsive:true, maintainAspectRatio:false, indexAxis:'y', plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=> `${c.label}: ${fmtPct(c.parsed.x)}`}}}, scales:{ x:{beginAtZero:true, ticks:{callback:v=> v+'%'}}, y:{grid:{display:false}} } };
+    if(charts.groupsMargin){ charts.groupsMargin.data=data; charts.groupsMargin.options=options; charts.groupsMargin.update(); }
+    else { charts.groupsMargin = new Chart(ctx,{type:'bar',data,options}); }
+  }
+
+  // ==== TOP positions (search + CSV)
+  function onSearchPositions(e){
+    const q = (e.target.value||'').toLowerCase();
+    state.positions = state.positionsAll.filter(p=> (p.name||'').toLowerCase().includes(q) || (p.group||'').toLowerCase().includes(q));
+    renderTopPositions();
+  }
+
+  function renderTopPositions(){
+    const tbody = document.querySelector('#topPositionsTable tbody');
+    const total = state.sales_total || 1;
+    const rows = (state.positions||[]).map((p,idx)=>{
+      const qty = n(p.qty); const unit = p.unit||''; const totalPos = n(p.total);
+      const baseTotal = n(p.base_mat)+n(p.base_work);
+      const markupPct = baseTotal>0 ? ((totalPos-baseTotal)/baseTotal*100) : 0;
+      const share = totalPos/total*100;
+      const pricePerUnit = qty>0 ? totalPos/qty : 0;
+      return {
+        idx: idx+1,
+        name: p.name||'', group: p.group||'', qty, unit,
+        base: baseTotal, total: totalPos, share, pricePerUnit, markupPct
+      };
+    });
+
+    tbody.innerHTML = rows.map(r=> `
+      <tr>
+        <td><strong>${r.idx}</strong></td>
+        <td>
+          <strong>${r.name}</strong>
+          <div class="muted">${r.qty.toFixed(3)} ${r.unit} × ${fmtMoney(r.pricePerUnit)} за ед.</div>
+        </td>
+        <td>${r.group}</td>
+        <td class="text-right">${r.qty.toFixed(3)} ${r.unit}</td>
+        <td class="text-right">${fmtMoney(r.base)}<div class="muted">+${r.markupPct.toFixed(0)}%</div></td>
+        <td class="text-right"><strong>${fmtMoney(r.total)}</strong></td>
+        <td class="text-right"><span class="badge ${r.share>10?'badge-warning':r.share>5?'badge-info':'badge-success'}">${r.share.toFixed(1)}%</span></td>
+      </tr>`).join('');
+  }
+
+  // ==== Utilities: CSV, sorting
+  function downloadGroupsCsv(){
+    const rows = state.__groupRowsForChart||[];
+    const header = ['Группа','База','Продажи','НР (доля)','Итог','Маржа (₽)','Маржа (%)'];
+    const csv = [header.join(';')].concat(rows.map(r=>[
+      q(r.name), n(r.base).toFixed(2), n(r.sales).toFixed(2), n(r.oh).toFixed(2), n(r.final).toFixed(2), n(r.marginAbs).toFixed(2), n(r.marginPct).toFixed(2)
+    ].join(';'))).join('\n');
+    triggerDownload('groups.csv', csv);
+  }
+  function downloadTableCsv(tableId, filename){
+    const table = document.getElementById(tableId); if(!table) return;
+    const rows=[...table.querySelectorAll('tr')];
+    const csv = rows.map(tr=> [...tr.children].map(td=> q(td.textContent.trim())).join(';')).join('\n');
+    triggerDownload(filename||'table.csv', csv);
+  }
+  function triggerDownload(filename, content){
+    const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+  }
+  function q(s){ return '"'+ String(s||'').replaceAll('"','""') +'"' }
+
+  function enableTableSort(tableId){
+    const table = document.getElementById(tableId); if(!table) return;
+    const thead = table.querySelector('thead'); if(!thead) return;
+    thead.addEventListener('click', (e)=>{
+      const th = e.target.closest('th'); if(!th) return;
+      const idx = [...th.parentNode.children].indexOf(th);
+      const asc = !(th.dataset.sort==='asc'); th.dataset.sort = asc?'asc':'desc';
+      const tbody = table.querySelector('tbody');
+      const rows = [...tbody.querySelectorAll('tr')];
+      rows.sort((a,b)=>{
+        const av = (a.children[idx]?.textContent||'').replace(/[^0-9,.-]/g,'').replace(',','.');
+        const bv = (b.children[idx]?.textContent||'').replace(/[^0-9,.-]/g,'').replace(',','.');
+        const na = parseFloat(av); const nb = parseFloat(bv);
+        const cmp = (isNaN(na)||isNaN(nb)) ? a.children[idx].textContent.localeCompare(b.children[idx].textContent) : (na-nb);
+        return asc? cmp : -cmp;
+      });
+      rows.forEach(r=> tbody.appendChild(r));
+    });
+  }
+})();
+</script>
+{% endblock %}

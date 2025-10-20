@@ -380,11 +380,350 @@ class EstimateAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.api_export_excel),
                 name="estimate_export_excel",
             ),
+            # НОВЫЙ ЭНДПОИНТ - страница детального анализа
+            path(
+                "<path:object_id>/analysis/",
+                self.admin_site.admin_view(self.analysis_view),
+                name="estimate_analysis",
+            ),
+            # API для данных графиков
+            path(
+                "<path:object_id>/api/analysis-data/",
+                self.admin_site.admin_view(self.api_analysis_data),
+                name="estimate_analysis_data",
+            ),
         ]
         return custom + urls
 
     # ---------- ENDPOINTS: ... ----------
     # также лучше вынести из модуля, например во view|contrillers etc
+
+    def analysis_view(self, request, object_id: str):
+        """
+        Страница детального анализа сметы с графиками и декомпозицией цен.
+        """
+        from django.template.response import TemplateResponse
+
+        est = self.get_object(request, object_id)
+        if not est:
+            messages.error(request, "Смета не найдена")
+            return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
+
+        context = dict(
+            self.admin_site.each_context(request),  # ← ИСПРАВЛЕНО
+            title=f"Анализ сметы: {est.name}",
+            estimate=est,
+            has_data=est.groups.exists(),
+        )
+
+        return TemplateResponse(
+            request, "admin/app_outlay/estimate_analysis.html", context
+        )
+
+    def api_analysis_data(self, request, object_id: str):
+        """
+        API: данные для графиков анализа сметы.
+
+        ✓ База — по живым ценам (_base_costs_live).
+        ✓ Продажи без НР — calc_for_tc(..., overhead_context=None).
+        ✓ Продажи с НР — calc_for_tc(..., overhead_context=overhead_ctx из активных контейнеров сметы).
+        ✓ Итог = продажи без НР + НР (фактически: сумма «с НР»).
+        ✓ Группы — по ID (не склеиваются одноимённые).
+        """
+        from decimal import Decimal
+        from django.http import JsonResponse
+        from app_outlay.models import GroupTechnicalCardLink
+        from app_outlay.utils_calc import _base_costs_live, _dec, calc_for_tc
+
+        print("\n" + "=" * 80)
+        print(f"API ANALYSIS DATA - Estimate #{object_id}")
+        print("=" * 80)
+
+        est = self.get_object(request, object_id)
+        if not est:
+            print("❌ ОШИБКА: Смета не найдена")
+            return JsonResponse({"ok": False, "error": "Смета не найдена"}, status=404)
+
+        print(f"✓ Смета найдена: {est.name}")
+        print(f"  ID: {est.id}")
+
+        try:
+            # --- связи Группа–Версия ТК
+            tc_links = (
+                GroupTechnicalCardLink.objects.filter(group__estimate=est)
+                .select_related(
+                    "technical_card_version", "technical_card_version__card", "group"
+                )
+                .order_by("group__order", "order")
+            )
+            tc_count = tc_links.count()
+            print(f"\n🔗 Технические карты в смете: {tc_count}")
+            if not tc_count:
+                print("\n⚠️ ВОЗВРАТ: has_data=False")
+                print("=" * 80 + "\n")
+                return JsonResponse(
+                    {
+                        "ok": True,
+                        "has_data": False,
+                        "message": "В смете нет привязанных техкарт",
+                    }
+                )
+
+            # --------------------------------------------------------------------
+            # 1) Сбор контекста НР из активных контейнеров (как в detail/export)
+            # --------------------------------------------------------------------
+            overhead_links = est.overhead_cost_links.filter(
+                is_active=True
+            ).select_related("overhead_cost_container")
+
+            total_overhead_amt = Decimal("0")
+            # суммы (amount * pct) для средневзвешенного разбиения МАТ/РАБ
+            amount_weighted_mat_pct = Decimal("0")
+            amount_weighted_work_pct = Decimal("0")
+
+            overhead_breakdown = []
+            for ol in overhead_links:
+                amount = (
+                    _dec(ol.snapshot_total_amount)
+                    if ol.snapshot_total_amount is not None
+                    else _dec(ol.overhead_cost_container.total_amount)
+                )
+                mat_pct = (
+                    _dec(ol.snapshot_materials_percentage)
+                    if ol.snapshot_materials_percentage is not None
+                    else _dec(ol.overhead_cost_container.materials_percentage)
+                )
+                work_pct = (
+                    _dec(ol.snapshot_works_percentage)
+                    if ol.snapshot_works_percentage is not None
+                    else _dec(ol.overhead_cost_container.works_percentage)
+                )
+
+                total_overhead_amt += amount
+                amount_weighted_mat_pct += (mat_pct or 0) * amount
+                amount_weighted_work_pct += (work_pct or 0) * amount
+
+                overhead_breakdown.append(
+                    {
+                        "name": ol.overhead_cost_container.name,
+                        "total": float(amount),
+                        "materials_part": float(
+                            amount * ((mat_pct or 0) / Decimal("100"))
+                        ),
+                        "works_part": float(
+                            amount * ((work_pct or 0) / Decimal("100"))
+                        ),
+                        "materials_pct": float(mat_pct or 0),
+                        "works_pct": float(work_pct or 0),
+                    }
+                )
+
+            if total_overhead_amt > 0:
+                avg_mat_pct = amount_weighted_mat_pct / total_overhead_amt  # 0..100
+                avg_work_pct = amount_weighted_work_pct / total_overhead_amt
+            else:
+                avg_mat_pct = Decimal("0")
+                avg_work_pct = Decimal("0")
+
+            # Общая БАЗА (живые) — нужна для корректной работы движка с НР
+            total_base_mat_live = Decimal("0")
+            total_base_work_live = Decimal("0")
+            for link in tc_links:
+                ver = link.technical_card_version
+                qty = _dec(getattr(link, "quantity", 1))
+                base = _base_costs_live(ver)
+                total_base_mat_live += _dec(base.mat) * qty
+                total_base_work_live += _dec(base.work) * qty
+
+            overhead_context = None
+            if total_overhead_amt > 0:
+                overhead_context = {
+                    "total_base_mat": total_base_mat_live,
+                    "total_base_work": total_base_work_live,
+                    "overhead_amount": total_overhead_amt,
+                    "overhead_mat_pct": avg_mat_pct,  # в процентах (0..100)
+                    "overhead_work_pct": avg_work_pct,  # в процентах (0..100)
+                }
+
+            print("\n💼 НР (контекст):")
+            print(f"   Сумма НР: {total_overhead_amt}")
+            print(f"   Средневзвеш.: МАТ%={avg_mat_pct:.2f}, РАБ%={avg_work_pct:.2f}")
+
+            # --------------------------------------------------------------------
+            # 2) Проходим по позициям и считаем (а) без НР и (б) с НР
+            # --------------------------------------------------------------------
+            total_base_mat = Decimal("0")
+            total_base_work = Decimal("0")
+            sales_mat_no_oh = Decimal("0")
+            sales_work_no_oh = Decimal("0")
+            sales_mat_with_oh = Decimal("0")
+            sales_work_with_oh = Decimal("0")
+
+            positions_data = []
+            groups = {}  # агрегируем по group.id
+
+            for link in tc_links:
+                ver = link.technical_card_version
+                if ver is None:
+                    continue
+
+                qty = _dec(getattr(link, "quantity", 1))
+
+                # БАЗА — живые
+                base = _base_costs_live(ver)
+                line_base_mat = _dec(base.mat) * qty
+                line_base_work = _dec(base.work) * qty
+                total_base_mat += line_base_mat
+                total_base_work += line_base_work
+
+                # ПРОДАЖИ без НР
+                calc0, _ = calc_for_tc(ver.card_id, float(qty), overhead_context=None)
+                l0_mat = _dec(calc0.get("PRICE_FOR_ALL_MATERIAL", 0))
+                l0_work = _dec(calc0.get("PRICE_FOR_ALL_WORK", 0))
+                sales_mat_no_oh += l0_mat
+                sales_work_no_oh += l0_work
+
+                # ПРОДАЖИ с НР
+                if overhead_context:
+                    calc1, _ = calc_for_tc(
+                        ver.card_id, float(qty), overhead_context=overhead_context
+                    )
+                    l1_mat = _dec(calc1.get("PRICE_FOR_ALL_MATERIAL", 0))
+                    l1_work = _dec(calc1.get("PRICE_FOR_ALL_WORK", 0))
+                else:
+                    l1_mat, l1_work = l0_mat, l0_work
+                sales_mat_with_oh += l1_mat
+                sales_work_with_oh += l1_work
+
+                positions_data.append(
+                    {
+                        "name": (ver.card.name or "")[:120],
+                        "group": link.group.name,
+                        "qty": float(qty),
+                        "unit": ver.output_unit or "",
+                        "base_mat": float(line_base_mat),
+                        "base_work": float(line_base_work),
+                        "final_mat": float(l0_mat),  # продажи без НР
+                        "final_work": float(l0_work),  # продажи без НР
+                        "total": float(l0_mat + l0_work),
+                    }
+                )
+
+                # Группы по ID
+                g = link.group
+                if g.id not in groups:
+                    groups[g.id] = {
+                        "id": g.id,
+                        "name": g.name,
+                        "base_total": Decimal("0"),
+                        "final_total": Decimal("0"),
+                    }
+                groups[g.id]["base_total"] += line_base_mat + line_base_work
+                groups[g.id]["final_total"] += l0_mat + l0_work  # продажи без НР
+
+            # --------------------------------------------------------------------
+            # 3) Итоги/метрики
+            # --------------------------------------------------------------------
+            base_total = total_base_mat + total_base_work
+            sales_total_no_oh = sales_mat_no_oh + sales_work_no_oh
+            sales_total_with_oh = sales_mat_with_oh + sales_work_with_oh
+            overhead_total_by_calc = (
+                sales_total_with_oh - sales_total_no_oh
+            )  # сколько реально добавлено НР
+
+            avg_markup = (
+                ((sales_total_no_oh - base_total) / base_total * 100)
+                if base_total > 0
+                else Decimal("0")
+            )
+            overhead_percent = (
+                (overhead_total_by_calc / sales_total_no_oh * 100)
+                if sales_total_no_oh > 0
+                else Decimal("0")
+            )
+
+            # разбиение НР по Мат/Раб — из разницы «с НР» минус «без НР»
+            oh_mat = sales_mat_with_oh - sales_mat_no_oh
+            oh_work = sales_work_with_oh - sales_work_no_oh
+
+            summary = {
+                "base_materials": float(total_base_mat),
+                "base_works": float(total_base_work),
+                "base_total": float(base_total),
+                "final_materials": float(sales_mat_no_oh),  # продажи без НР
+                "final_works": float(sales_work_no_oh),  # продажи без НР
+                "final_before_overhead": float(sales_total_no_oh),
+                "overhead_total": float(overhead_total_by_calc),
+                "final_with_overhead": float(sales_total_with_oh),
+                "avg_markup_percent": float(avg_markup),
+                "overhead_percent": float(overhead_percent),
+                "positions_count": len(positions_data),
+                "oh_split": {"materials": float(oh_mat), "works": float(oh_work)},
+            }
+
+            price_breakdown = {
+                "labels": ["Себестоимость", "Продажи (без НР)", "Итог (с НР)"],
+                "values": [
+                    float(base_total),
+                    float(sales_total_no_oh),
+                    float(sales_total_with_oh),
+                ],
+            }
+
+            groups_list = [
+                {
+                    "id": g["id"],
+                    "name": g["name"],
+                    "base_total": float(g["base_total"]),
+                    "final_total": float(g["final_total"]),  # продажи без НР
+                }
+                for g in groups.values()
+            ]
+            groups_list.sort(key=lambda x: x["final_total"], reverse=True)
+
+            materials_vs_works = {
+                "labels": ["Материалы", "Работы"],
+                "base": [float(total_base_mat), float(total_base_work)],
+                "final": [float(sales_mat_no_oh), float(sales_work_no_oh)],  # без НР
+            }
+            materials_vs_works_after_oh = {
+                "labels": ["Материалы", "Работы"],
+                "values": [float(sales_mat_with_oh), float(sales_work_with_oh)],  # с НР
+            }
+
+            top_positions = sorted(
+                positions_data, key=lambda x: x["total"], reverse=True
+            )[:10]
+
+            print("\n✅ УСПЕШНО: Возврат данных")
+            print(f"   has_data: True")
+            print(f"   positions_count: {len(positions_data)}")
+            print("=" * 80 + "\n")
+
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "has_data": True,
+                    "summary": summary,
+                    "price_breakdown": price_breakdown,
+                    "top_positions": top_positions,
+                    "groups_distribution": groups_list,
+                    "overhead_breakdown": overhead_breakdown,
+                    "materials_vs_works": materials_vs_works,
+                    "materials_vs_works_after_oh": materials_vs_works_after_oh,
+                }
+            )
+
+        except Exception as e:
+            import traceback
+
+            print("\n" + "=" * 80)
+            print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА API ❌❌❌")
+            print("=" * 80)
+            print(f"Ошибка: {e}")
+            print(traceback.format_exc())
+            print("=" * 80 + "\n")
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     def api_export_excel(self, request, object_id: str):
         """
