@@ -11,6 +11,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from app_units.models import Unit
+
 
 class Work(models.Model):
     """
@@ -24,10 +26,12 @@ class Work(models.Model):
         verbose_name=_("Наименование работы"),
         help_text=_("Короткое понятное название работы."),
     )
-    unit = models.CharField(
-        max_length=32,
+    unit_ref = models.ForeignKey(
+        Unit,
         verbose_name=_("Единица измерения"),
-        help_text=_("Например: «чел·ч», «м²», «п.м.»."),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="works",
     )
     price_per_unit = models.DecimalField(
         max_digits=12,

@@ -1,9 +1,12 @@
 from django.db import models
-from django.db.models import Sum, F, DecimalField
+
+from django.db.models import Sum, F, DecimalField, Value
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from decimal import Decimal
+
+from app_units.models import Unit
 
 
 class TechnicalCard(models.Model):
@@ -17,12 +20,12 @@ class TechnicalCard(models.Model):
         db_index=True,
         verbose_name=_("Название"),
     )
-    output_unit = models.CharField(
-        max_length=32,
-        blank=True,
-        default="",
-        verbose_name=_("Ед. выпуска"),
-        help_text=_("ед. выпуска ТК (напр. 'м', 'м2')"),
+    unit_ref = models.ForeignKey(
+        Unit,
+        verbose_name=_("Единица измерения"),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="technicalcards",
     )
 
     # ========== НАДБАВКИ И РАСХОДЫ (в процентах) ==========
@@ -71,7 +74,7 @@ class TechnicalCard(models.Model):
         verbose_name_plural = _("Техкарты")
 
     def __str__(self) -> str:
-        return f"{self.name} [{self.output_unit}]"
+        return f"{self.name} [{self.unit_ref}]"
 
     @property
     def latest_version(self):
@@ -276,11 +279,11 @@ class TechnicalCardVersion(models.Model):
         """
         # 1. СЕБЕСТОИМОСТЬ (базовая сумма из строк состава)
         materials_base = self.material_items.annotate(
-            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
+            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), Value(Decimal("0")))
         ).aggregate(
             s=Coalesce(
                 Sum("line"),
-                0.0,
+                Value(Decimal("0")),
                 output_field=DecimalField(max_digits=14, decimal_places=2),
             )
         )[
@@ -290,11 +293,11 @@ class TechnicalCardVersion(models.Model):
         )
 
         works_base = self.work_items.annotate(
-            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), 0.0)
+            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), Value(Decimal("0")))
         ).aggregate(
             s=Coalesce(
                 Sum("line"),
-                0.0,
+                Value(Decimal("0")),
                 output_field=DecimalField(max_digits=14, decimal_places=2),
             )
         )[
@@ -386,12 +389,12 @@ class TechnicalCardVersionMaterial(models.Model):
         editable=False,
         help_text=_("Заполняется автоматически"),
     )
-    unit = models.CharField(
-        max_length=32,
-        blank=True,
-        default="",
-        verbose_name=_("Ед. изм. (снапшот)"),
-        editable=False,
+    unit_ref = models.ForeignKey(
+        Unit,
+        verbose_name=_("Единица измерения"),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="tecnicalcardversmaterials",
     )
     price_per_unit = models.DecimalField(
         max_digits=12,
@@ -421,13 +424,13 @@ class TechnicalCardVersionMaterial(models.Model):
         verbose_name_plural = _("Материалы версии ТК")
 
     def __str__(self):
-        return f"{self.material_name} ({self.qty_per_unit} {self.unit})"
+        return f"{self.material_name} ({self.qty_per_unit} {self.unit_ref})"
 
     def save(self, *args, **kwargs):
         """Автоматически копируем данные из справочника Material."""
         if self.material:
             self.material_name = self.material.name
-            self.unit = self.material.unit
+            self.unit_ref = self.material.unit_ref
             self.price_per_unit = self.material.price_per_unit
         super().save(*args, **kwargs)
 
@@ -468,12 +471,12 @@ class TechnicalCardVersionWork(models.Model):
         editable=False,
         help_text=_("Заполняется автоматически"),
     )
-    unit = models.CharField(
-        max_length=32,
-        blank=True,
-        default="",
-        verbose_name=_("Ед. изм. (снапшот)"),
-        editable=False,
+    unit_ref = models.ForeignKey(
+        Unit,
+        verbose_name=_("Единица измерения"),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="tecnicalcardversworks",
     )
     price_per_unit = models.DecimalField(
         max_digits=12,
@@ -503,13 +506,13 @@ class TechnicalCardVersionWork(models.Model):
         verbose_name_plural = _("Работы версии ТК")
 
     def __str__(self):
-        return f"{self.work_name} ({self.qty_per_unit} {self.unit})"
+        return f"{self.work_name} ({self.qty_per_unit} {self.unit_ref})"
 
     def save(self, *args, **kwargs):
         """Автоматически копируем данные из справочника Work."""
         if self.work:
             self.work_name = self.work.name
-            self.unit = self.work.unit
+            self.unit_ref = self.work.unit_ref
             self.price_per_unit = self.work.price_per_unit
         super().save(*args, **kwargs)
 

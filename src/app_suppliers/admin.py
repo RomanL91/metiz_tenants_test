@@ -94,7 +94,7 @@ try:
 
     class MaterialInline(admin.TabularInline):
         model = Material
-        fields = ("name", "unit", "price_per_unit", "is_active")
+        fields = ("name", "unit_ref", "price_per_unit", "is_active")
         readonly_fields = ()
         extra = 0
         show_change_link = True

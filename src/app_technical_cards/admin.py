@@ -288,7 +288,7 @@ class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
     list_display = (
         # "id",
         "name",
-        "output_unit",
+        "unit_ref",
         "latest_version_display",
         "latest_version_total_sale_price",
         "materials_markup_percent",
@@ -303,7 +303,7 @@ class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
     fieldsets = (
         (
             "Основная информация",
-            {"fields": ("name", "output_unit")},
+            {"fields": ("name", "unit_ref")},
         ),
         (
             "Надбавки и транспортные расходы (%)",
@@ -496,7 +496,7 @@ class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     )
     search_fields = ("material_name", "material__name")
     autocomplete_fields = ("material", "technical_card_version")
-    readonly_fields = ("material_name", "unit", "price_per_unit")
+    readonly_fields = ("material_name", "unit_ref", "price_per_unit")
 
 
 # @admin.register(TechnicalCardVersionWork)
@@ -511,4 +511,4 @@ class TechnicalCardVersionWorkAdmin(admin.ModelAdmin):
     )
     search_fields = ("work_name", "work__name")
     autocomplete_fields = ("work", "technical_card_version")
-    readonly_fields = ("work_name", "unit", "price_per_unit")
+    readonly_fields = ("work_name", "unit_ref", "price_per_unit")

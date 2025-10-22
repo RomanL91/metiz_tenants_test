@@ -13,6 +13,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 from decimal import Decimal
 
+from app_units.models import Unit
+
 
 class OverheadCostContainer(models.Model):
     """
@@ -142,12 +144,12 @@ class OverheadCostItem(models.Model):
         validators=[MinValueValidator(Decimal("0.001"))],
     )
 
-    unit = models.CharField(
-        _("Единица измерения"),
-        max_length=32,
-        blank=True,
-        default="",
-        help_text=_("Например: 'мес', 'чел', '%', 'шт' или пусто"),
+    unit_ref = models.ForeignKey(
+        Unit,
+        verbose_name=_("Единица измерения"),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="overheadcostitems",
     )
 
     price_per_unit = models.DecimalField(

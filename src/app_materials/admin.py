@@ -8,7 +8,7 @@ from app_materials.models import Material
 class MaterialAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "unit",
+        "unit_ref",
         "price_per_unit",  # без НДС
         "price_with_vat_display",  # ← NEW: с НДС
         "supplier_ref",
@@ -16,7 +16,7 @@ class MaterialAdmin(admin.ModelAdmin):
         "is_active",
     )
     search_fields = ("name",)
-    list_filter = ("unit",)
+    list_filter = ("unit_ref",)
     autocomplete_fields = ("supplier_ref",)
     list_select_related = ("supplier_ref",)
     save_on_top = True

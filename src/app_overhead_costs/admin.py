@@ -21,7 +21,7 @@ class OverheadCostItemInline(nested_admin.NestedTabularInline):
         "order",
         "name",
         "quantity",
-        "unit",
+        "unit_ref",
         "price_per_unit",
         "total_cost_display",
         "comment",
@@ -150,11 +150,11 @@ class OverheadCostItemAdmin(admin.ModelAdmin):
         "name",
         "container",
         "quantity",
-        "unit",
+        "unit_ref",
         "price_per_unit",
         "total_cost_display",
     )
-    list_filter = ("container", "unit")
+    list_filter = ("container", "unit_ref")
     search_fields = ("name", "comment", "container__name")
     raw_id_fields = ("container",)
 
@@ -168,7 +168,12 @@ class OverheadCostItemAdmin(admin.ModelAdmin):
         (
             _("Расчёт"),
             {
-                "fields": ("quantity", "unit", "price_per_unit", "total_cost_display"),
+                "fields": (
+                    "quantity",
+                    "unit_ref",
+                    "price_per_unit",
+                    "total_cost_display",
+                ),
             },
         ),
         (

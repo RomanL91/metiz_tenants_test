@@ -1,8 +1,10 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator  # ← NEW
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
+
+from app_units.models import Unit
 
 
 class Material(models.Model):
@@ -18,10 +20,12 @@ class Material(models.Model):
         verbose_name=_("Наименование"),
         help_text=_("Короткое понятное название материала."),
     )
-    unit = models.CharField(
-        max_length=32,
+    unit_ref = models.ForeignKey(
+        Unit,
         verbose_name=_("Единица измерения"),
-        help_text=_("Например: «м³», «м²», «шт», «кг»."),
+        help_text=_("Выберите из справочника"),
+        on_delete=models.PROTECT,
+        related_name="materials",
     )
     price_per_unit = models.DecimalField(
         max_digits=12,

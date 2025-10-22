@@ -7,9 +7,9 @@ from app_works.models import Work
 class WorkAdmin(admin.ModelAdmin):
     list_display = (
         "name",
-        "unit",
+        "unit_ref",
         "price_per_unit",
         "is_active",
     )
     search_fields = ("name",)
-    list_filter = ("unit",)
+    list_filter = ("unit_ref",)
