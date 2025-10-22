@@ -49,6 +49,7 @@ from app_outlay.models import (
     EstimateOverheadCostLink,
 )
 from app_technical_cards.models import TechnicalCard as _TC
+from app_overhead_costs.models import OverheadCostContainer
 
 # ---------- Импорты для ENDPOINTS  ----------
 import json
@@ -64,6 +65,40 @@ def _json_ok(payload: dict, status=200):
     data = {"ok": True}
     data.update(payload)
     return JsonResponse(data, status=status)
+
+
+def _max_order_for_estimate(est):
+    return (
+        EstimateOverheadCostLink.objects.filter(estimate=est).aggregate(
+            m=models.Max("order")
+        )["m"]
+        or 0
+    )
+
+
+def _safe(val, default=0):
+    return val if val is not None else default
+
+
+def _link_base_snapshot(link):
+    c = link.overhead_cost_container
+    return _safe(link.snapshot_total_amount, _safe(c.total_amount, Decimal("0")))
+
+
+def _link_pct_mat(link):
+    c = link.overhead_cost_container
+    return _safe(
+        link.snapshot_materials_percentage,
+        _safe(c.materials_percentage, Decimal("0")),
+    )
+
+
+def _link_pct_work(link):
+    c = link.overhead_cost_container
+    return _safe(
+        link.snapshot_works_percentage,
+        _safe(c.works_percentage, Decimal("0")),
+    )
 
 
 # ---------- Для чтения листов  ----------
@@ -317,7 +352,7 @@ class EstimateAdmin(admin.ModelAdmin):
         # "overhead_costs_count_annot",
     )
     search_fields = ("name",)
-    inlines = [EstimateOverheadCostLinkInline]
+    # inlines = [EstimateOverheadCostLinkInline]
     readonly_fields = (
         "source_file",
         "source_sheet_index",
@@ -331,21 +366,6 @@ class EstimateAdmin(admin.ModelAdmin):
             _tc_links_count=Count("groups__techcard_links", distinct=True),
             _overhead_count=Count("overhead_cost_links", distinct=True),
         )
-
-    # вычисляемые колонки для спискового вида
-    # @admin.display(description=_("Групп"))
-    # def groups_count_annot(self, obj):
-    #     return obj._groups_count
-
-    # @admin.display(description=_("ТК в смете"))
-    # def tc_links_count_annot(self, obj):
-    #     return obj._tc_links_count
-
-    # @admin.display(description=_("НР"))
-    # def overhead_costs_count_annot(self, obj):
-    #     if hasattr(obj, "_overhead_count"):
-    #         return obj._overhead_count
-    #     return obj.overhead_cost_links.filter(is_active=True).count()
 
     # ---------- URLS: роутинг ----------
     # это нужно будет вынести отсюда. можно использовать DRF
@@ -392,11 +412,284 @@ class EstimateAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.api_analysis_data),
                 name="estimate_analysis_data",
             ),
+            path(
+                "<path:object_id>/api/overheads/",
+                self.admin_site.admin_view(self.api_overhead_list),
+                name="estimate_overheads",
+            ),
+            path(
+                "<path:object_id>/api/overheads/apply/",
+                self.admin_site.admin_view(self.api_overhead_apply),
+                name="estimate_overheads_apply",
+            ),
+            path(
+                "<path:object_id>/api/overheads/toggle/",
+                self.admin_site.admin_view(self.api_overhead_toggle),
+                name="estimate_overheads_toggle",
+            ),
+            path(
+                "<path:object_id>/api/overheads/delete/",
+                self.admin_site.admin_view(self.api_overhead_delete),
+                name="estimate_overheads_delete",
+            ),
+            path(
+                "<path:object_id>/api/overheads/quantity/",
+                self.admin_site.admin_view(self.api_overhead_set_quantity),
+                name="estimate_overheads_quantity",
+            ),
         ]
         return custom + urls
 
+    def _grouped_overheads_payload(self, est):
+        """
+        Готовим агрегированную выдачу:
+        - одна строка на контейнер
+        - quantity = кол-во ссылок на этот контейнер
+        - is_active = есть ли хотя бы одна активная ссылка
+        - суммы и средние считаем по АКТИВНЫМ ссылкам (как в расчётах)
+        """
+        links_qs = (
+            EstimateOverheadCostLink.objects.filter(estimate=est)
+            .select_related("overhead_cost_container")
+            .order_by("order", "id")
+        )
+
+        # Группировка по контейнеру
+        groups = {}  # container_id -> dict
+        for l in links_qs:
+            cid = l.overhead_cost_container_id
+            g = groups.get(cid)
+            if not g:
+                g = {
+                    "rep": l,  # представитель (любой линк из группы)
+                    "links": [],  # все линки контейнера
+                    "count": 0,  # всего ссылок
+                    "active_count": 0,  # активных ссылок
+                    "snap_sum": Decimal("0"),  # сумма снапов (всех)
+                    "snap_sum_active": Decimal("0"),  # сумма снапов АКТИВНЫХ
+                    "w_mat": Decimal("0"),  # для средневзвешенного %
+                    "w_work": Decimal("0"),
+                    "has_changes": False,
+                }
+                groups[cid] = g
+
+            g["links"].append(l)
+            g["count"] += 1
+            base_snap = _link_base_snapshot(l)
+            g["snap_sum"] += base_snap
+            g["has_changes"] = g["has_changes"] or bool(
+                getattr(l, "has_changes", False)
+            )
+
+            if l.is_active:
+                g["active_count"] += 1
+                g["snap_sum_active"] += base_snap
+                g["w_mat"] += _link_pct_mat(l) * base_snap
+                g["w_work"] += _link_pct_work(l) * base_snap
+
+        # Собираем строки
+        rows = []
+        total_overhead_active = Decimal("0")
+        total_w_mat = Decimal("0")
+        total_w_work = Decimal("0")
+
+        for cid, g in groups.items():
+            rep = g["rep"]
+            cont = rep.overhead_cost_container
+            qty = g["count"]
+            any_active = g["active_count"] > 0
+
+            total_overhead_active += g["snap_sum_active"]
+            total_w_mat += g["w_mat"]
+            total_w_work += g["w_work"]
+
+            rows.append(
+                {
+                    # id — id репрезентативной связи (используем его для действий)
+                    "id": rep.id,
+                    "container_id": cont.id,
+                    "name": cont.name,
+                    # показываем суммы с учетом quantity (все ссылки, независимо от активности)
+                    "snapshot_total": float(g["snap_sum"] or 0),
+                    "current_total": float(_safe(cont.total_amount, 0) * qty),
+                    # проценты берём из контейнера (они одинаковые в группе)
+                    "materials_pct": float(_safe(cont.materials_percentage, 0)),
+                    "works_pct": float(_safe(cont.works_percentage, 0)),
+                    "quantity": int(qty),
+                    # "активен" — есть ли хотя бы одна активная ссылка
+                    "is_active": any_active,
+                    "order": rep.order,
+                    "applied_at": getattr(rep, "applied_at", None)
+                    and rep.applied_at.isoformat(),
+                    "has_changes": g["has_changes"],
+                }
+            )
+
+        avg_mat = (
+            total_w_mat / total_overhead_active
+            if total_overhead_active
+            else Decimal("0")
+        )
+        avg_work = (
+            total_w_work / total_overhead_active
+            if total_overhead_active
+            else Decimal("0")
+        )
+
+        containers = [
+            {
+                "id": c.id,
+                "name": c.name,
+                "total": float(_safe(c.total_amount, 0)),
+                "materials_pct": float(_safe(c.materials_percentage, 0)),
+                "works_pct": float(_safe(c.works_percentage, 0)),
+            }
+            for c in OverheadCostContainer.objects.filter(is_active=True).order_by(
+                "name"
+            )
+        ]
+
+        return {
+            "links": rows,
+            "containers": containers,
+            # Итог — по АКТИВНЫМ ссылкам (чтобы совпадало с расчетами)
+            "overhead_total": float(total_overhead_active or 0),
+            "avg_materials_pct": float(avg_mat or 0),
+            "avg_works_pct": float(avg_work or 0),
+        }
+
     # ---------- ENDPOINTS: ... ----------
     # также лучше вынести из модуля, например во view|contrillers etc
+    def api_overhead_list(self, request, object_id: str):
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+        return _json_ok(self._grouped_overheads_payload(est))
+
+    def api_overhead_apply(self, request, object_id: str):
+        """Добавить контейнер: создаём ОДНУ новую связь (дубль), quantity растёт на 1."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+        try:
+            data = json.loads(request.body or "{}")
+            cont_id = int(data.get("container_id") or 0)
+            if cont_id <= 0:
+                return _json_error(_("Не указан контейнер"), 400)
+            if not OverheadCostContainer.objects.filter(id=cont_id).exists():
+                return _json_error(_("Контейнер НР не найден"), 404)
+
+            max_order = _max_order_for_estimate(est)
+            EstimateOverheadCostLink.objects.create(
+                estimate=est,
+                overhead_cost_container_id=cont_id,
+                order=max_order + 1,
+                is_active=True,
+            )
+            return _json_ok(self._grouped_overheads_payload(est))
+        except Exception as e:
+            return _json_error(str(e), 500)
+
+    def api_overhead_set_quantity(self, request, object_id: str):
+        """Установить количество: доводим число дублей до нужного."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+
+        try:
+            data = json.loads(request.body or "{}")
+            link_id = int(data.get("link_id") or 0)
+            qty = int(data.get("quantity") or 1)
+            if qty < 1:
+                qty = 1
+            # находим группу по link_id
+            link = EstimateOverheadCostLink.objects.select_related(
+                "overhead_cost_container"
+            ).get(id=link_id, estimate=est)
+            cid = link.overhead_cost_container_id
+            qs = EstimateOverheadCostLink.objects.filter(
+                estimate=est, overhead_cost_container_id=cid
+            ).order_by("order", "id")
+            cur = qs.count()
+
+            if cur < qty:
+                # ДОБАВИТЬ недостающее кол-во дублей
+                max_order = _max_order_for_estimate(est)
+                to_add = qty - cur
+                bulk = [
+                    EstimateOverheadCostLink(
+                        estimate=est,
+                        overhead_cost_container_id=cid,
+                        order=max_order + i + 1,
+                        is_active=True,
+                    )
+                    for i in range(to_add)
+                ]
+                EstimateOverheadCostLink.objects.bulk_create(bulk)
+            elif cur > qty:
+                # УДАЛИТЬ лишние (оставим самые «ранние», удалим «с конца», но не обязательно сохранять именно rep)
+                to_del = cur - qty
+                ids_to_delete = list(qs.values_list("id", flat=True))[-to_del:]
+                EstimateOverheadCostLink.objects.filter(id__in=ids_to_delete).delete()
+
+            return _json_ok(self._grouped_overheads_payload(est))
+        except EstimateOverheadCostLink.DoesNotExist:
+            return _json_error(_("Связь не найдена"), 404)
+        except Exception as e:
+            return _json_error(str(e), 500)
+
+    def api_overhead_toggle(self, request, object_id: str):
+        """Переключаем сразу всю группу (все дубли данного контейнера)."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+
+        try:
+            data = json.loads(request.body or "{}")
+            link_id = int(data.get("link_id") or 0)
+            is_active = bool(data.get("is_active"))
+            link = EstimateOverheadCostLink.objects.select_related(
+                "overhead_cost_container"
+            ).get(id=link_id, estimate=est)
+            cid = link.overhead_cost_container_id
+            EstimateOverheadCostLink.objects.filter(
+                estimate=est, overhead_cost_container_id=cid
+            ).update(is_active=is_active)
+            return _json_ok(self._grouped_overheads_payload(est))
+        except EstimateOverheadCostLink.DoesNotExist:
+            return _json_error(_("Связь не найдена"), 404)
+        except Exception as e:
+            return _json_error(str(e), 500)
+
+    def api_overhead_delete(self, request, object_id: str):
+        """Удаляем всю группу (все дубли данного контейнера)."""
+        if request.method != "POST":
+            return _json_error(_("Метод не разрешён"), 405)
+        est = self.get_object(request, object_id)
+        if not est:
+            return _json_error(_("Смета не найдена"), 404)
+
+        try:
+            data = json.loads(request.body or "{}")
+            link_id = int(data.get("link_id") or 0)
+            link = EstimateOverheadCostLink.objects.select_related(
+                "overhead_cost_container"
+            ).get(id=link_id, estimate=est)
+            cid = link.overhead_cost_container_id
+            EstimateOverheadCostLink.objects.filter(
+                estimate=est, overhead_cost_container_id=cid
+            ).delete()
+            return _json_ok(self._grouped_overheads_payload(est))
+        except EstimateOverheadCostLink.DoesNotExist:
+            return _json_error(_("Связь не найдена"), 404)
+        except Exception as e:
+            return _json_error(str(e), 500)
 
     def analysis_view(self, request, object_id: str):
         """

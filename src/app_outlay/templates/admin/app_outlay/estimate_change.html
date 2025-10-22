@@ -7,7 +7,7 @@
   <style>
     .tc-map { width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; }
     .tc-map th, .tc-map td { border:1px solid #e0e0e0; padding:6px 8px; vertical-align:top; }
-    .tc-map thead th { background:#f8f8f8; position:sticky; top:0; }
+    .tc-map thead th { background:#f8f8f8; position:sticky; top:0; z-index: 1; }
     .tc-map .muted { color:#888; font-size:11px; }
     .tc-map .sys { font-weight:600; }
     .tc-map .cell-2lines > div + div { margin-top:2px; }
@@ -20,65 +20,35 @@
 
     /* Обёртка поля ТК + элементы управления */
     .tc-input-wrapper { position: relative; display: inline-block; width: 100%; }
-    .tc-clear-btn {
-      position: absolute;
-      right: 4px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: #dc3545;
-      color: white;
-      border: none;
-      border-radius: 3px;
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
-      font-size: 12px;
-      line-height: 1;
-      padding: 0;
-      display: none;
-      z-index: 5;
-    }
+    .tc-clear-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: #dc3545; color: white; border: none; border-radius: 3px; width: 20px; height: 20px;
+      cursor: pointer; font-size: 12px; line-height: 1; padding: 0; display: none; z-index: 5; }
     .tc-clear-btn:hover { background: #c82333; }
-
-    /* Кнопка-ссылка "открыть ТК" (↗) — слева от крестика очистки */
-    .tc-open-link{
-      position:absolute;
-      right: 28px; /* слева от крестика очистки */
-      top:50%;
-      transform:translateY(-50%);
-      background:#17a2b8;
-      color:#fff;
-      text-decoration:none;
-      border-radius:3px;
-      height:20px;
-      line-height:20px;
-      padding:0 6px;
-      font-size:12px;
-      display:none;
-      z-index:5;
-    }
+    .tc-open-link{ position:absolute; right: 28px; top:50%; transform:translateY(-50%);
+      background:#17a2b8; color:#fff; text-decoration:none; border-radius:3px; height:20px; line-height:20px;
+      padding:0 6px; font-size:12px; display:none; z-index:5; }
     .tc-open-link:hover{ background:#138496; }
 
-    /* Единые карточки метрик для обеих секций табло */
+    /* Единые карточки метрик для табло */
     .metrics{display:flex;gap:16px;flex-wrap:wrap}
-    .metric-card{
-      background:#fff;border:1px solid #dee2e6;border-radius:6px;
-      padding:10px 12px;min-width:220px;box-shadow:0 1px 2px rgba(0,0,0,.03)
-    }
+    .metric-card{ background:#fff;border:1px solid #dee2e6;border-radius:6px; padding:10px 12px;min-width:220px;box-shadow:0 1px 2px rgba(0,0,0,.03) }
     .metric-title{font-weight:600;color:#495057;font-size:12px;margin-bottom:2px}
     .metric-value{font-weight:700;font-size:18px;color:#212529}
-    .metric-stack{margin-top:6px}
-    .metric-step{
-      display:flex;justify-content:space-between;
-      font-size:12px;margin:3px 0;color:#495057
-    }
-    .metric-step .label{color:#6c757d}
     .summary-note{font-size:10px;color:#6c757d;margin:6px 0}
-    
+
+    /* Панель НР */
+    #overhead-panel{background:#fff;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin:12px 0;font-size:13px}
+    #overhead-panel .col-slim{white-space:nowrap}
+    #overhead-panel .col-wide{min-width:220px}
+    #overhead-panel .button{padding:5px 10px}
+    .oh-qty{display:inline-flex;gap:6px;align-items:center}
+    .oh-qty-input{width:70px}
   </style>
 {% endblock %}
+
 {% block submit_buttons_top %}{% endblock %}
 {% block submit_buttons_bottom %}{% endblock %}
+
 {% block content %}
   {{ block.super }}
 
@@ -87,6 +57,7 @@
   {% if not table_sections %}
     <p class="help">Нет данных превью: либо файл не привязан, либо разметка не обнаружила ТК.</p>
   {% else %}
+
     <!-- КНОПКИ -->
     <div style="margin-bottom: 16px;">
       <button type="button" id="btn-auto-match" class="button" style="background: #417690; color: white;">
@@ -98,58 +69,57 @@
       <button type="button" id="btn-export-excel" class="button" style="margin-left: 8px; background: #28a745; color: white;">
         📥 Скачать файл с расчетами
       </button>
-      <!-- НОВАЯ КНОПКА -->
-      <a href="{% url 'admin:estimate_analysis' original.pk %}" 
-        class="button" 
-        style="margin-left: 8px; background: #17a2b8; color: white; text-decoration: none; display: inline-block;"
-        target="_blank">
-        📊 Детальный анализ
-      </a>
+      <a href="{% url 'admin:estimate_analysis' original.pk %}"
+         class="button"
+         style="margin-left: 8px; background: #17a2b8; color: white; text-decoration: none; display: inline-block;"
+         target="_blank">📊 Детальный анализ</a>
       <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
     </div>
 
-    <!-- ИТОГОВАЯ ПАНЕЛЬ (с учетом НР) -->
-    <div id="summary-panel" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:13px">
-
-      <!-- Секция 1: Текущие расчеты (УЖЕ включают НР) -->
-      <div style="margin-bottom:16px">
-        <div style="font-weight:600;color:#495057;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">
-          📋 Текущие расчеты
-        </div>
-        <div id="summary-note-base" class="summary-note"></div>
-        <div id="metrics-base" class="metrics"></div>
-        
-        {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
-        <div class="summary-note" style="margin-top:8px;color:#856404;font-size:11px">
-          ℹ️ Цены в таблице уже включают накладные расходы ({{ overhead_calculation.overhead_total|floatformat:2 }} ₽), 
-          рассчитанные пропорционально на основе сохраненных ТК.
-          {% comment %} {% if overhead_calculation.overhead_details %}
-          Распределение: МАТ {{ overhead_calculation.overhead_details.0.materials_pct|default:0|floatformat:0 }}% / 
-          РАБ {{ overhead_calculation.overhead_details.0.works_pct|default:0|floatformat:0 }}%
-          {% endif %} {% endcomment %}
-        </div>
-        {% endif %}
+    <!-- КАСТОМНЫЙ ИНЛАЙН НР (между кнопками и табло) -->
+    <div id="overhead-panel">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="font-weight:600;color:#495057">🧾 Накладные расходы</div>
+        <select id="oh-select" style="min-width:260px"></select>
+        <button type="button" id="oh-add" class="button">+ Добавить</button>
+        <span id="oh-meta" class="muted" style="margin-left:auto"></span>
       </div>
 
-      <!-- Секция 2: Параметры НР (информационная) -->
+      <table id="oh-table" class="tc-map" style="margin:0">
+        <thead>
+          <tr>
+            <th style="width:32px">#</th>
+            <th>Контейнер</th>
+            <th class="col-slim">Сумма (снап.)</th>
+            <th class="col-slim">Сумма (тек.)</th>
+            <th class="col-slim">% МАТ</th>
+            <th class="col-slim">% РАБ</th>
+            <th class="col-slim">Кол-во</th>
+            <th class="col-slim">Активен</th>
+            <th class="col-slim">Действия</th>
+          </tr>
+        </thead>
+        <tbody id="oh-rows"></tbody>
+      </table>
+    </div>
+
+    <!-- ИТОГОВОЕ ТАБЛО -->
+    <div id="summary-panel" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:13px">
+      <div style="margin-bottom:16px">
+        <div style="font-weight:600;color:#495057;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">📋 Текущие расчеты</div>
+        <div id="summary-note-base" class="summary-note"></div>
+        <div id="metrics-base" class="metrics"></div>
+      </div>
+
       {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
       <div style="padding-top:16px;border-top:2px solid #dee2e6">
-        <div style="font-weight:600;color:#856404;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #ffc107">
-          💰 Параметры накладных расходов
-        </div>
+        <div style="font-weight:600;color:#856404;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #ffc107">💰 Параметры накладных расходов</div>
         <div style="font-size:12px;color:#6c757d">
-          <div style="margin-bottom:4px">
-            <strong>Общая сумма НР:</strong> {{ overhead_calculation.overhead_total|floatformat:2 }} ₽
-          </div>
+          <div style="margin-bottom:4px"><strong>Общая сумма НР:</strong> {{ overhead_calculation.overhead_total|floatformat:2 }} ₽</div>
           {% for detail in overhead_calculation.overhead_details %}
-          <div style="margin-left:12px;margin-bottom:2px">
-            • {{ detail.name }}: {{ detail.total|floatformat:2 }} ₽ 
-            (МАТ: {{ detail.materials_pct|floatformat:0 }}%, РАБ: {{ detail.works_pct|floatformat:0 }}%)
-          </div>
+            <div style="margin-left:12px;margin-bottom:2px">• {{ detail.name }}: {{ detail.total|floatformat:2 }} ₽ (МАТ: {{ detail.materials_pct|floatformat:0 }}%, РАБ: {{ detail.works_pct|floatformat:0 }}%)</div>
           {% endfor %}
-          <div style="margin-top:8px;font-size:11px;font-style:italic">
-            Накладные расходы автоматически распределяются пропорционально базовой стоимости каждой ТК.
-          </div>
+          <div style="margin-top:8px;font-size:11px;font-style:italic">Накладные расходы автоматически распределяются пропорционально базовой стоимости каждой ТК.</div>
         </div>
       </div>
       {% endif %}
@@ -171,30 +141,19 @@
       <tbody>
         {% for sec in table_sections %}
           <tr class="sec-hdr">
-            <td colspan="{{ table_colspan }}">
-              <span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span>
-            </td>
+            <td colspan="{{ table_colspan }}"><span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span></td>
           </tr>
-
           {% for it in sec.items %}
             <tr data-row="{{ it.row_index }}">
               <td>{{ it.name }}</td>
               <td>{{ it.unit }}</td>
+              <td><input type="number" step="0.0001" class="qty-input" value="{{ it.qty|default_if_none:'' }}" placeholder="0"></td>
               <td>
-                <input type="number" step="0.0001" class="qty-input"
-                       value="{{ it.qty|default_if_none:'' }}" placeholder="0">
-              </td>
-              <td>
-                <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…"
-                       data-id="" data-text="">
+                <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…" data-id="" data-text="">
                 <div class="muted">строка Excel: {{ it.row_index }}</div>
               </td>
-
               {% for v in it.opt_values %}
-                <td class="cell-2lines opt-cell">
-                  <div class="sys">—</div>
-                  <div class="muted">xls: {{ v|default:"—" }}</div>
-                </td>
+                <td class="cell-2lines opt-cell"><div class="sys">—</div><div class="muted">xls: {{ v|default:"—" }}</div></td>
               {% endfor %}
             </tr>
           {% endfor %}
@@ -212,7 +171,14 @@
       const SAVE_MAPPINGS_URL = window.location.pathname.replace(/\/change\/?$/, '/api/save-mappings/');
       const EXISTING_MAPPINGS = JSON.parse('{{ existing_mappings_json|escapejs }}' || '{}');
 
-      // CSRF: берём токен из hidden-поля или из cookie
+      // НР эндпоинты
+      const OH_BASE_URL = window.location.pathname.replace(/\/change\/?$/, '/api/overheads/');
+      const OH_LIST_URL = OH_BASE_URL;
+      const OH_APPLY_URL = OH_BASE_URL + 'apply/';
+      const OH_TOGGLE_URL = OH_BASE_URL + 'toggle/';
+      const OH_DEL_URL = OH_BASE_URL + 'delete/';
+      const OH_QTY_URL = OH_BASE_URL + 'quantity/';
+
       function getCsrfToken(){
         const input = document.querySelector('[name=csrfmiddlewaretoken]');
         if (input && input.value) return input.value;
@@ -220,21 +186,14 @@
         return m ? decodeURIComponent(m[1]) : '';
       }
 
-      /* Шаблон URL изменения ТК в админке */
       const TC_CHANGE_URL_TMPL = "{{ tc_change_url_zero|default:'' }}";
-      function tcChangeUrl(id){
-        if (!TC_CHANGE_URL_TMPL) return '#';
-        return TC_CHANGE_URL_TMPL.replace(/0\/change\/?$/, String(id) + "/change/");
-      }
+      function tcChangeUrl(id){ return TC_CHANGE_URL_TMPL ? TC_CHANGE_URL_TMPL.replace(/0\/change\/?$/, String(id) + "/change/") : '#'; }
 
       const btnAutoMatch = document.getElementById('btn-auto-match');
       const btnSaveMappings = document.getElementById('btn-save-mappings');
       const statusSpan = document.getElementById('auto-match-status');
 
-      async function searchTC(q){
-        const r = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q));
-        const d = await r.json(); return d.results || [];
-      }
+      async function searchTC(q){ const r = await fetch(AUTOCOMPLETE_URL + '?q=' + encodeURIComponent(q)); const d = await r.json(); return d.results || []; }
 
       function attachAutocomplete(input){
         let box;
@@ -245,40 +204,15 @@
           const items = await searchTC(q);
           const rect = input.getBoundingClientRect();
           box = document.createElement('div');
-          Object.assign(box.style, {
-            position:'absolute', background:'#fff', border:'1px solid #ddd',
-            zIndex:10, maxHeight:'220px', overflow:'auto',
-            left:(rect.left+window.scrollX)+'px', top:(rect.bottom+window.scrollY)+'px',
-            minWidth:rect.width+'px'
-          });
+          Object.assign(box.style,{position:'absolute',background:'#fff',border:'1px solid #ddd',zIndex:10,maxHeight:'220px',overflow:'auto',left:(rect.left+window.scrollX)+'px',top:(rect.bottom+window.scrollY)+'px',minWidth:rect.width+'px'});
           items.forEach(it=>{
-            const a = document.createElement('div');
-            a.textContent = it.text;
-            a.style.cssText='padding:4px 8px; cursor:pointer;';
+            const a = document.createElement('div'); a.textContent = it.text; a.style.cssText='padding:4px 8px; cursor:pointer;';
             a.addEventListener('mousedown', ()=>{
-              input.value = it.text;
-              input.dataset.id = it.id;
-              input.dataset.text = it.text;
-              box.remove(); box=null;
-
-              // показать/обновить ссылку на ТК
+              input.value = it.text; input.dataset.id = it.id; input.dataset.text = it.text;
               const linkEl = input.parentElement?.querySelector('.tc-open-link');
-              if (linkEl) {
-                const id = parseInt(it.id || '0', 10) || 0;
-                if (id > 0) {
-                  linkEl.href = tcChangeUrl(id);
-                  linkEl.style.display = 'block';
-                } else {
-                  linkEl.removeAttribute('href');
-                  linkEl.style.display = 'none';
-                }
-              }
-
-              const clearBtn = input.parentElement?.querySelector('.tc-clear-btn');
-              if (clearBtn) clearBtn.style.display = 'block';
-
-              const tr = input.closest('tr');
-              if (tr) triggerRowCalc(tr);
+              if (linkEl){ const id = parseInt(it.id||'0',10)||0; if (id>0){ linkEl.href = tcChangeUrl(id); linkEl.style.display='block'; } else { linkEl.removeAttribute('href'); linkEl.style.display='none'; } }
+              const clearBtn = input.parentElement?.querySelector('.tc-clear-btn'); if (clearBtn) clearBtn.style.display='block';
+              const tr = input.closest('tr'); if (tr) triggerRowCalc(tr);
             });
             box.appendChild(a);
           });
@@ -287,93 +221,19 @@
           setTimeout(()=> document.addEventListener('mousedown', clickAway), 0);
         });
       }
-
       document.querySelectorAll('.js-tc-autocomplete, .tc-lookup').forEach(attachAutocomplete);
 
       // Обёртка, кнопка очистки и ссылка "↗ открыть ТК"
       document.querySelectorAll('.js-tc-autocomplete').forEach(input => {
-        // Оборачиваем input в wrapper
-        const wrapper = document.createElement('div');
-        wrapper.className = 'tc-input-wrapper';
-        input.parentNode.insertBefore(wrapper, input);
-        wrapper.appendChild(input);
-
-        // Ссылка "Открыть ТК"
-        const openLink = document.createElement('a');
-        openLink.className = 'tc-open-link';
-        openLink.textContent = '↗';
-        openLink.target = '_blank';
-        openLink.rel = 'noopener noreferrer';
-        wrapper.appendChild(openLink);
-
-        // Кнопка очистки
-        const clearBtn = document.createElement('button');
-        clearBtn.innerHTML = '✕';
-        clearBtn.type = 'button';
-        clearBtn.className = 'tc-clear-btn';
-        clearBtn.title = 'Очистить';
-        wrapper.appendChild(clearBtn);
-
-        // Хелперы видимости
-        const toggleClearBtn = () => {
-          clearBtn.style.display = input.value.trim() ? 'block' : 'none';
-        };
-        const updateOpenLink = () => {
-          const id = parseInt(input.dataset.id || '0', 10) || 0;
-          if (id > 0) {
-            openLink.href = tcChangeUrl(id);
-            openLink.style.display = 'block';
-          } else {
-            openLink.removeAttribute('href');
-            openLink.style.display = 'none';
-          }
-        };
-
-        // Очистка
-        clearBtn.addEventListener('click', () => {
-          input.value = '';
-          input.dataset.id = '';
-          input.dataset.text = '';
-          input.style.background = '';
-          clearBtn.style.display = 'none';
-          updateOpenLink();
-
-          const tr = input.closest('tr');
-          if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
-          setTimeout(updateSummary, 100);
-        });
-
-        // Реакция на набор текста: сбрасываем id, обновляем ссылку
-        input.addEventListener('input', () => {
-          const currentValue = input.value.trim();
-          const datasetText = input.dataset.text || '';
-          if (currentValue !== datasetText) {
-            input.dataset.id = '';
-            input.dataset.text = '';
-            const tr = input.closest('tr');
-            if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
-            setTimeout(updateSummary, 100);
-          }
-          toggleClearBtn();
-          updateOpenLink();
-        });
-
-        // Потеря фокуса
-        input.addEventListener('blur', () => {
-          if (!input.value.trim()) {
-            input.dataset.id = '';
-            input.dataset.text = '';
-            input.style.background = '';
-            const tr = input.closest('tr');
-            if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
-            setTimeout(updateSummary, 100);
-          }
-          updateOpenLink();
-        });
-
-        // Инициализация
-        toggleClearBtn();
-        updateOpenLink();
+        const wrapper = document.createElement('div'); wrapper.className = 'tc-input-wrapper'; input.parentNode.insertBefore(wrapper, input); wrapper.appendChild(input);
+        const openLink = document.createElement('a'); openLink.className = 'tc-open-link'; openLink.textContent = '↗'; openLink.target = '_blank'; openLink.rel = 'noopener noreferrer'; wrapper.appendChild(openLink);
+        const clearBtn = document.createElement('button'); clearBtn.innerHTML = '✕'; clearBtn.type = 'button'; clearBtn.className = 'tc-clear-btn'; clearBtn.title = 'Очистить'; wrapper.appendChild(clearBtn);
+        const toggleClearBtn = ()=>{ clearBtn.style.display = input.value.trim() ? 'block' : 'none'; };
+        const updateOpenLink = ()=>{ const id = parseInt(input.dataset.id||'0',10)||0; if (id>0){ openLink.href = tcChangeUrl(id); openLink.style.display='block'; } else { openLink.removeAttribute('href'); openLink.style.display='none'; } };
+        clearBtn.addEventListener('click', ()=>{ input.value=''; input.dataset.id=''; input.dataset.text=''; input.style.background=''; clearBtn.style.display='none'; updateOpenLink(); const tr = input.closest('tr'); if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent='—'); setTimeout(updateSummary,100); });
+        input.addEventListener('input', ()=>{ const currentValue = input.value.trim(); const datasetText = input.dataset.text || ''; if (currentValue !== datasetText){ input.dataset.id=''; input.dataset.text=''; const tr = input.closest('tr'); if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent='—'); setTimeout(updateSummary,100);} toggleClearBtn(); updateOpenLink(); });
+        input.addEventListener('blur', ()=>{ if (!input.value.trim()){ input.dataset.id=''; input.dataset.text=''; input.style.background=''; const tr = input.closest('tr'); if (tr) tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent='—'); setTimeout(updateSummary,100);} updateOpenLink(); });
+        toggleClearBtn(); updateOpenLink();
       });
 
       async function triggerRowCalc(tr){
@@ -382,31 +242,15 @@
         const inpQty = tr.querySelector('.qty-input');
         const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
         const qty  = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
-
         tr.querySelectorAll('.opt-cell .sys').forEach(el=> el.textContent = '—');
         if (!tcId || !isFinite(qty) || qty === 0) return;
-
         try{
           const resp = await fetch(CALC_URL + '?tc=' + tcId + '&qty=' + encodeURIComponent(qty));
-          const data = await resp.json();
-          if (!data.ok) return;
-          const calc = data.calc || {};
-          const cells = tr.querySelectorAll('.opt-cell');
-
-          CALC_ORDER.forEach((rid, idx)=>{
-            const td = cells[idx];
-            if (!td) return;
-            const val = (calc[rid] != null)
-              ? Number(calc[rid]).toLocaleString(undefined, {maximumFractionDigits: 4})
-              : '—';
-            td.querySelector('.sys').textContent = val;
-          });
-          
-          // Обновляем summary после расчета строки
+          const data = await resp.json(); if (!data.ok) return;
+          const calc = data.calc || {}; const cells = tr.querySelectorAll('.opt-cell');
+          CALC_ORDER.forEach((rid, idx)=>{ const td = cells[idx]; if (!td) return; const val = (calc[rid] != null) ? Number(calc[rid]).toLocaleString(undefined,{maximumFractionDigits:4}) : '—'; td.querySelector('.sys').textContent = val; });
           setTimeout(updateSummary, 100);
-        }catch(e){
-          console.error('Calc error:', e);
-        }
+        }catch(e){ console.error('Calc error:', e); }
       }
 
       document.querySelectorAll('#tc-map .qty-input').forEach(inp=>{
@@ -414,371 +258,169 @@
         inp.addEventListener('blur',   ()=> triggerRowCalc(inp.closest('tr')));
       });
 
-      // АВТОСОПОСТАВЛЕНИЕ
+      // Автосопоставление
       if (btnAutoMatch) {
         btnAutoMatch.addEventListener('click', async () => {
-          btnAutoMatch.disabled = true;
-          statusSpan.textContent = 'Ищу совпадения...';
-
-          const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-          const items = [];
-
-          rows.forEach(tr => {
-            const rowIndex = tr.dataset.row;
-            const nameCell = tr.querySelector('td:nth-child(1)');
-            const unitCell = tr.querySelector('td:nth-child(2)');
-
-            if (nameCell && unitCell) {
-              items.push({
-                row_index: parseInt(rowIndex),
-                name: nameCell.textContent.trim(),
-                unit: unitCell.textContent.trim()
-              });
-            }
-          });
-
-          try {
-            const resp = await fetch(AUTO_MATCH_URL, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
-              },
-              body: JSON.stringify({ items })
-            });
-
-            const data = await resp.json();
-
-            if (!data.ok) {
-              statusSpan.textContent = '❌ Ошибка: ' + (data.error || 'unknown');
-              btnAutoMatch.disabled = false;
-              return;
-            }
-
-            let matched = 0;
-            data.results.forEach(result => {
-              const tr = document.querySelector(`tr[data-row="${result.row_index}"]`);
-              if (!tr) return;
-
-              const tcInput = tr.querySelector('.js-tc-autocomplete');
-              const qtyInput = tr.querySelector('.qty-input');
-              if (!tcInput) return;
-
-              if (result.matched_tc_id && result.matched_tc_text) {
-                tcInput.value = result.matched_tc_text;
-                tcInput.dataset.id = result.matched_tc_id;
-                tcInput.dataset.text = result.matched_tc_text;
-
-                if (result.similarity >= 0.9) {
-                  tcInput.style.background = '#d4edda';
-                } else if (result.similarity >= 0.5) {
-                  tcInput.style.background = '#fff3cd';
-                } else {
-                  tcInput.style.background = '#f8d7da';
-                }
-
-                // показать ссылку
-                const openLink = tcInput.parentElement?.querySelector('.tc-open-link');
-                if (openLink) {
-                  const id = parseInt(result.matched_tc_id || '0', 10) || 0;
-                  if (id > 0) {
-                    openLink.href = tcChangeUrl(id);
-                    openLink.style.display = 'block';
-                  } else {
-                    openLink.removeAttribute('href');
-                    openLink.style.display = 'none';
-                  }
-                }
-
-                // Показать кнопку очистки
-                const clearBtn = tcInput.parentElement?.querySelector('.tc-clear-btn');
-                if (clearBtn) clearBtn.style.display = 'block';
-
-                if (qtyInput && qtyInput.value && parseFloat(qtyInput.value) > 0) {
-                  triggerRowCalc(tr);
-                }
-
-                matched++;
-              }
-            });
-
-            statusSpan.textContent = `✅ Сопоставлено: ${matched} из ${items.length}`;
-            setTimeout(updateSummary, 500);
-
-          } catch (e) {
-            statusSpan.textContent = '❌ Ошибка сети';
-            console.error(e);
-          } finally {
-            btnAutoMatch.disabled = false;
-          }
+          btnAutoMatch.disabled = true; statusSpan.textContent = 'Ищу совпадения...';
+          const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)'); const items = [];
+          rows.forEach(tr => { const rowIndex = tr.dataset.row; const nameCell = tr.querySelector('td:nth-child(1)'); const unitCell = tr.querySelector('td:nth-child(2)'); if (nameCell && unitCell){ items.push({ row_index: parseInt(rowIndex), name: nameCell.textContent.trim(), unit: unitCell.textContent.trim() }); } });
+          try{
+            const resp = await fetch(AUTO_MATCH_URL, { method:'POST', headers:{ 'Content-Type':'application/json','X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '' }, body: JSON.stringify({ items }) });
+            const data = await resp.json(); if (!data.ok){ statusSpan.textContent = '❌ Ошибка: ' + (data.error || 'unknown'); btnAutoMatch.disabled = false; return; }
+            let matched = 0; data.results.forEach(result => { const tr = document.querySelector(`tr[data-row="${result.row_index}"]`); if (!tr) return; const tcInput = tr.querySelector('.js-tc-autocomplete'); const qtyInput = tr.querySelector('.qty-input'); if (!tcInput) return; if (result.matched_tc_id && result.matched_tc_text){ tcInput.value = result.matched_tc_text; tcInput.dataset.id = result.matched_tc_id; tcInput.dataset.text = result.matched_tc_text; tcInput.style.background = (result.similarity >= 0.9) ? '#d4edda' : (result.similarity >= 0.5) ? '#fff3cd' : '#f8d7da'; const openLink = tcInput.parentElement?.querySelector('.tc-open-link'); if (openLink){ const id = parseInt(result.matched_tc_id||'0',10)||0; if (id>0){ openLink.href = tcChangeUrl(id); openLink.style.display = 'block'; } else { openLink.removeAttribute('href'); openLink.style.display = 'none'; } } const clearBtn = tcInput.parentElement?.querySelector('.tc-clear-btn'); if (clearBtn) clearBtn.style.display = 'block'; if (qtyInput && qtyInput.value && parseFloat(qtyInput.value)>0) triggerRowCalc(tr); matched++; } });
+            statusSpan.textContent = `✅ Сопоставлено: ${matched} из ${items.length}`; setTimeout(updateSummary, 500);
+          } catch (e) { statusSpan.textContent = '❌ Ошибка сети'; console.error(e); } finally { btnAutoMatch.disabled = false; }
         });
       }
 
-      // ---------- SUMMARY: расчет итогов ----------
-
-      // Собираем базовые суммы из таблицы (УЖЕ включают НР)
+      // Итоги
       function computeBaseTotals(){
-        const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-        const totals = {};
-        CALC_ORDER.forEach(rid => totals[rid] = 0);
-
+        const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)'); const totals = {}; CALC_ORDER.forEach(rid => totals[rid] = 0);
         let calculatedRows = 0;
-
-        rows.forEach(tr => {
-          const cells = tr.querySelectorAll('.opt-cell');
-          let hasValues = false;
-          CALC_ORDER.forEach((rid, idx) => {
-            const cell = cells[idx]; if (!cell) return;
-            const text = (cell.querySelector('.sys')?.textContent || '').trim();
-            if (!text || text === '—') return;
-            const val = parseFloat(text.replace(/\s/g,'').replace(',', '.'));
-            if (!isNaN(val)){ totals[rid] += val; hasValues = true; }
-          });
-          if (hasValues) calculatedRows++;
-        });
-
-        return {
-          rows: rows.length,
-          calculatedRows,
-          baseMat: Number(totals['PRICE_FOR_ALL_MATERIAL'] || 0),
-          baseWorks: Number(totals['PRICE_FOR_ALL_WORK'] || 0),
-          baseTotal: Number(totals['TOTAL_PRICE'] || 0),
-        };
+        rows.forEach(tr => { const cells = tr.querySelectorAll('.opt-cell'); let hasValues = false; CALC_ORDER.forEach((rid, idx) => { const cell = cells[idx]; if (!cell) return; const text = (cell.querySelector('.sys')?.textContent || '').trim(); if (!text || text === '—') return; const val = parseFloat(text.replace(/\s/g,'').replace(',', '.')); if (!isNaN(val)){ totals[rid] += val; hasValues = true; } }); if (hasValues) calculatedRows++; });
+        return { rows: rows.length, calculatedRows, baseMat: Number(totals['PRICE_FOR_ALL_MATERIAL'] || 0), baseWorks: Number(totals['PRICE_FOR_ALL_WORK'] || 0), baseTotal: Number(totals['TOTAL_PRICE'] || 0) };
       }
-
-      // Рисуем карточки метрик (единый макет)
       function renderMetricCards(container, {titleMat, titleWorks, titleTotal, mainMat, mainWorks, mainTotal}){
         const fmt = n => n.toLocaleString('ru-RU',{minimumFractionDigits:2, maximumFractionDigits:2});
-        const card = (title, main) => `
-          <div class="metric-card">
-            <div class="metric-title">${title}</div>
-            <div class="metric-value">${fmt(main)}</div>
-          </div>
-        `;
-
-        container.innerHTML = [
-          card(titleMat,   mainMat),
-          card(titleWorks, mainWorks),
-          card(titleTotal, mainTotal),
-        ].join('');
+        const card = (title, main) => `<div class="metric-card"><div class="metric-title">${title}</div><div class="metric-value">${fmt(main)}</div></div>`;
+        container.innerHTML = [ card(titleMat, mainMat), card(titleWorks, mainWorks), card(titleTotal, mainTotal) ].join('');
       }
-
-      // Обновление summary (НР УЖЕ учтены в ценах таблицы!)
       function updateSummary(){
         const base = computeBaseTotals();
-
-        // Текущие расчеты — карточки без «ступенек»
-        const noteBase = document.getElementById('summary-note-base');
-        const boxBase  = document.getElementById('metrics-base');
+        const noteBase = document.getElementById('summary-note-base'); const boxBase  = document.getElementById('metrics-base');
         if (noteBase) noteBase.textContent = `Рассчитано строк: ${base.calculatedRows} из ${base.rows}`;
-        if (boxBase){
-          renderMetricCards(boxBase, {
-            titleMat: 'Материалы',  titleWorks: 'Работы', titleTotal: 'Итого',
-            mainMat: base.baseMat,  mainWorks:  base.baseWorks, mainTotal: base.baseTotal,
-          });
-        }
+        if (boxBase){ renderMetricCards(boxBase, { titleMat:'Материалы', titleWorks:'Работы', titleTotal:'Итого', mainMat: base.baseMat, mainWorks: base.baseWorks, mainTotal: base.baseTotal }); }
       }
 
-      // ПРЕДЗАПОЛНЕНИЕ СУЩЕСТВУЮЩИХ ДАННЫХ
-      async function prefillExistingMappings() {
-        const mappingEntries = Object.entries(EXISTING_MAPPINGS);
-
-        if (mappingEntries.length === 0) {
-          updateSummary();
-          return;
-        }
-
+      async function prefillExistingMappings(){
+        const mappingEntries = Object.entries(EXISTING_MAPPINGS); if (mappingEntries.length === 0){ updateSummary(); return; }
         const calcPromises = [];
-
-        mappingEntries.forEach(([rowIndex, mapping]) => {
-          const tr = document.querySelector(`tr[data-row="${rowIndex}"]`);
-          if (!tr) return;
-
-          const tcInput = tr.querySelector('.js-tc-autocomplete');
-          const qtyInput = tr.querySelector('.qty-input');
-
-          if (tcInput && mapping.tc_id && mapping.tc_name) {
-            tcInput.value = mapping.tc_name;
-            tcInput.dataset.id = mapping.tc_id;
-            tcInput.dataset.text = mapping.tc_name;
-            tcInput.style.background = '#e7f3ff';
-
-            // показать ссылку
-            const openLink = tcInput.parentElement?.querySelector('.tc-open-link');
-            if (openLink) {
-              const id = parseInt(mapping.tc_id || '0', 10) || 0;
-              if (id > 0) {
-                openLink.href = tcChangeUrl(id);
-                openLink.style.display = 'block';
-              } else {
-                openLink.removeAttribute('href');
-                openLink.style.display = 'none';
-              }
-            }
-
-            // показать кнопку очистки
-            const clearBtn = tcInput.parentElement?.querySelector('.tc-clear-btn');
-            if (clearBtn) clearBtn.style.display = 'block';
-          }
-
-          if (qtyInput && mapping.quantity) {
-            qtyInput.value = mapping.quantity;
-          }
-
-          if (mapping.tc_id && mapping.quantity > 0) {
-            calcPromises.push(triggerRowCalc(tr));
-          }
+        mappingEntries.forEach(([rowIndex, mapping]) => { const tr = document.querySelector(`tr[data-row="${rowIndex}"]`); if (!tr) return; const tcInput = tr.querySelector('.js-tc-autocomplete'); const qtyInput = tr.querySelector('.qty-input'); if (tcInput && mapping.tc_id && mapping.tc_name){ tcInput.value = mapping.tc_name; tcInput.dataset.id = mapping.tc_id; tcInput.dataset.text = mapping.tc_name; tcInput.style.background = '#e7f3ff'; const openLink = tcInput.parentElement?.querySelector('.tc-open-link'); if (openLink){ const id = parseInt(mapping.tc_id||'0',10)||0; if (id>0){ openLink.href = tcChangeUrl(id); openLink.style.display='block'; } else { openLink.removeAttribute('href'); openLink.style.display='none'; } } const clearBtn = tcInput.parentElement?.querySelector('.tc-clear-btn'); if (clearBtn) clearBtn.style.display='block'; }
+          if (qtyInput && mapping.quantity){ qtyInput.value = mapping.quantity; }
+          if (mapping.tc_id && mapping.quantity > 0){ calcPromises.push(triggerRowCalc(tr)); }
         });
-
-        if (calcPromises.length > 0) {
-          await Promise.all(calcPromises);
-        }
-        updateSummary();
+        if (calcPromises.length > 0) await Promise.all(calcPromises); updateSummary();
       }
-
       prefillExistingMappings();
 
-      // СОХРАНЕНИЕ РАСЧЕТОВ (работает как Save and continue editing)
+      // Сохранение расчётов (и формы админки)
       if (btnSaveMappings) {
         btnSaveMappings.addEventListener('click', async () => {
-          btnSaveMappings.disabled = true;
-          statusSpan.textContent = 'Сохранение...';
-          statusSpan.style.color = '#666';
-
-          // 1. Собираем данные сопоставлений ТК
-          const mappings = [];
-          const deletions = [];
-          let currentSection = 'Без группы';
-
-          document.querySelectorAll('#tc-map tbody tr').forEach(tr => {
-            if (tr.classList.contains('sec-hdr')) {
-              const badge = tr.querySelector('.badge');
-              if (badge) currentSection = badge.textContent.trim();
-              return;
-            }
-
-            const tcInput = tr.querySelector('.js-tc-autocomplete');
-            const qtyInput = tr.querySelector('.qty-input');
-            const rowIndex = parseInt(tr.dataset.row || '0', 10);
-
-            if (!tcInput || !qtyInput || !rowIndex) return;
-
-            const tcId = parseInt(tcInput.dataset.id || '0', 10) || 0;
-            const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0;
-
-            const hadMapping = (EXISTING_MAPPINGS[String(rowIndex)] != null);
-
-            if (tcId > 0 && quantity > 0) {
-              mappings.push({
-                section: currentSection,
-                tc_id: tcId,
-                quantity,
-                row_index: rowIndex,
-                tc_name: tcInput.value
-              });
-            } else if (hadMapping) {
-              deletions.push(rowIndex);
-            }
-          });
-
-          // 2. Сначала сохраняем сопоставления ТК через AJAX
+          btnSaveMappings.disabled = true; statusSpan.textContent = 'Сохранение...'; statusSpan.style.color = '#666';
+          const mappings = []; const deletions = []; let currentSection = 'Без группы';
+          document.querySelectorAll('#tc-map tbody tr').forEach(tr => { if (tr.classList.contains('sec-hdr')){ const badge = tr.querySelector('.badge'); if (badge) currentSection = badge.textContent.trim(); return; } const tcInput = tr.querySelector('.js-tc-autocomplete'); const qtyInput = tr.querySelector('.qty-input'); const rowIndex = parseInt(tr.dataset.row || '0', 10); if (!tcInput || !qtyInput || !rowIndex) return; const tcId = parseInt(tcInput.dataset.id || '0', 10) || 0; const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0; const hadMapping = (EXISTING_MAPPINGS[String(rowIndex)] != null); if (tcId > 0 && quantity > 0){ mappings.push({ section: currentSection, tc_id: tcId, quantity, row_index: rowIndex, tc_name: tcInput.value }); } else if (hadMapping){ deletions.push(rowIndex); } });
           if (mappings.length > 0 || deletions.length > 0) {
-            try {
-              const resp = await fetch(SAVE_MAPPINGS_URL, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-CSRFToken': getCsrfToken(),
-                },
-                body: JSON.stringify({ mappings, deletions })
-              });
-
-              const data = await resp.json();
-
-              if (!data.ok) {
-                statusSpan.textContent = '❌ Ошибка сопоставлений: ' + (data.error || 'unknown');
-                statusSpan.style.color = '#721c24';
-                btnSaveMappings.disabled = false;
-                return;
-              }
-
-              const deletedMsg = data.deleted > 0 ? `, удалено: ${data.deleted}` : '';
-              console.log(`Сопоставления сохранены: ${data.total} позиций (создано: ${data.created}, обновлено: ${data.updated}${deletedMsg})`);
-
-            } catch (e) {
-              console.error('Ошибка сохранения сопоставлений:', e);
-              statusSpan.textContent = '❌ Ошибка сети (сопоставления)';
-              statusSpan.style.color = '#721c24';
-              btnSaveMappings.disabled = false;
-              return;
-            }
+            try{ const resp = await fetch(SAVE_MAPPINGS_URL, { method:'POST', headers:{ 'Content-Type':'application/json','X-CSRFToken': getCsrfToken() }, body: JSON.stringify({ mappings, deletions }) }); const data = await resp.json(); if (!data.ok){ statusSpan.textContent = '❌ Ошибка сопоставлений: ' + (data.error || 'unknown'); statusSpan.style.color = '#721c24'; btnSaveMappings.disabled = false; return; } } catch (e){ console.error('Ошибка сохранения сопоставлений:', e); statusSpan.textContent = '❌ Ошибка сети (сопоставления)'; statusSpan.style.color = '#721c24'; btnSaveMappings.disabled = false; return; }
           }
-
-          // 3. Затем отправляем основную форму Django Admin (как Save and continue editing)
           statusSpan.textContent = 'Сохранение формы...';
-          
-          const adminForm = document.querySelector('form#estimate_form');
-          if (!adminForm) {
-            // Fallback: ищем любую форму на странице
-            const forms = document.querySelectorAll('form');
-            const mainForm = Array.from(forms).find(f => f.querySelector('[name=csrfmiddlewaretoken]'));
-            
-            if (mainForm) {
-              // Добавляем hidden input для "_continue" (Save and continue editing)
-              let continueInput = mainForm.querySelector('input[name="_continue"]');
-              if (!continueInput) {
-                continueInput = document.createElement('input');
-                continueInput.type = 'hidden';
-                continueInput.name = '_continue';
-                continueInput.value = 'Save and continue editing';
-                mainForm.appendChild(continueInput);
-              }
-              
-              // Submit формы
-              mainForm.submit();
-            } else {
-              // Если форма не найдена - просто перезагружаем страницу
-              statusSpan.textContent = '✅ Сопоставления сохранены';
-              statusSpan.style.color = '#155724';
-              setTimeout(() => { window.location.reload(); }, 800);
-            }
-          } else {
-            // Нашли форму с ID - отправляем её
-            let continueInput = adminForm.querySelector('input[name="_continue"]');
-            if (!continueInput) {
-              continueInput = document.createElement('input');
-              continueInput.type = 'hidden';
-              continueInput.name = '_continue';
-              continueInput.value = 'Save and continue editing';
-              adminForm.appendChild(continueInput);
-            }
-            
-            adminForm.submit();
-          }
+          const adminForm = document.querySelector('form#estimate_form') || Array.from(document.querySelectorAll('form')).find(f => f.querySelector('[name=csrfmiddlewaretoken]'));
+          if (adminForm){ let cont = adminForm.querySelector('input[name="_continue"]'); if (!cont){ cont = document.createElement('input'); cont.type='hidden'; cont.name = '_continue'; cont.value = 'Save and continue editing'; adminForm.appendChild(cont); } adminForm.submit(); } else { statusSpan.textContent = '✅ Сопоставления сохранены'; statusSpan.style.color = '#155724'; setTimeout(()=>{ window.location.reload(); }, 800); }
         });
       }
-      // ========== ЭКСПОРТ В EXCEL ==========
+
+      // Экспорт Excel
       const btnExportExcel = document.getElementById('btn-export-excel');
-      if (btnExportExcel) {
-        btnExportExcel.addEventListener('click', () => {
-          // Формируем URL для экспорта
-          const exportUrl = window.location.pathname.replace(/\/change\/?$/, '/api/export-excel/');
-          
-          // Показываем индикатор загрузки
-          statusSpan.textContent = '⏳ Формирование файла...';
-          statusSpan.style.color = '#666';
-          btnExportExcel.disabled = true;
-          
-          // Переходим на URL экспорта (файл скачается автоматически)
-          window.location.href = exportUrl;
-          
-          // Через 2 секунды убираем индикатор
-          setTimeout(() => {
-            statusSpan.textContent = '';
-            btnExportExcel.disabled = false;
-          }, 2000);
+      if (btnExportExcel){ btnExportExcel.addEventListener('click', ()=>{ const exportUrl = window.location.pathname.replace(/\/change\/?$/, '/api/export-excel/'); statusSpan.textContent = '⏳ Формирование файла...'; statusSpan.style.color = '#666'; btnExportExcel.disabled = true; window.location.href = exportUrl; setTimeout(()=>{ statusSpan.textContent=''; btnExportExcel.disabled = false; }, 2000); }); }
+
+      // ======= НР: Клиентская логика =======
+      const ohSelect = document.getElementById('oh-select');
+      const ohAddBtn = document.getElementById('oh-add');
+      const ohRows   = document.getElementById('oh-rows');
+      const ohMeta   = document.getElementById('oh-meta');
+
+      async function postJSON(url, payload){
+        try{
+          const res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', 'X-CSRFToken': getCsrfToken() }, body: JSON.stringify(payload || {}) });
+          const ct = res.headers.get('content-type')||'';
+          if (ct.includes('application/json')) return await res.json();
+          const txt = await res.text(); console.warn('postJSON: non-JSON response', res.status, txt.slice(0,300));
+          return { ok:false, status: res.status, error: 'non_json', html: txt };
+        }catch(e){ console.warn('postJSON error', e); return { ok:false, error: String(e) }; }
+      }
+
+      function renderOH(data){
+        if (ohSelect){ ohSelect.innerHTML = ''; const list = Array.isArray(data?.containers) ? data.containers : []; if (list.length){ list.forEach(c=>{ const opt = document.createElement('option'); opt.value = String(c.id); opt.textContent = `${c.name} · ${c.total.toLocaleString()} — МАТ ${c.materials_pct}% / РАБ ${c.works_pct}%`; ohSelect.appendChild(opt); }); ohAddBtn?.removeAttribute('disabled'); } else { const opt = document.createElement('option'); opt.disabled = true; opt.selected = true; opt.textContent = '— нет доступных контейнеров —'; ohSelect.appendChild(opt); ohAddBtn?.setAttribute('disabled','disabled'); } }
+        if (ohMeta){ const t = Number(data?.overhead_total || 0); const mp = Number(data?.avg_materials_pct || 0).toFixed(1); const wp = Number(data?.avg_works_pct || 0).toFixed(1); const hasList = Array.isArray(data?.containers) && data.containers.length>0; ohMeta.textContent = hasList ? `Всего НР: ${t.toLocaleString()} · средн. распределение: МАТ ${mp}% / РАБ ${wp}%` : 'Создайте контейнер НР и включите его (⚙️ Админка → Контейнеры НР).'; }
+        if (ohRows){ ohRows.innerHTML = ''; (data?.links || []).forEach((l, idx)=>{ const tr = document.createElement('tr'); tr.dataset.id = String(l.id); tr.innerHTML = `
+              <td class="col-slim">${idx+1}</td>
+              <td class="col-wide">${l.name}${l.has_changes ? ' <span class="muted">(изменён)</span>' : ''}</td>
+              <td class="col-slim">${(l.snapshot_total||0).toLocaleString()}</td>
+              <td class="col-slim">${(l.current_total||0).toLocaleString()}</td>
+              <td class="col-slim">${(l.materials_pct||0).toFixed(1)}%</td>
+              <td class="col-slim">${(l.works_pct||0).toFixed(1)}%</td>
+              <td class="col-slim">
+                <div class="oh-qty">
+                  <button type="button" class="button oh-qty-dec" title="Уменьшить">−</button>
+                  <input type="number" class="oh-qty-input" min="1" step="1" value="${l.quantity||1}" title="Количество">
+                  <button type="button" class="button oh-qty-inc" title="Увеличить">+</button>
+                </div>
+              </td>
+              <td class="col-slim">
+                <label style="display:inline-flex;gap:6px;align-items:center">
+                  <input type="checkbox" class="oh-toggle" ${l.is_active ? 'checked' : ''}>
+                  <span class="muted">${l.is_active ? 'в расчёте' : 'игнор'}</span>
+                </label>
+              </td>
+              <td class="col-slim">
+                <button type="button" class="button oh-del" title="Удалить" style="background:#dc3545;color:#fff">✕</button>
+              </td>`; ohRows.appendChild(tr); }); bindOHEvents(); }
+      }
+
+      async function loadOH(){
+        try{
+          const res = await fetch(OH_LIST_URL, {headers:{'Accept':'application/json'}});
+          const ct = res.headers.get('content-type')||'';
+          if (!res.ok){ console.warn('OH load status', res.status); if (ohMeta) ohMeta.textContent = 'Не удалось загрузить НР ('+res.status+').'; return; }
+          if (!ct.includes('application/json')){ console.warn('OH: not JSON'); if (ohMeta) ohMeta.textContent = 'Ответ сервера не JSON.'; return; }
+          const data = await res.json(); if (data?.ok === false){ console.warn('OH: ok=false', data); }
+          renderOH(data);
+        }catch(e){ console.warn('OH load error', e); if (ohMeta) ohMeta.textContent = 'Ошибка загрузки НР.'; }
+      }
+
+      function bindOHEvents(){
+        // toggle
+        ohRows.querySelectorAll('.oh-toggle').forEach(input=>{
+          input.addEventListener('change', async ()=>{
+            const tr = input.closest('tr'); if(!tr) return; const id = parseInt(tr.dataset.id||'0',10)||0;
+            const res = await postJSON(OH_TOGGLE_URL, {link_id:id, is_active: input.checked}); if (res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+          });
+        });
+        // qty: input change/blur
+        ohRows.querySelectorAll('.oh-qty-input').forEach(inp=>{
+          const apply = async ()=>{ const tr = inp.closest('tr'); if(!tr) return; const id = parseInt(tr.dataset.id||'0',10)||0; let q = parseInt(inp.value || '1', 10) || 1; if (q<1) q=1; if (q>1000) q=1000; const res = await postJSON(OH_QTY_URL, {link_id:id, quantity:q}); if (res.ok){ renderOH(res); recalcAllRowsAndSummary(); } };
+          inp.addEventListener('change', apply); inp.addEventListener('blur', apply);
+        });
+        // qty: +/- buttons
+        ohRows.querySelectorAll('.oh-qty-inc, .oh-qty-dec').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            const tr = btn.closest('tr'); if(!tr) return; const id = parseInt(tr.dataset.id||'0',10)||0; const field = tr.querySelector('.oh-qty-input'); let q = parseInt(field.value || '1', 10) || 1; q += btn.classList.contains('oh-qty-inc') ? 1 : -1; if (q<1) q=1; if (q>1000) q=1000; field.value = String(q); const res = await postJSON(OH_QTY_URL, {link_id:id, quantity:q}); if (res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+          });
+        });
+        // delete
+        ohRows.querySelectorAll('.oh-del').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            const tr = btn.closest('tr'); if(!tr) return; const id = parseInt(tr.dataset.id||'0',10)||0; const res = await postJSON(OH_DEL_URL, {link_id:id}); if (res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+          });
         });
       }
+
+      if (ohAddBtn){
+        ohAddBtn.addEventListener('click', async ()=>{
+          const id = parseInt(ohSelect.value||'0',10)||0; if (!id) return;
+          const res = await postJSON(OH_APPLY_URL, {container_id:id});
+          if (res && res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+          else { if (ohMeta){ ohMeta.textContent = 'Ошибка добавления НР' + (res?.status ? ' ('+res.status+')' : '') + (res?.error ? ': '+res.error : ''); } }
+        });
+      }
+
+      async function recalcAllRowsAndSummary(){
+        const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)'); const promises = [];
+        rows.forEach(tr=>{ const qtyInput = tr.querySelector('.qty-input'); const tcInput  = tr.querySelector('.js-tc-autocomplete'); const tcId = parseInt(tcInput?.dataset.id||'0',10)||0; const qty  = parseFloat((qtyInput?.value||'').replace(',', '.'))||0; if (tcId>0 && qty>0) promises.push(triggerRowCalc(tr)); });
+        await Promise.all(promises); updateSummary();
+      }
+
+      // init
+      loadOH();
     })();
   </script>
 {% endblock %}
