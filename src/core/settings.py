@@ -134,6 +134,7 @@ TENANT_APPS = [
     "app_estimate_imports",
     "app_overhead_costs",
     "app_suppliers",
+    "app_units",
 ]
 
 INSTALLED_APPS = list(
