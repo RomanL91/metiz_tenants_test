@@ -192,21 +192,19 @@ def calc_for_tc(
     ПОРЯДОК:
       1) База по живым ценам (мат/раб) — используется для распределения НР.
       2) Применяем надбавки/транспорт к базе, затем маржу → получаем «продажные» цены МАТ и РАБ.
-      3) Накладные расходы ДОБАВЛЯЕМ ПОСЛЕ маржи:
-         • делим OH на корзины МАТ/РАБ по заданным %;
-         • каждую корзину распределяем пропорционально базовой стоимости в своей категории.
+      3) Накладные расходы ДОБАВЛЯЕМ ПОСЛЕ маржи.
+         Распределение НР по ТК идёт по доле «база × количество» в своей категории:
+             доля_i = (base_i × qty_i) / Σ(base_j × qty_j)
 
-    :param tc_or_ver_id: ID версии ТК или карточки (тогда берётся последняя версия)
-    :param qty: количество использований ТК в смете (может быть Decimal/float/str/int)
-    :param overhead_context: словарь:
+      overhead_context (опционально) может содержать:
         {
-            "total_base_mat": Decimal,   # суммарная база МАТ по всей смете
-            "total_base_work": Decimal,  # суммарная база РАБ по всей смете
-            "overhead_amount": Decimal,  # общая сумма НР (денег)
-            "overhead_mat_pct": Decimal, # доля НР на МАТ (в %)
-            "overhead_work_pct": Decimal # доля НР на РАБ (в %)
+            "total_base_mat": Decimal,    # Σ(база МАТ × qty) по всей смете
+            "total_base_work": Decimal,   # Σ(база РАБ × qty) по всей смете
+            "overhead_amount": Decimal,   # общая сумма НР (деньги)
+            "overhead_mat_pct": Decimal,  # % НР на МАТ (0..100)
+            "overhead_work_pct": Decimal, # % НР на РАБ (0..100)
+            "include_self": bool,         # включить ли текущую строку в знаменатель Σ
         }
-    :return: (calc: dict, order: list[str])
     """
     order = list(DEFAULT_ORDER)
     qty_dec = _dec(qty)
@@ -225,17 +223,18 @@ def calc_for_tc(
         }
         return calc, order
 
-    # 1) База по живым ценам — нужна для распределения НР
+    # 1) База по живым ценам — на 1 ед.
     base = _base_costs_live(ver)
     base_mat, base_work = base.mat, base.work
 
-    # 2) «Продажные» цены без НР (надбавки/транспорт → маржа)
+    # 2) «Продажные» цены без НР (на 1 ед.)
     sale = _unit_costs_live(ver)
     sale_mat, sale_work = sale.mat, sale.work
 
-    # 3) Распределяем НР (ПОСЛЕ маржи) — считаем добавки на 1 ед.
-    oh_mat = Decimal("0")
-    oh_work = Decimal("0")
+    # 3) Распределяем НР — СНАЧАЛА считаем добавку на ВСЮ строку (line OH),
+    #    затем полученную сумму делим обратно на qty для цен/ед.
+    oh_mat_line = Decimal("0")
+    oh_work_line = Decimal("0")
 
     if overhead_context:
         total_base_mat = _dec(overhead_context.get("total_base_mat", 0))
@@ -243,28 +242,43 @@ def calc_for_tc(
         overhead_amount = _dec(overhead_context.get("overhead_amount", 0))
         overhead_mat_pct = _dec(overhead_context.get("overhead_mat_pct", 0))
         overhead_work_pct = _dec(overhead_context.get("overhead_work_pct", 0))
+        include_self = bool(overhead_context.get("include_self", False))
 
-        if overhead_amount > 0:
-            # 3.1) Разделяем OH на корзины МАТ/РАБ
+        if overhead_amount > 0 and qty_dec >= 0:
+            # Корзины НР
             oh_mat_total = overhead_amount * (overhead_mat_pct / Decimal("100"))
             oh_work_total = overhead_amount * (overhead_work_pct / Decimal("100"))
 
-            # 3.2) Внутри каждой корзины — распределение пропорционально базовой стоимости
-            if total_base_mat > 0:
-                oh_mat = base_mat * (oh_mat_total / total_base_mat)
-            # если total_base_mat == 0 → вся мат-корзина не распределится (охранное поведение)
-            if total_base_work > 0:
-                oh_work = base_work * (oh_work_total / total_base_work)
+            # Доли текущей строки в базах (с учётом кол-ва этой строки)
+            base_mat_share = base_mat * qty_dec
+            base_work_share = base_work * qty_dec
 
-    # 4) Готовые цены на 1 ед. (продажа + OH-прибавки ПОСЛЕ маржи)
-    unit_mat = _round2(sale_mat + oh_mat)
-    unit_work = _round2(sale_work + oh_work)
+            # Знаменатель: Σ(база × qty) по смете; при необходимости включаем текущую строку
+            denom_mat = total_base_mat + (
+                base_mat_share if include_self else Decimal("0")
+            )
+            denom_work = total_base_work + (
+                base_work_share if include_self else Decimal("0")
+            )
+
+            if denom_mat > 0 and base_mat_share > 0:
+                oh_mat_line = base_mat_share * (oh_mat_total / denom_mat)
+
+            if denom_work > 0 and base_work_share > 0:
+                oh_work_line = base_work_share * (oh_work_total / denom_work)
+
+    # 4) Цены / ед.: продажа + (НР/ед., если qty>0)
+    add_mat_per_unit = (oh_mat_line / qty_dec) if qty_dec > 0 else Decimal("0")
+    add_work_per_unit = (oh_work_line / qty_dec) if qty_dec > 0 else Decimal("0")
+
+    unit_mat = _round2(sale_mat + add_mat_per_unit)
+    unit_work = _round2(sale_work + add_work_per_unit)
     unit_both = _round2(unit_mat + unit_work)
 
-    # 5) Итоговые суммы по количеству
-    sum_mat = _round2(unit_mat * qty_dec)
-    sum_work = _round2(unit_work * qty_dec)
-    total = _round2(unit_both * qty_dec)
+    # 5) Итоги по количеству (точное сложение «продажа×qty + НР_строки»)
+    sum_mat = _round2(sale_mat * qty_dec + oh_mat_line)
+    sum_work = _round2(sale_work * qty_dec + oh_work_line)
+    total = _round2(sum_mat + sum_work)
 
     calc = {
         RID_UNIT_PRICE_OF_MATERIAL: unit_mat,
