@@ -43,6 +43,15 @@
     #overhead-panel .button{padding:5px 10px}
     .oh-qty{display:inline-flex;gap:6px;align-items:center}
     .oh-qty-input{width:70px}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
+    .filters .field{display:flex;flex-direction:column;gap:4px;font-size:12px}
+    .filters .field input,.filters .field select{padding:4px 6px;border:1px solid #ced4da;border-radius:4px;min-width:160px}
+    .filters .actions{display:flex;gap:8px;margin-left:auto}
+    .filters .hint{font-size:11px;color:#6c757d}
+    .sortable{cursor:pointer;user-select:none;white-space:nowrap}
+    .sortable .arrow{display:inline-block;margin-left:4px;opacity:.5}
+    .sortable.active .arrow{opacity:1}
+    .sortable[data-dir="asc"] .arrow{transform:rotate(180deg)}
   </style>
 {% endblock %}
 
@@ -125,14 +134,44 @@
       {% endif %}
     </div>
 
+    <!-- ФИЛЬТРЫ И СОРТИРОВКИ ДЛЯ ТАБЛИЧНОГО ВИДА -->
+    <div id="tc-filters" class="filters">
+      <div class="field">
+        <label>Поиск</label>
+        <input id="flt-text" type="text" placeholder="Наименование / ТК">
+      </div>
+      <div class="field">
+        <label>Ед. изм.</label>
+        <select id="flt-unit"><option value="">Все</option></select>
+      </div>
+      <div class="field">
+        <label>Кол-во (мин/макс)</label>
+        <div style="display:flex;gap:6px">
+          <input id="flt-qty-min" type="number" step="0.0001" placeholder="от" style="min-width:100px">
+          <input id="flt-qty-max" type="number" step="0.0001" placeholder="до" style="min-width:100px">
+        </div>
+      </div>
+      <div class="field">
+        <label>Состояние</label>
+        <div style="display:flex;gap:10px;align-items:center;min-height:30px">
+          <label style="display:inline-flex;gap:6px;align-items:center"><input id="flt-mapped" type="checkbox"> только сопоставленные</label>
+          <label style="display:inline-flex;gap:6px;align-items:center"><input id="flt-unmapped" type="checkbox"> только несопоставленные</label>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="flt-apply" class="button">Применить</button>
+        <button type="button" id="flt-reset" class="button">Сброс</button>
+      </div>
+    </div>
+
     <!-- ТАБЛИЦА СОПОСТАВЛЕНИЯ ТК -->
     <table class="tc-map" id="tc-map">
       <thead>
         <tr>
-          <th class="col-wide">{{ role_titles.NAME_OF_WORK }}</th>
-          <th class="col-slim">{{ role_titles.UNIT }}</th>
-          <th class="col-slim">{{ role_titles.QTY }}</th>
-          <th class="col-wide">Сопоставить с ТК</th>
+          <th class="col-wide"><span class="sortable" data-key="name">{{ role_titles.NAME_OF_WORK }} <span class="arrow">⬇</span></span></th>
+          <th class="col-slim"><span class="sortable" data-key="unit">{{ role_titles.UNIT }} <span class="arrow">⬇</span></span></th>
+          <th class="col-slim"><span class="sortable" data-key="qty">{{ role_titles.QTY }} <span class="arrow">⬇</span></span></th>
+          <th class="col-wide"><span class="sortable" data-key="tc">Сопоставить с ТК <span class="arrow">⬇</span></span></th>
           {% for col in optional_cols %}
             <th>{{ col.title }}</th>
           {% endfor %}
@@ -419,8 +458,154 @@
         await Promise.all(promises); updateSummary();
       }
 
+      // ====== СОРТ/ФИЛЬТР ТАБЛИЦЫ ======
+      const flt = {
+        text: document.getElementById('flt-text'),
+        unit: document.getElementById('flt-unit'),
+        qmin: document.getElementById('flt-qty-min'),
+        qmax: document.getElementById('flt-qty-max'),
+        mapped: document.getElementById('flt-mapped'),
+        unmapped: document.getElementById('flt-unmapped'),
+        applyBtn: document.getElementById('flt-apply'),
+        resetBtn: document.getElementById('flt-reset'),
+      };
+
+      const sortState = { key: null, dir: 'asc' }; // asc|desc|null
+
+      function normalizeStr(s){ return (s||'').toString().toLowerCase().trim(); }
+      function parseQty(v){ const n = parseFloat((v||'').toString().replace(',', '.')); return isNaN(n) ? null : n; }
+
+      function getRowData(tr){
+        const tds = tr.querySelectorAll('td');
+        const name = (tds[0]?.textContent || '').trim();
+        const unit = (tds[1]?.textContent || '').trim();
+        const qtyInput = tr.querySelector('.qty-input');
+        const qty = parseQty(qtyInput?.value);
+        const tcInput = tr.querySelector('.js-tc-autocomplete');
+        const tcText = (tcInput?.dataset.text || tcInput?.value || '').trim();
+        const mapped = !!(tcInput && (tcInput.dataset.id || '').length > 0);
+        return { name, unit, qty, tcText, mapped };
+      }
+
+      function buildUnitOptions(){
+        const set = new Set();
+        document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)').forEach(tr=>{
+          const unit = (tr.querySelector('td:nth-child(2)')?.textContent||'').trim();
+          if (unit) set.add(unit);
+        });
+        const cur = flt.unit.value;
+        flt.unit.innerHTML = '<option value="">Все</option>' + Array.from(set).sort().map(u=>`<option value="${u}">${u}</option>`).join('');
+        if (Array.from(set).includes(cur)) flt.unit.value = cur;
+      }
+
+      function rowPassesFilters(tr){
+        const d = getRowData(tr);
+        const text = normalizeStr(flt.text.value);
+        if (text){ const hay = normalizeStr(d.name + ' ' + d.tcText); if (!hay.includes(text)) return false; }
+        if (flt.unit.value && d.unit !== flt.unit.value) return false;
+        const qmin = parseQty(flt.qmin.value), qmax = parseQty(flt.qmax.value);
+        if (qmin != null && (d.qty == null || d.qty < qmin)) return false;
+        if (qmax != null && (d.qty == null || d.qty > qmax)) return false;
+        if (flt.mapped.checked && !d.mapped) return false;
+        if (flt.unmapped.checked && d.mapped) return false;
+        return true;
+      }
+
+      function applyFilters(){
+        const sections = [];
+        let curSec = null;
+        document.querySelectorAll('#tc-map tbody tr').forEach(tr=>{
+          if (tr.classList.contains('sec-hdr')){
+            curSec = { hdr: tr, rows: [] }; sections.push(curSec); return;
+          }
+          if (!curSec){ curSec = { hdr: null, rows: [] }; sections.push(curSec); }
+          const pass = rowPassesFilters(tr);
+          tr.style.display = pass ? '' : 'none';
+          curSec.rows.push(tr);
+        });
+        // hide empty sections
+        sections.forEach(sec=>{
+          if (!sec.hdr) return;
+          const anyVisible = sec.rows.some(r => r.style.display !== 'none');
+          sec.hdr.style.display = anyVisible ? '' : 'none';
+        });
+      }
+
+      function applySort(){
+        if (!sortState.key) return; // nothing to do
+        const key = sortState.key, dir = sortState.dir === 'asc' ? 1 : -1;
+        let curSec = null;
+        const tbody = document.querySelector('#tc-map tbody');
+        const sections = [];
+        Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+          if (tr.classList.contains('sec-hdr')){ curSec = { hdr: tr, rows: [] }; sections.push(curSec); return; }
+          if (!curSec){ curSec = { hdr: null, rows: [] }; sections.push(curSec); }
+          if (tr.style.display === 'none') return; // не сортируем скрытые
+          curSec.rows.push(tr);
+        });
+        sections.forEach(sec=>{
+          const rows = sec.rows;
+          rows.sort((a,b)=>{
+            const A = getRowData(a), B = getRowData(b);
+            let va, vb;
+            if (key==='name'){ va = normalizeStr(A.name); vb = normalizeStr(B.name); }
+            else if (key==='unit'){ va = normalizeStr(A.unit); vb = normalizeStr(B.unit); }
+            else if (key==='qty'){ va = A.qty ?? -Infinity; vb = B.qty ?? -Infinity; }
+            else if (key==='tc'){ va = normalizeStr(A.tcText); vb = normalizeStr(B.tcText); }
+            else { va = 0; vb = 0; }
+            if (va < vb) return -1*dir; if (va > vb) return 1*dir; return 0;
+          });
+          // re-append in new order right after header (or at start if no header)
+          let anchor = sec.hdr ? sec.hdr.nextSibling : tbody.firstChild;
+          rows.forEach(r=> tbody.insertBefore(r, anchor));
+        });
+      }
+
+      function refreshSortIndicators(){
+        document.querySelectorAll('#tc-map thead .sortable').forEach(el=>{
+          el.classList.toggle('active', el.dataset.key === sortState.key);
+          el.setAttribute('data-dir', sortState.dir);
+        });
+      }
+
+      function setSort(key){
+        if (sortState.key !== key){ sortState.key = key; sortState.dir = 'asc'; }
+        else { sortState.dir = (sortState.dir === 'asc') ? 'desc' : 'asc'; }
+        refreshSortIndicators();
+        // применять к текущей выборке
+        applyFilters();
+        applySort();
+      }
+
+      function hookSortHeaders(){
+        document.querySelectorAll('#tc-map thead .sortable').forEach(el=>{
+          el.addEventListener('click', ()=> setSort(el.dataset.key));
+        });
+      }
+
+      function hookFilters(){
+        ['input','change'].forEach(evt=>{
+          flt.text.addEventListener(evt, applyFilters);
+          flt.unit.addEventListener(evt, applyFilters);
+          flt.qmin.addEventListener(evt, applyFilters);
+          flt.qmax.addEventListener(evt, applyFilters);
+          flt.mapped.addEventListener(evt, applyFilters);
+          flt.unmapped.addEventListener(evt, applyFilters);
+        });
+        flt.applyBtn.addEventListener('click', ()=>{ applyFilters(); applySort(); });
+        flt.resetBtn.addEventListener('click', ()=>{
+          flt.text.value=''; flt.unit.value=''; flt.qmin.value=''; flt.qmax.value=''; flt.mapped.checked=false; flt.unmapped.checked=false;
+          applyFilters(); applySort();
+        });
+      }
+
       // init
       loadOH();
+      buildUnitOptions();
+      hookFilters();
+      hookSortHeaders();
+      applyFilters();
+      refreshSortIndicators();
     })();
   </script>
 {% endblock %}
