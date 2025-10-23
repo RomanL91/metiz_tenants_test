@@ -132,6 +132,55 @@
       color: white;
       font-weight: 600;
     }
+
+    /* Toggle переключатель для НР */
+    .toggle-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-switch input[type="checkbox"] {
+      display: none;
+    }
+    .toggle-slider {
+      position: relative;
+      width: 52px;
+      height: 28px;
+      background: #dc3545;
+      border-radius: 28px;
+      transition: all 0.3s ease;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: white;
+      top: 3px;
+      left: 3px;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: #28a745;
+    }
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(24px);
+    }
+    .toggle-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #495057;
+      white-space: nowrap;
+    }
+    .toggle-switch:hover .toggle-slider {
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.2), 0 0 0 3px rgba(0,0,0,0.05);
+    }
   </style>
 {% endblock %}
 
@@ -161,9 +210,6 @@
       <a href="{% url 'admin:estimate_analysis' original.pk %}"
          class="action-btn info"
          target="_blank">📊 Детальный анализ</a>
-      <button type="button" id="btn-toggle-overhead" class="action-btn secondary">
-        🔄 Вкл/Выкл НР
-      </button>
       <span id="auto-match-status" style="margin-left: 4px; color: #666;"></span>
     </div>
 
@@ -173,6 +219,12 @@
         <div style="font-weight:600;color:#495057">🧾 Накладные расходы</div>
         <select id="oh-select" style="min-width:260px; height: 36px; padding: 0 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;"></select>
         <button type="button" id="oh-add" class="action-btn success" style="height: 36px;">+ Добавить</button>
+        <div style="border-left: 2px solid #dee2e6; height: 28px; margin: 0 4px;"></div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="toggle-overhead-active" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label" id="toggle-overhead-label">НР активны</span>
+        </label>
         <span id="oh-meta" class="muted" style="margin-left:auto"></span>
       </div>
 
@@ -634,16 +686,21 @@
         });
       }
 
-      // Кнопка переключения всех НР
-      const btnToggleOverhead = document.getElementById('btn-toggle-overhead');
-      if (btnToggleOverhead){
-        btnToggleOverhead.addEventListener('click', async ()=>{
+      // Toggle переключатель всех НР
+      const toggleOverheadActive = document.getElementById('toggle-overhead-active');
+      const toggleOverheadLabel = document.getElementById('toggle-overhead-label');
+      
+      if (toggleOverheadActive){
+        toggleOverheadActive.addEventListener('change', async ()=>{
           const checkboxes = document.querySelectorAll('#oh-rows .oh-toggle');
           if (checkboxes.length === 0) return;
           
-          // Определяем новое состояние: если хотя бы один активен - выключаем все, иначе - включаем все
-          const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
-          const newState = !anyChecked;
+          const newState = toggleOverheadActive.checked;
+          
+          // Обновляем текст лейбла
+          if (toggleOverheadLabel) {
+            toggleOverheadLabel.textContent = newState ? 'НР активны' : 'НР выключены';
+          }
           
           // Переключаем все чекбоксы и отправляем запросы
           const promises = [];
