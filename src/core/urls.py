@@ -12,6 +12,7 @@ from core.settings import CustomAdminSite
 
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
+    path("api/v1/", include("app_outlay.urls")),
 ]
 
 urlpatterns += i18n_patterns(

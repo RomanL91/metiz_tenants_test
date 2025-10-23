@@ -118,6 +118,7 @@ SHARED_APPS = [
     "django.contrib.staticfiles",  # статика для публичной зоны (опционально)
     "app_tenants",
     "nested_admin",
+    "rest_framework",
 ]
 
 TENANT_APPS = [
@@ -230,6 +231,19 @@ USE_THOUSAND_SEPARATOR = True
 THOUSAND_SEPARATOR = " "
 DECIMAL_SEPARATOR = ","
 # Базовая настройка i18n ================================================= END
+
+
+# Настройки DRF =====================================================
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        # Можно добавить TokenAuthentication или JWTAuthentication
+    ],
+}
+# Настройки DRF ===================================================== END
 
 
 class CustomAdminSite:
