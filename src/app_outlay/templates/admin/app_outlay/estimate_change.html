@@ -43,7 +43,6 @@
     #overhead-panel{background:#fff;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin:12px 0;font-size:13px}
     #overhead-panel .col-slim{white-space:nowrap}
     #overhead-panel .col-wide{min-width:220px}
-    #overhead-panel .button{padding:5px 10px}
     .oh-qty{display:inline-flex;gap:6px;align-items:center}
     .oh-qty-input{width:70px}
   .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
@@ -55,6 +54,48 @@
     .sortable .arrow{display:inline-block;margin-left:4px;opacity:.5}
     .sortable.active .arrow{opacity:1}
     .sortable[data-dir="asc"] .arrow{transform:rotate(180deg)}
+
+    /* Единый стиль для всех основных кнопок */
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
+      padding: 0 16px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      text-decoration: none;
+      line-height: 36px;
+      white-space: nowrap;
+    }
+    .action-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    }
+    .action-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+    .action-btn.primary { background: #417690; color: white; }
+    .action-btn.primary:hover { background: #356178; }
+    .action-btn.success { background: #28a745; color: white; }
+    .action-btn.success:hover { background: #218838; }
+    .action-btn.info { background: #17a2b8; color: white; }
+    .action-btn.info:hover { background: #138496; }
+    .action-btn.secondary { background: #6c757d; color: white; }
+    .action-btn.secondary:hover { background: #5a6268; }
+    .action-btn.default { background: #f8f9fa; color: #212529; border: 1px solid #dee2e6; }
+    .action-btn.default:hover { background: #e9ecef; }
   </style>
 {% endblock %}
 
@@ -71,32 +112,31 @@
   {% else %}
 
     <!-- КНОПКИ -->
-    <div style="margin-bottom: 16px;">
-      <button type="button" id="btn-auto-match" class="button" style="background: #417690; color: white;">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <button type="button" id="btn-auto-match" class="action-btn primary">
         🤖 Автосопоставить ТК
       </button>
-      <button type="button" id="btn-save-mappings" class="button default" style="margin-left: 8px;">
+      <button type="button" id="btn-save-mappings" class="action-btn default">
         💾 Сохранить расчеты
       </button>
-      <button type="button" id="btn-export-excel" class="button" style="margin-left: 8px; background: #28a745; color: white;">
+      <button type="button" id="btn-export-excel" class="action-btn success">
         📥 Скачать файл с расчетами
       </button>
       <a href="{% url 'admin:estimate_analysis' original.pk %}"
-         class="button"
-         style="margin-left: 8px; background: #17a2b8; color: white; text-decoration: none; display: inline-block;"
+         class="action-btn info"
          target="_blank">📊 Детальный анализ</a>
-      <button type="button" id="btn-toggle-overhead" class="button" style="margin-left: 8px; background: #6c757d; color: white;">
+      <button type="button" id="btn-toggle-overhead" class="action-btn secondary">
         🔄 Вкл/Выкл НР
       </button>
-      <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
+      <span id="auto-match-status" style="margin-left: 4px; color: #666;"></span>
     </div>
 
     <!-- КАСТОМНЫЙ ИНЛАЙН НР (между кнопками и табло) -->
     <div id="overhead-panel">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <div style="font-weight:600;color:#495057">🧾 Накладные расходы</div>
-        <select id="oh-select" style="min-width:260px"></select>
-        <button type="button" id="oh-add" class="button">+ Добавить</button>
+        <select id="oh-select" style="min-width:260px; height: 36px; padding: 0 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;"></select>
+        <button type="button" id="oh-add" class="action-btn success" style="height: 36px;">+ Добавить</button>
         <span id="oh-meta" class="muted" style="margin-left:auto"></span>
       </div>
 
