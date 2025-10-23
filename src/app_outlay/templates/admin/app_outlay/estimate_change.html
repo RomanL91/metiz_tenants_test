@@ -206,7 +206,14 @@
       </div>
       <div class="actions">
         {% comment %} <button type="button" id="flt-apply" class="button">Применить</button> {% endcomment %}
-        <button type="button" id="flt-reset" class="button">Сброс</button>
+        <button type="button" id="flt-reset" class="action-btn default" style="height: 32px; font-size: 13px; padding: 0 12px;">Сброс</button>
+        <div style="border-left: 2px solid #dee2e6; height: 24px; margin: 0 4px;"></div>
+        <button type="button" id="btn-collapse-all" class="action-btn default" style="height: 32px; font-size: 13px; padding: 0 12px;">
+          ▲ Свернуть всё
+        </button>
+        <button type="button" id="btn-expand-all" class="action-btn default" style="height: 32px; font-size: 13px; padding: 0 12px;">
+          ▼ Показать всё
+        </button>
       </div>
     </div>
 
@@ -614,6 +621,38 @@
           // Перезагружаем НР и пересчитываем
           const res = await postJSON(OH_LIST_URL, {});
           if (res && res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+        });
+      }
+
+      // Кнопки сворачивания/разворачивания всех секций
+      const btnCollapseAll = document.getElementById('btn-collapse-all');
+      const btnExpandAll = document.getElementById('btn-expand-all');
+      
+      if (btnCollapseAll){
+        btnCollapseAll.addEventListener('click', ()=>{
+          document.querySelectorAll('.sec-hdr').forEach(hdr => {
+            const sectionId = hdr.dataset.sectionId;
+            if (!hdr.classList.contains('collapsed')) {
+              hdr.classList.add('collapsed');
+              document.querySelectorAll(`tr[data-section-id="${sectionId}"]:not(.sec-hdr)`).forEach(row => {
+                row.style.display = 'none';
+              });
+            }
+          });
+        });
+      }
+      
+      if (btnExpandAll){
+        btnExpandAll.addEventListener('click', ()=>{
+          document.querySelectorAll('.sec-hdr').forEach(hdr => {
+            const sectionId = hdr.dataset.sectionId;
+            if (hdr.classList.contains('collapsed')) {
+              hdr.classList.remove('collapsed');
+              document.querySelectorAll(`tr[data-section-id="${sectionId}"]:not(.sec-hdr)`).forEach(row => {
+                row.style.display = '';
+              });
+            }
+          });
         });
       }
 
