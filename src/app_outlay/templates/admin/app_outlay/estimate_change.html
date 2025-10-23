@@ -181,6 +181,123 @@
     .toggle-switch:hover .toggle-slider {
       box-shadow: inset 0 1px 3px rgba(0,0,0,0.2), 0 0 0 3px rgba(0,0,0,0.05);
     }
+
+    /* Модальное окно */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      backdrop-filter: blur(2px);
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 800px;
+      width: 90%;
+      max-height: 90vh;
+      min-height: 500px;
+      display: flex;
+      flex-direction: column;
+      animation: slideIn 0.3s ease;
+    }
+    .modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid #dee2e6;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #212529;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: #6c757d;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+    }
+    .modal-close:hover {
+      background: #f8f9fa;
+      color: #212529;
+    }
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid #dee2e6;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      color: #495057;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #417690;
+      box-shadow: 0 0 0 3px rgba(65, 118, 144, 0.1);
+    }
+    .form-group .help-text {
+      font-size: 12px;
+      color: #6c757d;
+      margin-top: 4px;
+    }
   </style>
 {% endblock %}
 
@@ -191,6 +308,35 @@
   {{ block.super }}
 
   <h2 style="margin-top:24px">Сопоставление ТК (табличный вид)</h2>
+
+  <!-- МОДАЛЬНОЕ ОКНО: Настройки Сметы -->
+  <div id="estimate-settings-modal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Настройки Сметы</div>
+        <button type="button" id="modal-close" class="modal-close">×</button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="estimate-object-name">Название объекта</label>
+          <input type="text" id="estimate-object-name" placeholder="Например: Жилой комплекс 'Северный'">
+          <div class="help-text">Укажите название объекта строительства</div>
+        </div>
+
+        <div class="form-group">
+          <label for="estimate-vat-rate">НДС (%)</label>
+          <input type="number" id="estimate-vat-rate" min="0" max="100" step="0.01" value="20" placeholder="20">
+          <div class="help-text">Укажите ставку налога на добавленную стоимость (обычно 0, 10 или 20%)</div>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button type="button" id="modal-cancel" class="action-btn default">Отмена</button>
+        <button type="button" id="modal-apply" class="action-btn primary">Применить</button>
+      </div>
+    </div>
+  </div>
 
   {% if not table_sections %}
     <p class="help">Нет данных превью: либо файл не привязан, либо разметка не обнаружила ТК.</p>
@@ -210,6 +356,10 @@
       <a href="{% url 'admin:estimate_analysis' original.pk %}"
          class="action-btn info"
          target="_blank">📊 Детальный анализ</a>
+      <div style="flex: 1;"></div>
+      <button type="button" id="btn-estimate-settings" class="action-btn default">
+        ⚙️ Настройки Сметы
+      </button>
       <span id="auto-match-status" style="margin-left: 4px; color: #666;"></span>
     </div>
 
@@ -253,19 +403,6 @@
         <div id="summary-note-base" class="summary-note"></div>
         <div id="metrics-base" class="metrics"></div>
       </div>
-
-      {% if overhead_calculation and overhead_calculation.overhead_total > 0 %}
-      <div style="padding-top:16px;border-top:2px solid #dee2e6">
-        <div style="font-weight:600;color:#856404;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #ffc107">💰 Параметры накладных расходов</div>
-        <div style="font-size:12px;color:#6c757d">
-          <div style="margin-bottom:4px"><strong>Общая сумма НР:</strong> {{ overhead_calculation.overhead_total|floatformat:2 }} ₽</div>
-          {% for detail in overhead_calculation.overhead_details %}
-            <div style="margin-left:12px;margin-bottom:2px">• {{ detail.name }}: {{ detail.total|floatformat:2 }} ₽ (МАТ: {{ detail.materials_pct|floatformat:0 }}%, РАБ: {{ detail.works_pct|floatformat:0 }}%)</div>
-          {% endfor %}
-          <div style="margin-top:8px;font-size:11px;font-style:italic">Накладные расходы автоматически распределяются пропорционально базовой стоимости каждой ТК.</div>
-        </div>
-      </div>
-      {% endif %}
     </div>
 
     <!-- ФИЛЬТРЫ И СОРТИРОВКИ ДЛЯ ТАБЛИЧНОГО ВИДА -->
@@ -921,4 +1058,73 @@
       refreshSortIndicators();
     })();
   </script>
+
+  <!-- JavaScript для модального окна (работает всегда, независимо от условий) -->
+  <script>
+    (function() {
+      // ====== МОДАЛЬНОЕ ОКНО НАСТРОЕК СМЕТЫ ======
+      const btnEstimateSettings = document.getElementById('btn-estimate-settings');
+      const modalOverlay = document.getElementById('estimate-settings-modal');
+      const modalClose = document.getElementById('modal-close');
+      const modalCancel = document.getElementById('modal-cancel');
+      const modalApply = document.getElementById('modal-apply');
+
+      function openEstimateSettingsModal() {
+        if (modalOverlay) {
+          modalOverlay.classList.add('active');
+          document.body.style.overflow = 'hidden';
+        }
+      }
+
+      function closeEstimateSettingsModal() {
+        if (modalOverlay) {
+          modalOverlay.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+      }
+
+      if (btnEstimateSettings) {
+        btnEstimateSettings.addEventListener('click', openEstimateSettingsModal);
+      }
+
+      if (modalClose) {
+        modalClose.addEventListener('click', closeEstimateSettingsModal);
+      }
+
+      if (modalCancel) {
+        modalCancel.addEventListener('click', closeEstimateSettingsModal);
+      }
+
+      if (modalOverlay) {
+        modalOverlay.addEventListener('click', (e) => {
+          if (e.target === modalOverlay) {
+            closeEstimateSettingsModal();
+          }
+        });
+      }
+
+      if (modalApply) {
+        modalApply.addEventListener('click', () => {
+          // TODO: Здесь будет логика сохранения настроек
+          const objectName = document.getElementById('estimate-object-name')?.value;
+          const vatRate = document.getElementById('estimate-vat-rate')?.value;
+          
+          console.log('Настройки сметы:', { objectName, vatRate });
+          
+          // Временно просто закрываем окно
+          closeEstimateSettingsModal();
+          
+          // TODO: Добавить AJAX запрос для сохранения настроек
+        });
+      }
+
+      // Закрытие по Escape
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modalOverlay?.classList.contains('active')) {
+          closeEstimateSettingsModal();
+        }
+      });
+    })();
+  </script>
+
 {% endblock %}
