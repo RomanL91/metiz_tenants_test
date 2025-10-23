@@ -96,6 +96,42 @@
     .action-btn.secondary:hover { background: #5a6268; }
     .action-btn.default { background: #f8f9fa; color: #212529; border: 1px solid #dee2e6; }
     .action-btn.default:hover { background: #e9ecef; }
+
+    /* Сегментированный контроль для фильтров */
+    .segmented-control {
+      display: inline-flex;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .segmented-control input[type="radio"] {
+      display: none;
+    }
+    .segmented-control label {
+      padding: 6px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #495057;
+      background: #fff;
+      border-right: 1px solid #dee2e6;
+      transition: all 0.2s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .segmented-control label:last-child {
+      border-right: none;
+    }
+    .segmented-control label:hover {
+      background: #f8f9fa;
+    }
+    .segmented-control input[type="radio"]:checked + label {
+      background: #417690;
+      color: white;
+      font-weight: 600;
+    }
   </style>
 {% endblock %}
 
@@ -199,9 +235,15 @@
       </div>
       <div class="field">
         <label>Состояние</label>
-        <div style="display:flex;gap:10px;align-items:center;min-height:30px">
-          <label style="display:inline-flex;gap:6px;align-items:center"><input id="flt-mapped" type="checkbox"> только сопоставленные</label>
-          <label style="display:inline-flex;gap:6px;align-items:center"><input id="flt-unmapped" type="checkbox"> только несопоставленные</label>
+        <div class="segmented-control">
+          <input type="radio" id="flt-state-all" name="flt-state" value="all" checked>
+          <label for="flt-state-all">Все</label>
+          
+          <input type="radio" id="flt-state-mapped" name="flt-state" value="mapped">
+          <label for="flt-state-mapped">✓ Сопоставленные</label>
+          
+          <input type="radio" id="flt-state-unmapped" name="flt-state" value="unmapped">
+          <label for="flt-state-unmapped">✗ Несопоставленные</label>
         </div>
       </div>
       <div class="actions">
@@ -669,8 +711,9 @@
         unit: document.getElementById('flt-unit'),
         qmin: document.getElementById('flt-qty-min'),
         qmax: document.getElementById('flt-qty-max'),
-        mapped: document.getElementById('flt-mapped'),
-        unmapped: document.getElementById('flt-unmapped'),
+        stateAll: document.getElementById('flt-state-all'),
+        stateMapped: document.getElementById('flt-state-mapped'),
+        stateUnmapped: document.getElementById('flt-state-unmapped'),
         applyBtn: document.getElementById('flt-apply'),
         resetBtn: document.getElementById('flt-reset'),
       };
@@ -711,8 +754,11 @@
         const qmin = parseQty(flt.qmin.value), qmax = parseQty(flt.qmax.value);
         if (qmin != null && (d.qty == null || d.qty < qmin)) return false;
         if (qmax != null && (d.qty == null || d.qty > qmax)) return false;
-        if (flt.mapped.checked && !d.mapped) return false;
-        if (flt.unmapped.checked && d.mapped) return false;
+        
+        // Проверка состояния через радиокнопки
+        if (flt.stateMapped.checked && !d.mapped) return false;
+        if (flt.stateUnmapped.checked && d.mapped) return false;
+        
         return true;
       }
 
@@ -794,12 +840,17 @@
           flt.unit.addEventListener(evt, applyFilters);
           flt.qmin.addEventListener(evt, applyFilters);
           flt.qmax.addEventListener(evt, applyFilters);
-          flt.mapped.addEventListener(evt, applyFilters);
-          flt.unmapped.addEventListener(evt, applyFilters);
+          flt.stateAll.addEventListener(evt, applyFilters);
+          flt.stateMapped.addEventListener(evt, applyFilters);
+          flt.stateUnmapped.addEventListener(evt, applyFilters);
         });
-        flt.applyBtn.addEventListener('click', ()=>{ applyFilters(); applySort(); });
+        flt.applyBtn?.addEventListener('click', ()=>{ applyFilters(); applySort(); });
         flt.resetBtn.addEventListener('click', ()=>{
-          flt.text.value=''; flt.unit.value=''; flt.qmin.value=''; flt.qmax.value=''; flt.mapped.checked=false; flt.unmapped.checked=false;
+          flt.text.value=''; 
+          flt.unit.value=''; 
+          flt.qmin.value=''; 
+          flt.qmax.value=''; 
+          flt.stateAll.checked = true;
           applyFilters(); applySort();
         });
       }
