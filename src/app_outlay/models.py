@@ -50,6 +50,12 @@ class Estimate(models.Model):
             "Номер листа Excel, по которому строилось превью (0 — первый лист)."
         ),
     )
+    settings_data = models.JSONField(
+        _("Настройки сметы"),
+        default=dict,
+        blank=True,
+        help_text=_("Произвольные настройки сметы в формате JSON (ключ: значение)."),
+    )
 
     class Meta:
         verbose_name = _("Смета")
