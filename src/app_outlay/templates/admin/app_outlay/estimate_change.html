@@ -85,6 +85,9 @@
          class="button"
          style="margin-left: 8px; background: #17a2b8; color: white; text-decoration: none; display: inline-block;"
          target="_blank">📊 Детальный анализ</a>
+      <button type="button" id="btn-toggle-overhead" class="button" style="margin-left: 8px; background: #6c757d; color: white;">
+        🔄 Вкл/Выкл НР
+      </button>
       <span id="auto-match-status" style="margin-left: 12px; color: #666;"></span>
     </div>
 
@@ -541,6 +544,39 @@
           else { if (ohMeta){ ohMeta.textContent = 'Ошибка добавления НР' + (res?.status ? ' ('+res.status+')' : '') + (res?.error ? ': '+res.error : ''); } }
         });
       }
+
+      // Кнопка переключения всех НР
+      const btnToggleOverhead = document.getElementById('btn-toggle-overhead');
+      if (btnToggleOverhead){
+        btnToggleOverhead.addEventListener('click', async ()=>{
+          const checkboxes = document.querySelectorAll('#oh-rows .oh-toggle');
+          if (checkboxes.length === 0) return;
+          
+          // Определяем новое состояние: если хотя бы один активен - выключаем все, иначе - включаем все
+          const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+          const newState = !anyChecked;
+          
+          // Переключаем все чекбоксы и отправляем запросы
+          const promises = [];
+          checkboxes.forEach(cb => {
+            const tr = cb.closest('tr');
+            if (!tr) return;
+            const id = parseInt(tr.dataset.id||'0',10)||0;
+            if (!id) return;
+            
+            cb.checked = newState;
+            promises.push(postJSON(OH_TOGGLE_URL, {link_id:id, is_active:newState}));
+          });
+          
+          // Ждём завершения всех запросов
+          await Promise.all(promises);
+          
+          // Перезагружаем НР и пересчитываем
+          const res = await postJSON(OH_LIST_URL, {});
+          if (res && res.ok){ renderOH(res); recalcAllRowsAndSummary(); }
+        });
+      }
+
 
       async function recalcAllRowsAndSummary(){
         const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)'); const promises = [];
