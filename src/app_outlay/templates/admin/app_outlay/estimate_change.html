@@ -15,7 +15,10 @@
     .tc-map .tc-input { width:260px; }
     .tc-map .col-slim { white-space:nowrap; }
     .tc-map .col-wide { min-width:220px; }
-    .tc-map .sec-hdr td { background:#fafafa; padding-top:10px; }
+    .tc-map .sec-hdr td { background:#fafafa; padding-top:10px; cursor:pointer; user-select:none; }
+    .tc-map .sec-hdr .collapse-icon { display:inline-block; margin-right:8px; transition:transform 0.2s; }
+    .tc-map .sec-hdr.collapsed .collapse-icon { transform:rotate(-90deg); }
+    .tc-map .sec-subtotal td { background:#fff3cd; font-weight:600; border-top:2px solid #ffc107; text-align:right; padding-right:16px; }
     .badge { display:inline-block; padding:4px 10px; border-radius:10px; font-weight:600; }
 
     /* Обёртка поля ТК + элементы управления */
@@ -159,7 +162,7 @@
         </div>
       </div>
       <div class="actions">
-        <button type="button" id="flt-apply" class="button">Применить</button>
+        {% comment %} <button type="button" id="flt-apply" class="button">Применить</button> {% endcomment %}
         <button type="button" id="flt-reset" class="button">Сброс</button>
       </div>
     </div>
@@ -179,11 +182,15 @@
       </thead>
       <tbody>
         {% for sec in table_sections %}
-          <tr class="sec-hdr">
-            <td colspan="{{ table_colspan }}"><span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span></td>
+          <tr class="sec-hdr" data-section-id="{{ forloop.counter }}">
+            <td colspan="{{ table_colspan }}">
+              <span class="collapse-icon">▼</span>
+              <span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span>
+              <span class="sec-totals" style="margin-left:16px; font-weight:600; color:#856404;"></span>
+            </td>
           </tr>
           {% for it in sec.items %}
-            <tr data-row="{{ it.row_index }}">
+            <tr data-row="{{ it.row_index }}" data-section-id="{{ forloop.parentloop.counter }}">
               <td>{{ it.name }}</td>
               <td>{{ it.unit }}</td>
               <td><input type="number" step="0.0001" class="qty-input" value="{{ it.qty|default_if_none:'' }}" placeholder="0"></td>
@@ -341,6 +348,89 @@
         if (calcPromises.length > 0) await Promise.all(calcPromises); updateSummary();
       }
       prefillExistingMappings();
+
+      // ====== КОЛЛАПСИРОВАНИЕ ГРУПП И ПОДСЧЕТ ИТОГОВ ======
+      function initSectionCollapse() {
+        document.querySelectorAll('.sec-hdr').forEach(hdr => {
+          hdr.addEventListener('click', function() {
+            const sectionId = this.dataset.sectionId;
+            const isCollapsed = this.classList.toggle('collapsed');
+            
+            // Скрываем/показываем строки секции
+            document.querySelectorAll(`tr[data-section-id="${sectionId}"]:not(.sec-hdr)`).forEach(row => {
+              row.style.display = isCollapsed ? 'none' : '';
+            });
+          });
+        });
+      }
+
+      function updateSectionTotals() {
+        const sections = {};
+        
+        // Собираем данные по секциям
+        document.querySelectorAll('#tc-map tbody tr[data-row]').forEach(tr => {
+          const sectionId = tr.dataset.sectionId;
+          if (!sectionId) return;
+          
+          if (!sections[sectionId]) {
+            sections[sectionId] = {};
+            CALC_ORDER.forEach(rid => sections[sectionId][rid] = 0);
+            sections[sectionId].count = 0;
+          }
+          
+          // Проверяем, что строка видима
+          if (tr.style.display === 'none') return;
+          
+          const cells = tr.querySelectorAll('.opt-cell');
+          let hasValues = false;
+          
+          CALC_ORDER.forEach((rid, idx) => {
+            const cell = cells[idx];
+            if (!cell) return;
+            const text = (cell.querySelector('.sys')?.textContent || '').trim();
+            if (!text || text === '—') return;
+            const val = parseFloat(text.replace(/\s/g,'').replace(',', '.'));
+            if (!isNaN(val)) {
+              sections[sectionId][rid] += val;
+              hasValues = true;
+            }
+          });
+          
+          if (hasValues) sections[sectionId].count++;
+        });
+        
+        // Обновляем отображение итогов в заголовках секций
+        Object.keys(sections).forEach(sectionId => {
+          const data = sections[sectionId];
+          const hdr = document.querySelector(`.sec-hdr[data-section-id="${sectionId}"]`);
+          if (!hdr) return;
+          
+          const totalsSpan = hdr.querySelector('.sec-totals');
+          if (!totalsSpan) return;
+          
+          if (data.count > 0) {
+            const mat = Number(data['PRICE_FOR_ALL_MATERIAL'] || 0);
+            const works = Number(data['PRICE_FOR_ALL_WORK'] || 0);
+            const total = Number(data['TOTAL_PRICE'] || 0);
+            
+            const fmt = n => n.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+            totalsSpan.textContent = `(МАТ: ${fmt(mat)} | РАБ: ${fmt(works)} | Итого: ${fmt(total)})`;
+          } else {
+            totalsSpan.textContent = '';
+          }
+        });
+      }
+
+      // Переопределяем updateSummary для обновления итогов секций
+      const originalUpdateSummary = updateSummary;
+      updateSummary = function() {
+        originalUpdateSummary();
+        updateSectionTotals();
+      };
+
+      // Инициализация
+      initSectionCollapse();
+      updateSectionTotals();
 
       // Сохранение расчётов (и формы админки)
       if (btnSaveMappings) {

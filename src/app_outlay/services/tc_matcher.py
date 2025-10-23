@@ -17,9 +17,12 @@ class TCMatcher:
     @staticmethod
     def normalize_unit(unit: str) -> str:
         """Нормализация единиц измерения."""
-        s = (unit or "").lower().strip()
-        s = s.replace("\u00b2", "2").replace("\u00b3", "3")
-        compact = "".join(ch for ch in s if ch not in " .,")
+        if isinstance(unit, str):
+            s = (unit or "").lower().strip()
+            s = s.replace("\u00b2", "2").replace("\u00b3", "3")
+            compact = "".join(ch for ch in s if ch not in " .,")
+        else:
+            return
 
         patterns = {
             r"(м\^?2|м2|квм|мкв|квадрат\w*метр\w*)": "м2",
@@ -70,7 +73,6 @@ class TCMatcher:
         """Найти наиболее подходящую версию ТК."""
         if not name or not name.strip():
             return None, 0.0
-
         normalized_unit = cls.normalize_unit(unit)
         search_name = name.strip().lower()
 
@@ -94,7 +96,7 @@ class TCMatcher:
         exact_cards = TechnicalCard.objects.filter(name__iexact=name.strip())
 
         for card in exact_cards:
-            if cls.normalize_unit(card.output_unit) == normalized_unit:
+            if cls.normalize_unit(card.unit_ref) == normalized_unit:
                 return (
                     card.versions.filter(is_published=True)
                     .order_by("-created_at")
@@ -108,13 +110,13 @@ class TCMatcher:
         cls, search_name: str, normalized_unit: str
     ) -> tuple[TechnicalCardVersion | None, float]:
         """Нечёткий поиск с строгой проверкой ключевых слов."""
-        all_cards = TechnicalCard.objects.all().values("id", "name", "output_unit")
+        all_cards = TechnicalCard.objects.all().values("id", "name", "unit_ref")
 
         best_match_id = None
         best_score = 0.0
-
         for card_data in all_cards:
-            card_unit_norm = cls.normalize_unit(card_data["output_unit"])
+            print("-----tyt")
+            card_unit_norm = cls.normalize_unit(card_data["unit_ref"])
             card_name_lower = card_data["name"].lower()
 
             # 1. Схожесть по символам (SequenceMatcher)
@@ -161,7 +163,6 @@ class TCMatcher:
     def batch_match(cls, items: list[dict]) -> list[dict]:
         """Массовое сопоставление."""
         results = []
-
         for item in items:
             tc_version, similarity = cls.find_matching_tc(
                 item.get("name", ""), item.get("unit", "")
