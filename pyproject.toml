@@ -15,6 +15,7 @@ openpyxl = "^3.1.5"
 django-nested-admin = "^4.1.4"
 gunicorn = "^23.0.0"
 djangorestframework = "^3.16.1"
+drf-spectacular = "^0.28.0"
 
 
 [build-system]

@@ -54,7 +54,6 @@ from app_overhead_costs.models import OverheadCostContainer
 # ---------- Импорты для ENDPOINTS  ----------
 import json
 from app_outlay.utils_calc import calc_for_tc
-from app_outlay.services.tc_matcher import TCMatcher
 
 
 def _json_error(msg: str, status=400):
@@ -374,20 +373,9 @@ class EstimateAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path(
-                "technical-card-autocomplete/",
-                self.admin_site.admin_view(self.tc_autocomplete),
-                name="outlay_tc_autocomplete",
-            ),
-            path(
                 "<path:object_id>/api/calc/",
                 self.admin_site.admin_view(self.api_calc),
                 name="estimate_calc",
-            ),
-            # НОВЫЙ ENDPOINT
-            path(
-                "<path:object_id>/api/auto-match/",
-                self.admin_site.admin_view(self.api_auto_match),
-                name="estimate_auto_match",
             ),
             # сохранить расчеты, создать группы, ТК
             path(
@@ -1576,59 +1564,6 @@ class EstimateAdmin(admin.ModelAdmin):
         calc, order = calc_for_tc(tc_id, qty, overhead_context=overhead_context)
         resp_calc = {k: float(v) for k, v in calc.items()}
         return _json_ok({"calc": resp_calc, "order": order})
-
-    def tc_autocomplete(self, request, *args, **kwargs):
-        """Простой автокомплит по ТК."""
-
-        # Для ручного поиска (GET)
-        if request.method == "GET":
-            from app_technical_cards.models import TechnicalCard
-
-            q = (request.GET.get("q") or "").strip()
-            qs = TechnicalCard.objects.all()
-
-            if q:
-                qs = qs.filter(name__icontains=q)
-
-            data = [{"id": obj.pk, "text": obj.name} for obj in qs[:20]]
-            return JsonResponse({"results": data})
-
-        # Для батч-автосопоставления (POST)
-        if request.method == "POST":
-            try:
-                if (
-                    request.content_type
-                    and "application/json" not in request.content_type
-                ):
-                    return _json_error(_("Ожидается JSON"), 400)
-                data = json.loads(request.body or b"{}")
-                items = data.get("items") or []
-                if not isinstance(items, list) or not items:
-                    return _json_error(_("Нет элементов для сопоставления"), 400)
-                matched = TCMatcher.batch_match(items)
-                return _json_ok({"results": matched})
-            except Exception as e:
-                return _json_error(str(e), 500)
-
-        return _json_error(_("Метод не разрешён"), 405)
-
-    def api_auto_match(self, request, object_id: str):
-        """API для автоматического сопоставления ТК."""
-        try:
-            # Получаем данные из POST
-            data = json.loads(request.body)
-            items = data.get("items", [])
-
-            if not items:
-                return JsonResponse({"ok": False, "error": "no_items"}, status=400)
-
-            # Выполняем сопоставление
-            matched = TCMatcher.batch_match(items)
-
-            return JsonResponse({"ok": True, "results": matched})
-
-        except Exception as e:
-            return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     def api_save_mappings(self, request, object_id: str):
         """Сохранить сопоставления ТК в базу данных."""

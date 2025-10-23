@@ -1,18 +1,76 @@
-# app_outlay/services/tc_matcher.py
-from django.db.models import Q
-from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 import re
 from difflib import SequenceMatcher
 
+from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
+
 
 class TCMatcher:
-    """Сервис для автоматического сопоставления строк Excel с ТК."""
+    """
+    Сервис для автоматического сопоставления строк Excel с ТК.
 
-    SIMILARITY_THRESHOLD = 0.5
-    BONUS_FOR_ONE_UNIT = 0.1
-    PENALTY_FOR_UNITS = 0.5
-    WEIGHT_FOR_WORD_SIMILARITY = 0.7
-    WEIGHT_FOR_SIMILARITY_OF_SYMBOLS = 0.3
+    Параметры алгоритма сопоставления настраиваются через конструктор.
+    """
+
+    # Дефолтные значения параметров
+    DEFAULT_SIMILARITY_THRESHOLD = 0.5
+    DEFAULT_BONUS_FOR_ONE_UNIT = 0.1
+    DEFAULT_PENALTY_FOR_UNITS = 0.5
+    DEFAULT_WEIGHT_FOR_WORD_SIMILARITY = 0.7
+    DEFAULT_WEIGHT_FOR_SIMILARITY_OF_SYMBOLS = 0.3
+
+    def __init__(
+        self,
+        similarity_threshold: float = None,
+        bonus_for_one_unit: float = None,
+        penalty_for_units: float = None,
+        weight_for_word_similarity: float = None,
+        weight_for_similarity_of_symbols: float = None,
+    ):
+        """
+        Инициализация matcher'а с конфигурируемыми параметрами.
+
+        Args:
+            similarity_threshold: Минимальный порог схожести (0.0-1.0)
+            bonus_for_one_unit: Бонус за совпадение единиц измерения
+            penalty_for_units: Штраф за несовпадение единиц (множитель)
+            weight_for_word_similarity: Вес схожести по словам (0.0-1.0)
+            weight_for_similarity_of_symbols: Вес схожести по символам (0.0-1.0)
+
+        Example:
+            # Дефолтные параметры
+            matcher = TCMatcher()
+
+            # Кастомные параметры
+            matcher = TCMatcher(
+                similarity_threshold=0.7,  # Более строгий порог
+                bonus_for_one_unit=0.2     # Больший бонус за единицы
+            )
+        """
+        self.similarity_threshold = (
+            similarity_threshold
+            if similarity_threshold is not None
+            else self.DEFAULT_SIMILARITY_THRESHOLD
+        )
+        self.bonus_for_one_unit = (
+            bonus_for_one_unit
+            if bonus_for_one_unit is not None
+            else self.DEFAULT_BONUS_FOR_ONE_UNIT
+        )
+        self.penalty_for_units = (
+            penalty_for_units
+            if penalty_for_units is not None
+            else self.DEFAULT_PENALTY_FOR_UNITS
+        )
+        self.weight_for_word_similarity = (
+            weight_for_word_similarity
+            if weight_for_word_similarity is not None
+            else self.DEFAULT_WEIGHT_FOR_WORD_SIMILARITY
+        )
+        self.weight_for_similarity_of_symbols = (
+            weight_for_similarity_of_symbols
+            if weight_for_similarity_of_symbols is not None
+            else self.DEFAULT_WEIGHT_FOR_SIMILARITY_OF_SYMBOLS
+        )
 
     @staticmethod
     def normalize_unit(unit: str) -> str:
@@ -22,7 +80,7 @@ class TCMatcher:
             s = s.replace("\u00b2", "2").replace("\u00b3", "3")
             compact = "".join(ch for ch in s if ch not in " .,")
         else:
-            return
+            return ""
 
         patterns = {
             r"(м\^?2|м2|квм|мкв|квадрат\w*метр\w*)": "м2",
@@ -66,37 +124,38 @@ class TCMatcher:
         matched = len(search_keywords & card_keywords)
         return matched / len(search_keywords)
 
-    @classmethod
     def find_matching_tc(
-        cls, name: str, unit: str
+        self, name: str, unit: str
     ) -> tuple[TechnicalCardVersion | None, float]:
         """Найти наиболее подходящую версию ТК."""
+
         if not name or not name.strip():
             return None, 0.0
-        normalized_unit = cls.normalize_unit(unit)
+        normalized_unit = self.normalize_unit(unit)
         search_name = name.strip().lower()
 
         # Шаг 1: Точное совпадение (название + единица)
-        exact_match = cls._find_exact_match(name, normalized_unit)
+        exact_match = self._find_exact_match(name, normalized_unit)
+
         if exact_match:
             return exact_match, 1.0
 
         # Шаг 2: Нечёткий поиск
-        fuzzy_match, score = cls._find_fuzzy_match(search_name, normalized_unit)
-        if fuzzy_match and score >= cls.SIMILARITY_THRESHOLD:
+        fuzzy_match, score = self._find_fuzzy_match(search_name, normalized_unit)
+
+        if fuzzy_match and score >= self.similarity_threshold:
             return fuzzy_match, score
 
         return None, 0.0
 
-    @classmethod
     def _find_exact_match(
-        cls, name: str, normalized_unit: str
+        self, name: str, normalized_unit: str
     ) -> TechnicalCardVersion | None:
         """Точное совпадение названия + единица."""
         exact_cards = TechnicalCard.objects.filter(name__iexact=name.strip())
 
         for card in exact_cards:
-            if cls.normalize_unit(card.unit_ref) == normalized_unit:
+            if self.normalize_unit(card.unit_ref.symbol) == normalized_unit:
                 return (
                     card.versions.filter(is_published=True)
                     .order_by("-created_at")
@@ -105,18 +164,21 @@ class TCMatcher:
 
         return None
 
-    @classmethod
     def _find_fuzzy_match(
-        cls, search_name: str, normalized_unit: str
+        self, search_name: str, normalized_unit: str
     ) -> tuple[TechnicalCardVersion | None, float]:
         """Нечёткий поиск с строгой проверкой ключевых слов."""
-        all_cards = TechnicalCard.objects.all().values("id", "name", "unit_ref")
+        # Оптимизация: загружаем только нужные поля
+        all_cards = TechnicalCard.objects.select_related("unit_ref").only(
+            "id", "name", "unit_ref__symbol"
+        )
 
         best_match_id = None
         best_score = 0.0
-        for card_data in all_cards:
-            card_unit_norm = cls.normalize_unit(card_data["unit_ref"])
-            card_name_lower = card_data["name"].lower()
+
+        for card in all_cards:
+            card_unit_norm = self.normalize_unit(card.unit_ref.symbol)
+            card_name_lower = card.name.lower()
 
             # 1. Схожесть по символам (SequenceMatcher)
             char_similarity = SequenceMatcher(
@@ -124,32 +186,33 @@ class TCMatcher:
             ).ratio()
 
             # 2. Схожесть по словам (ключевые слова)
-            word_similarity = cls.calculate_word_similarity(
+            word_similarity = self.calculate_word_similarity(
                 search_name, card_name_lower
             )
 
             # 3. Взвешенная схожесть: слова важнее символов
-            # 70% вес на слова, 30% на символы
-            combined_similarity = (word_similarity * cls.WEIGHT_FOR_WORD_SIMILARITY) + (
-                char_similarity * cls.WEIGHT_FOR_SIMILARITY_OF_SYMBOLS
-            )
+            combined_similarity = (
+                word_similarity * self.weight_for_word_similarity
+            ) + (char_similarity * self.weight_for_similarity_of_symbols)
 
             # 4. Единица измерения
             if card_unit_norm and normalized_unit:
                 if card_unit_norm == normalized_unit:
+
                     # Небольшой бонус если единицы совпадают
                     combined_similarity = min(
-                        combined_similarity + cls.BONUS_FOR_ONE_UNIT, 1.0
+                        combined_similarity + self.bonus_for_one_unit, 1.0
                     )
                 else:
+
                     # ЖЁСТКИЙ штраф если единицы разные
-                    combined_similarity = combined_similarity * cls.PENALTY_FOR_UNITS
+                    combined_similarity = combined_similarity * self.penalty_for_units
 
             if combined_similarity > best_score:
                 best_score = combined_similarity
-                best_match_id = card_data["id"]
+                best_match_id = card.id
 
-        if best_match_id and best_score >= cls.SIMILARITY_THRESHOLD:
+        if best_match_id and best_score >= self.similarity_threshold:
             card = TechnicalCard.objects.get(id=best_match_id)
             version = (
                 card.versions.filter(is_published=True).order_by("-created_at").first()
@@ -158,12 +221,11 @@ class TCMatcher:
 
         return None, 0.0
 
-    @classmethod
-    def batch_match(cls, items: list[dict]) -> list[dict]:
+    def batch_match(self, items: list[dict]) -> list[dict]:
         """Массовое сопоставление."""
         results = []
         for item in items:
-            tc_version, similarity = cls.find_matching_tc(
+            tc_version, similarity = self.find_matching_tc(
                 item.get("name", ""), item.get("unit", "")
             )
 
