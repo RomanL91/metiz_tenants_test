@@ -2353,7 +2353,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     [c["id"] for c in optional_cols], ensure_ascii=False
                 ),
                 "role_titles": role_titles,
-                "tc_autocomplete_url": reverse("admin:outlay_tc_autocomplete"),
                 "table_colspan": 4
                 + len(optional_cols),  # для colspan в заголовках секций
                 "tc_preview": {"ready": False},  # чтобы шаблон не ожидал старую панель
