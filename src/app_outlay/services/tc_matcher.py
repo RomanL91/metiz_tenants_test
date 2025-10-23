@@ -115,7 +115,6 @@ class TCMatcher:
         best_match_id = None
         best_score = 0.0
         for card_data in all_cards:
-            print("-----tyt")
             card_unit_norm = cls.normalize_unit(card_data["unit_ref"])
             card_name_lower = card_data["name"].lower()
 
