@@ -267,7 +267,7 @@ class GroupTechnicalCardLink(models.Model):
     # Удобные вычисляемые свойства для вывода «как в смете»
     @property
     def unit(self) -> str:
-        return self.technical_card_version.output_unit or ""
+        return self.technical_card_version.unit_ref or ""
 
     @property
     def unit_cost_materials(self):

@@ -266,7 +266,7 @@ class TechnicalCardVersion(models.Model):
     @property
     def output_unit(self):
         """Единица выпуска берётся из родительской карточки."""
-        return self.card.output_unit
+        return str(self.card.unit_ref)
 
     def recalc_totals(self, save=True):
         """

@@ -240,3 +240,24 @@ class TechnicalCardRepository:
 
         # Проверяем как карточку (есть ли у неё версии)
         return TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id).exists()
+
+    @staticmethod
+    def get_published_version(tc_or_ver_id: int):
+        """
+        Получить опубликованную версию ТК.
+
+        Args:
+            tc_or_ver_id: ID версии или ID карточки
+
+        Returns:
+            TechnicalCardVersion или None
+        """
+        # Сначала пробуем найти версию напрямую
+        version = TechnicalCardVersion.objects.filter(pk=tc_or_ver_id).first()
+        if version:
+            return version
+
+        # Если не найдено, ищем опубликованную версию по ID карточки
+        return TechnicalCardVersion.objects.filter(
+            card_id=tc_or_ver_id, is_published=True
+        ).first()
