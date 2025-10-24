@@ -64,6 +64,7 @@ class EstimateMappingsSaveAPIView(APIView):
             )
 
         except Exception as e:
+            print(f"---- e ---- >>> {e}")
             return Response(
                 {"ok": False, "error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
