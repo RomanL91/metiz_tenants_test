@@ -1,0 +1,85 @@
+/* Мягкий заголовок для корневого блока "Версии техкарт" */
+fieldset.djn-fieldset.module.collapse.entity-version>details>summary {
+    /* перекрываем дефолтный margin/padding и фон */
+    margin: 0 0 10px 0;
+    padding: 10px 12px;
+
+    /* очень лёгкий синий оттенок и тонкая рамка */
+    background: rgba(59, 130, 246, .04);
+    border: 1px solid rgba(59, 130, 246, .16);
+    border-left-width: 3px;
+    border-left-color: rgba(59, 130, 246, .35);
+    border-radius: 10px;
+
+    color: inherit;
+    font-weight: 500;
+    /* помягче, чем 600 */
+    font-size: 0.95rem;
+    /* чуть крупнее дефолтных 13px */
+    line-height: 1.25;
+
+    /* плавные реакции при hover/open */
+    transition: border-color .15s ease, background-color .15s ease;
+}
+
+/* Состояние открыто: немного усиливаем акцент */
+fieldset.djn-fieldset.module.collapse.entity-version>details[open]>summary {
+    background: rgba(59, 130, 246, .06);
+    border-left-color: rgba(59, 130, 246, .5);
+}
+
+/* Правим внутренний <h2> — убираем лишние отступы и выравниваем типографику */
+fieldset.djn-fieldset.module.collapse.entity-version>details>summary h2 {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+}
+
+/* Едва заметный hover */
+fieldset.djn-fieldset.module.collapse.entity-version>details>summary:hover {
+    border-left-color: rgba(59, 130, 246, .55);
+}
+
+/* Тёмная тема: ещё более прозрачные фоны, чтобы не «светилось» */
+@media (prefers-color-scheme: dark) {
+    fieldset.djn-fieldset.module.collapse.entity-version>details>summary {
+        background: rgba(96, 165, 250, .08);
+        border-color: rgba(96, 165, 250, .24);
+        border-left-color: rgba(96, 165, 250, .45);
+    }
+
+    fieldset.djn-fieldset.module.collapse.entity-version>details[open]>summary {
+        background: rgba(96, 165, 250, .12);
+        border-left-color: rgba(96, 165, 250, .60);
+    }
+}
+
+/* Сбрасываем дефолтные admin-стили h2/caption внутри блока "Версии техкарт",
+   чтобы фон/отступы задавались summary, а не самим h2 */
+
+/* fieldset.djn-fieldset.module.collapse.entity-version>details>summary>h2, */
+/* fieldset.djn-fieldset.module.collapse.entity-version h2, */
+/* fieldset.djn-fieldset.module.collapse.entity-version caption { */
+/* margin: 0 !important; */
+/* padding: 0 !important; */
+/* background: transparent !important; */
+/* color: inherit !important; */
+/* font-size: inherit !important; */
+/* font-weight: inherit !important; */
+/* line-height: inherit !important; */
+/* text-align: left !important; */
+/* } */
+
+/* На всякий случай — такой же мягкий сброс для вложенных секций,
+      если где-то заголовок рендерится как .module h2 */
+/* fieldset.entity-mat>details>summary>h2, */
+/* fieldset.entity-work>details>summary>h2 { */
+/* margin: 0 !important; */
+/* padding: 0 !important; */
+/* background: transparent !important; */
+/* color: inherit !important; */
+/* font-size: inherit !important; */
+/* font-weight: inherit !important; */
+/* line-height: inherit !important; */
+/* } */

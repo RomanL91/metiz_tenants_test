@@ -1,0 +1,44 @@
+/* Базовый шаг отступа для каждого уровня вложенности */
+:root {
+    --nest-step: 14px;
+}
+
+/* 12–16px — оптимально, при желании подстрой */
+
+.inline-group .inline-related {
+    position: relative;
+}
+
+/* Вертикальная «наводящая» линия слева — ориентир глубины */
+.inline-group .inline-related {
+    border-left: 2px solid #eef1f4;
+}
+
+/* Увеличиваем отступ каждого следующего уровня вложенности.
+   Покрывает до 5 уровней (можно расширить при необходимости). */
+
+.inline-group .inline-related .inline-group {
+    padding-left: calc(var(--nest-step) * 1);
+}
+
+.inline-group .inline-related .inline-group .inline-group {
+    padding-left: calc(var(--nest-step) * 2);
+}
+
+.inline-group .inline-related .inline-group .inline-group .inline-group {
+    padding-left: calc(var(--nest-step) * 3);
+}
+
+.inline-group .inline-related .inline-group .inline-group .inline-group .inline-group {
+    padding-left: calc(var(--nest-step) * 4);
+}
+
+.inline-group .inline-related .inline-group .inline-group .inline-group .inline-group .inline-group {
+    padding-left: calc(var(--nest-step) * 5);
+}
+
+/* Чуть «ужимаем» ячейки табличных инлайнов, чтобы отступ не «съедал» ширину */
+.inline-group table {
+    width: 100%;
+    table-layout: fixed;
+}

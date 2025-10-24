@@ -1,0 +1,93 @@
+/* Мягкая палитра через RGBA: низкая насыщенность и прозрачные фоны/границы */
+
+/* === Версия техкарты (строка с "Версия техкарты: TK [2]") === */
+.djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3.djn-drag-handler {
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
+    background: rgba(59, 130, 246, 0.06);
+    /* очень светлый синий фон */
+    border-left: 3px solid rgba(59, 130, 246, .35);
+    border-radius: 8px;
+    line-height: 1.2;
+    font-weight: 500;
+    /* помягче, чем 600 */
+}
+
+/* "Версия техкарты:" — подпись (слегка приглушаем текст) */
+.djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3.djn-drag-handler>b {
+    color: rgba(29, 78, 216, .8);
+}
+
+/* Чип с номером версии: TK [2] */
+.djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3 .inline_label {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: 4px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, .08);
+    font-weight: 600;
+    letter-spacing: .2px;
+}
+
+/* === Заголовки секций "Материалы версии ТК" / "Работы версии ТК" === */
+fieldset.entity-mat>details>summary>h2,
+fieldset.entity-work>details>summary>h2 {
+    margin: 0 0 6px 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+/* Материалы — мягкий красный акцент */
+fieldset.entity-mat>details>summary>h2 {
+    background: rgba(239, 68, 68, .05);
+    border-left: 3px solid rgba(239, 68, 68, .30);
+}
+
+/* Работы — мягкий зелёный акцент */
+fieldset.entity-work>details>summary>h2 {
+    background: rgba(16, 185, 129, .06);
+    border-left: 3px solid rgba(16, 185, 129, .35);
+}
+
+/* Чуть воздуха перед формами под заголовками */
+.djn-inline-form .module.aligned,
+.djn-fieldset .module.aligned {
+    margin-top: 6px;
+}
+
+/* Едва заметный hover — чтобы было ощущение интерактивности, но без жёсткого контраста */
+.djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3.djn-drag-handler:hover {
+    border-left-color: rgba(59, 130, 246, .55);
+}
+
+fieldset.entity-mat>details>summary>h2:hover {
+    border-left-color: rgba(239, 68, 68, .48);
+}
+
+fieldset.entity-work>details>summary>h2:hover {
+    border-left-color: rgba(16, 185, 129, .52);
+}
+
+/* Тёмная тема — ещё более прозрачные фоны, чтобы не «светились» */
+@media (prefers-color-scheme: dark) {
+    .djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3.djn-drag-handler {
+        background: rgba(96, 165, 250, .10);
+        border-left-color: rgba(96, 165, 250, .45);
+    }
+
+    .djn-inline-form[data-inline-model="app_technical_cards-technicalcardversion"]>h3 .inline_label {
+        background: rgba(96, 165, 250, .14);
+    }
+
+    fieldset.entity-mat>details>summary>h2 {
+        background: rgba(248, 113, 113, .5);
+        border-left-color: rgba(248, 113, 113, .40);
+    }
+
+    fieldset.entity-work>details>summary>h2 {
+        background: rgba(52, 211, 153, .6);
+        border-left-color: rgba(52, 211, 153, .42);
+    }
+}

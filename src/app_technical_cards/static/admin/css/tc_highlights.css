@@ -1,0 +1,42 @@
+/* Неброские «пилюли» с хорошей читаемостью и табличными цифрами */
+.tc-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    line-height: 1.6;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+/* Тоны (поддержка светлой/тёмной темы админки не ломается) */
+.tc-neutral {
+    background: rgba(108, 117, 125, 0.10);
+    color: #6c757d;
+    border-color: rgba(108, 117, 125, 0.25);
+}
+
+.tc-info {
+    background: rgba(13, 110, 253, 0.10);
+    color: #0d6efd;
+    border-color: rgba(13, 110, 253, 0.25);
+}
+
+.tc-success {
+    background: rgba(25, 135, 84, 0.10);
+    color: #198754;
+    border-color: rgba(25, 135, 84, 0.25);
+}
+
+.tc-warning {
+    background: rgba(255, 193, 7, 0.12);
+    color: #b58100;
+    border-color: rgba(255, 193, 7, 0.30);
+}
+
+.tc-danger {
+    background: rgba(220, 53, 69, 0.10);
+    color: #dc3545;
+    border-color: rgba(220, 53, 69, 0.25);
+}

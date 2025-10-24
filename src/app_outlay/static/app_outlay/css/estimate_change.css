@@ -1,0 +1,581 @@
+/* ========================================
+   ESTIMATE CHANGE FORM STYLES
+   Стили для страницы редактирования сметы
+   ======================================== */
+
+/* ========== БАЗОВЫЕ СТИЛИ ТАБЛИЦЫ ========== */
+.tc-map {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+}
+
+.tc-map th,
+.tc-map td {
+    border: 1px solid #e0e0e0;
+    padding: 6px 8px;
+    vertical-align: top;
+}
+
+.tc-map thead th {
+    background: #f8f8f8;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.tc-map .muted {
+    color: #888;
+    font-size: 11px;
+}
+
+.tc-map .sys {
+    font-weight: 600;
+}
+
+.tc-map .cell-2lines>div+div {
+    margin-top: 2px;
+}
+
+.tc-map .qty-input {
+    width: 100px;
+}
+
+.tc-map .tc-input {
+    width: 260px;
+}
+
+.tc-map .col-slim {
+    white-space: nowrap;
+}
+
+.tc-map .col-wide {
+    min-width: 220px;
+}
+
+/* ========== СЕКЦИИ И ГРУППИРОВКА ========== */
+.tc-map .sec-hdr td {
+    background: #fafafa;
+    padding-top: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tc-map .sec-hdr .collapse-icon {
+    display: inline-block;
+    margin-right: 8px;
+    transition: transform 0.2s;
+}
+
+.tc-map .sec-hdr.collapsed .collapse-icon {
+    transform: rotate(-90deg);
+}
+
+.tc-map .sec-subtotal td {
+    background: #fff3cd;
+    font-weight: 600;
+    border-top: 2px solid #ffc107;
+    text-align: right;
+    padding-right: 16px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+/* ========== ОБЁРТКА ПОЛЯ ТК + ЭЛЕМЕНТЫ УПРАВЛЕНИЯ ========== */
+.tc-input-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.tc-clear-btn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 0;
+    display: none;
+    z-index: 5;
+}
+
+.tc-clear-btn:hover {
+    background: #c82333;
+}
+
+.tc-open-link {
+    position: absolute;
+    right: 28px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #17a2b8;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 3px;
+    height: 20px;
+    line-height: 20px;
+    padding: 0 6px;
+    font-size: 12px;
+    display: none;
+    z-index: 5;
+}
+
+.tc-open-link:hover {
+    background: #138496;
+}
+
+/* ========== МЕТРИКИ И ТАБЛО ========== */
+.metrics {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.metric-card {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 10px 12px;
+    min-width: 220px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.metric-title {
+    font-weight: 600;
+    color: #495057;
+    font-size: 12px;
+    margin-bottom: 2px;
+}
+
+.metric-value {
+    font-weight: 700;
+    font-size: 18px;
+    color: #212529;
+}
+
+.summary-note {
+    font-size: 10px;
+    color: #6c757d;
+    margin: 6px 0;
+}
+
+/* ========== ПАНЕЛЬ НР (НАКЛАДНЫЕ РАСХОДЫ) ========== */
+#overhead-panel {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+}
+
+#overhead-panel .col-slim {
+    white-space: nowrap;
+}
+
+#overhead-panel .col-wide {
+    min-width: 220px;
+}
+
+.oh-qty {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.oh-qty-input {
+    width: 70px;
+}
+
+/* ========== ФИЛЬТРЫ ========== */
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 8px 0 4px;
+}
+
+.filters .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.filters .field input,
+.filters .field select {
+    padding: 4px 6px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    min-width: 160px;
+}
+
+.filters .actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.filters .hint {
+    font-size: 11px;
+    color: #6c757d;
+}
+
+/* ========== СОРТИРОВКА ========== */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.sortable .arrow {
+    display: inline-block;
+    margin-left: 4px;
+    opacity: 0.5;
+}
+
+.sortable.active .arrow {
+    opacity: 1;
+}
+
+.sortable[data-dir="asc"] .arrow {
+    transform: rotate(180deg);
+}
+
+/* ========== КНОПКИ ========== */
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    text-decoration: none;
+    line-height: 36px;
+    white-space: nowrap;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+}
+
+.action-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.action-btn.primary {
+    background: #417690;
+    color: white;
+}
+
+.action-btn.primary:hover {
+    background: #356178;
+}
+
+.action-btn.success {
+    background: #28a745;
+    color: white;
+}
+
+.action-btn.success:hover {
+    background: #218838;
+}
+
+.action-btn.info {
+    background: #17a2b8;
+    color: white;
+}
+
+.action-btn.info:hover {
+    background: #138496;
+}
+
+.action-btn.secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.action-btn.secondary:hover {
+    background: #5a6268;
+}
+
+.action-btn.default {
+    background: #f8f9fa;
+    color: #212529;
+    border: 1px solid #dee2e6;
+}
+
+.action-btn.default:hover {
+    background: #e9ecef;
+}
+
+/* ========== СЕГМЕНТИРОВАННЫЙ КОНТРОЛЬ ========== */
+.segmented-control {
+    display: inline-flex;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.segmented-control input[type="radio"] {
+    display: none;
+}
+
+.segmented-control label {
+    padding: 6px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #495057;
+    background: #fff;
+    border-right: 1px solid #dee2e6;
+    transition: all 0.2s ease;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.segmented-control label:last-child {
+    border-right: none;
+}
+
+.segmented-control label:hover {
+    background: #f8f9fa;
+}
+
+.segmented-control input[type="radio"]:checked+label {
+    background: #417690;
+    color: white;
+    font-weight: 600;
+}
+
+/* ========== TOGGLE ПЕРЕКЛЮЧАТЕЛЬ ========== */
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+    display: none;
+}
+
+.toggle-slider {
+    position: relative;
+    width: 52px;
+    height: 28px;
+    background: #dc3545;
+    border-radius: 28px;
+    transition: all 0.3s ease;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    top: 3px;
+    left: 3px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked+.toggle-slider {
+    background: #28a745;
+}
+
+.toggle-switch input:checked+.toggle-slider::before {
+    transform: translateX(24px);
+}
+
+.toggle-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #495057;
+    white-space: nowrap;
+}
+
+.toggle-switch:hover .toggle-slider {
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* ========== МОДАЛЬНОЕ ОКНО ========== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(2px);
+    animation: fadeIn 0.2s ease;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-content {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    max-width: 800px;
+    width: 90%;
+    max-height: 90vh;
+    min-height: 500px;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.3s ease;
+}
+
+.modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #dee2e6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #212529;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: #f8f9fa;
+    color: #212529;
+}
+
+.modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #dee2e6;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ========== ФОРМА В МОДАЛЬНОМ ОКНЕ ========== */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: #417690;
+    box-shadow: 0 0 0 3px rgba(65, 118, 144, 0.1);
+}
+
+.form-group .help-text {
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 4px;
+}
