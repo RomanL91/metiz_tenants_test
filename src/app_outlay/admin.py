@@ -1,45 +1,22 @@
-"""Админ-панель для модуля «Сметы» (app_outlay).
-
-Назначение файла
-----------------
-Этот модуль настраивает интерфейс Django Admin для работы со «Сметами»:
-- Регистрация и настройка ModelAdmin'ов: `EstimateAdmin`, `GroupAdmin`.
-- Inline-редактирование связей «Группа ↔ Версия ТК» через
-  `GroupTechnicalCardLinkInline` с удобными вычисляемыми полями.
-- Кастомные admin-эндпоинты:
-    * `api_calc` — расчёт показателей по версии ТК и количеству;
-    * `tc_autocomplete` — простой автокомплит/батч-сопоставление ТК (POST JSON);
-    * `api_auto_match` — батч-автоматическое сопоставление ТК (POST JSON).
-- Сервисные функции разбора Excel-листа с кешированием:
-    * `_load_full_sheet_rows()` — чтение полного листа (openpyxl, read_only).
-    * `_load_full_sheet_rows_cached()` — та же выборка с кешем (django-redis).
-- Построение «чернового превью» по импортированному файлу:
-    * разбор ролей колонок (NAME_OF_WORK/UNIT/QTY/…);
-    * нормализация единиц измерения;
-    * извлечение кандидатов ТК и раскладка по иерархии групп из аннотации.
-
-Важно
------
-- Все строки интерфейса обёрнуты в `gettext_lazy(_)` и готовы к локализации.
-- Производительность:
-    * списки «Смет» аннотируются агрегациями (без N+1);
-    * чтение Excel кешируется по пути файла, mtime и индексу листа.
-- Безопасность: все кастомные урлы проходят через `admin_site.admin_view`.
+"""
+Админ-панель для модуля «Сметы» (app_outlay).
 """
 
+import os
 import json
-import nested_admin as na
+import tempfile
 
 from decimal import Decimal
+from openpyxl import load_workbook
 
-
-from django.db import transaction, models
+from django.db import transaction
 from django.db.models import Count
+from django.core.cache import cache
 from django.urls import reverse, path
-from django.utils.html import format_html
 from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect, HttpResponse
+
 
 from app_outlay.forms import GroupFormSet, LinkFormSet
 from app_outlay.models import (
@@ -49,65 +26,15 @@ from app_outlay.models import (
     EstimateOverheadCostLink,
 )
 from app_technical_cards.models import TechnicalCard as _TC
-from app_overhead_costs.models import OverheadCostContainer
+from app_estimate_imports.services.schema_service import SchemaService as _SS
+
 
 # ---------- Импорты для ENDPOINTS  ----------
-import json
 from app_outlay.utils_calc import calc_for_tc
-
-
-def _json_error(msg: str, status=400):
-    return JsonResponse({"ok": False, "error": msg}, status=status)
-
-
-def _json_ok(payload: dict, status=200):
-    data = {"ok": True}
-    data.update(payload)
-    return JsonResponse(data, status=status)
-
-
-def _max_order_for_estimate(est):
-    return (
-        EstimateOverheadCostLink.objects.filter(estimate=est).aggregate(
-            m=models.Max("order")
-        )["m"]
-        or 0
-    )
-
-
-def _safe(val, default=0):
-    return val if val is not None else default
-
-
-def _link_base_snapshot(link):
-    c = link.overhead_cost_container
-    return _safe(link.snapshot_total_amount, _safe(c.total_amount, Decimal("0")))
-
-
-def _link_pct_mat(link):
-    c = link.overhead_cost_container
-    return _safe(
-        link.snapshot_materials_percentage,
-        _safe(c.materials_percentage, Decimal("0")),
-    )
-
-
-def _link_pct_work(link):
-    c = link.overhead_cost_container
-    return _safe(
-        link.snapshot_works_percentage,
-        _safe(c.works_percentage, Decimal("0")),
-    )
 
 
 # ---------- Для чтения листов  ----------
 # это бы потом вынести от сюда, например в утилиты
-
-import os
-from django.core.cache import cache
-from openpyxl import load_workbook
-
-
 def _xlsx_cache_key(path: str, sheet_index: int) -> str:
     try:
         mtime = int(os.path.getmtime(path))
@@ -172,147 +99,6 @@ def _load_full_sheet_rows_cached(
     return rows
 
 
-# ---------- INLINES ----------
-
-
-# class EstimateOverheadCostLinkInline(na.NestedTabularInline):
-class EstimateOverheadCostLinkInline(admin.TabularInline):
-    """Инлайн для управления накладными расходами в смете."""
-
-    model = EstimateOverheadCostLink
-    extra = 0
-    ordering = ("order", "id")
-
-    fields = (
-        # "order",
-        "overhead_cost_container",
-        # "is_active",
-        "distribution_display",
-        "snapshot_total_display",
-        "current_total_display",
-        # "has_changes_display",
-        "applied_at",
-    )
-
-    readonly_fields = (
-        "distribution_display",
-        "snapshot_total_display",
-        "current_total_display",
-        # "has_changes_display",
-        "applied_at",
-    )
-
-    autocomplete_fields = ["overhead_cost_container"]
-
-    @admin.display(description=_("Распределение"))
-    def distribution_display(self, obj):
-        if not obj.pk:
-            return "—"
-
-        mat = (
-            obj.snapshot_materials_percentage
-            or obj.overhead_cost_container.materials_percentage
-        )
-        work = (
-            obj.snapshot_works_percentage
-            or obj.overhead_cost_container.works_percentage
-        )
-
-        return format_html(
-            '<span style="font-size: 11px;">МАТ: {}% / РАБ: {}%</span>', mat, work
-        )
-
-    @admin.display(description=_("Сумма (снапшот)"))
-    def snapshot_total_display(self, obj):
-        if not obj.pk or not obj.snapshot_total_amount:
-            return "—"
-        return f"{obj.snapshot_total_amount:,.2f}"
-
-    @admin.display(description=_("Сумма (текущая)"))
-    def current_total_display(self, obj):
-        if not obj.pk:
-            return "—"
-        total = obj.current_total_amount
-
-        if obj.has_changes:
-            return format_html(
-                f'<span style="color: #856404;">{total:,.2f} ⚠️</span>',
-            )
-        return f"{total:,.2f}"
-
-    # @admin.display(description=_("Изменён?"), boolean=True)
-    # def has_changes_display(self, obj):
-    #     if not obj.pk:
-    #         return None
-    #     return obj.has_changes
-
-
-class GroupTechnicalCardLinkInline(admin.TabularInline):
-    model = GroupTechnicalCardLink
-    extra = 0
-    ordering = ("order", "id")
-    raw_id_fields = ("technical_card_version",)
-    show_change_link = True
-
-    fields = (
-        "order",
-        "technical_card_version",
-        "quantity",
-        "unit_display",
-        "unit_cost_materials_display",
-        "unit_cost_works_display",
-        "unit_cost_total_display",
-        "total_cost_materials_display",
-        "total_cost_works_display",
-        "total_cost_display",
-        "pinned_at",
-    )
-    readonly_fields = (
-        "unit_display",
-        "unit_cost_materials_display",
-        "unit_cost_works_display",
-        "unit_cost_total_display",
-        "total_cost_materials_display",
-        "total_cost_works_display",
-        "total_cost_display",
-        "pinned_at",
-    )
-
-    @admin.display(description=_("Ед. ТК"))
-    def unit_display(self, obj):
-        return obj.unit or ""
-
-    @admin.display(description=_("Цена МАТ/ед"))
-    def unit_cost_materials_display(self, obj):
-        v = obj.unit_cost_materials
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    @admin.display(description=_("Цена РАБ/ед"))
-    def unit_cost_works_display(self, obj):
-        v = obj.unit_cost_works
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    @admin.display(description=_("Итого / ед (ТК)"))
-    def unit_cost_total_display(self, obj):
-        v = obj.unit_cost_total
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    @admin.display(description=_("МАТ × кол-во"))
-    def total_cost_materials_display(self, obj):
-        v = obj.total_cost_materials
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    @admin.display(description=_("РАБ × кол-во"))
-    def total_cost_works_display(self, obj):
-        v = obj.total_cost_works
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    @admin.display(description=_("Итого (МАТ+РАБ) × кол-во"))
-    def total_cost_display(self, obj):
-        v = obj.total_cost
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-
 # ---------- АДМИНКИ ----------
 
 ROLE_TITLES = {
@@ -342,16 +128,11 @@ class EstimateAdmin(admin.ModelAdmin):
     save_on_top = True
     list_per_page = 50
     list_display = (
-        # "id",
         "name",
         "source_file",
         "currency",
-        # "groups_count_annot",
-        # "tc_links_count_annot",
-        # "overhead_costs_count_annot",
     )
     search_fields = ("name",)
-    # inlines = [EstimateOverheadCostLinkInline]
     readonly_fields = (
         "source_file",
         "source_sheet_index",
@@ -429,17 +210,10 @@ class EstimateAdmin(admin.ModelAdmin):
         from app_outlay.models import GroupTechnicalCardLink
         from app_outlay.utils_calc import _base_costs_live, _dec, calc_for_tc
 
-        print("\n" + "=" * 80)
-        print(f"API ANALYSIS DATA - Estimate #{object_id}")
-        print("=" * 80)
-
         est = self.get_object(request, object_id)
         if not est:
-            print("❌ ОШИБКА: Смета не найдена")
-            return JsonResponse({"ok": False, "error": "Смета не найдена"}, status=404)
 
-        print(f"✓ Смета найдена: {est.name}")
-        print(f"  ID: {est.id}")
+            return JsonResponse({"ok": False, "error": "Смета не найдена"}, status=404)
 
         try:
             # --- связи Группа–Версия ТК
@@ -451,10 +225,9 @@ class EstimateAdmin(admin.ModelAdmin):
                 .order_by("group__order", "order")
             )
             tc_count = tc_links.count()
-            print(f"\n🔗 Технические карты в смете: {tc_count}")
+
             if not tc_count:
-                print("\n⚠️ ВОЗВРАТ: has_data=False")
-                print("=" * 80 + "\n")
+
                 return JsonResponse(
                     {
                         "ok": True,
@@ -538,10 +311,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     "overhead_mat_pct": avg_mat_pct,  # в процентах (0..100)
                     "overhead_work_pct": avg_work_pct,  # в процентах (0..100)
                 }
-
-            print("\n💼 НР (контекст):")
-            print(f"   Сумма НР: {total_overhead_amt}")
-            print(f"   Средневзвеш.: МАТ%={avg_mat_pct:.2f}, РАБ%={avg_work_pct:.2f}")
 
             # --------------------------------------------------------------------
             # 2) Проходим по позициям и считаем (а) без НР и (б) с НР
@@ -689,11 +458,6 @@ class EstimateAdmin(admin.ModelAdmin):
                 positions_data, key=lambda x: x["total"], reverse=True
             )[:10]
 
-            print("\n✅ УСПЕШНО: Возврат данных")
-            print(f"   has_data: True")
-            print(f"   positions_count: {len(positions_data)}")
-            print("=" * 80 + "\n")
-
             return JsonResponse(
                 {
                     "ok": True,
@@ -711,72 +475,34 @@ class EstimateAdmin(admin.ModelAdmin):
         except Exception as e:
             import traceback
 
-            print("\n" + "=" * 80)
-            print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА API ❌❌❌")
-            print("=" * 80)
-            print(f"Ошибка: {e}")
-            print(traceback.format_exc())
-            print("=" * 80 + "\n")
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
     def api_export_excel(self, request, object_id: str):
         """
         Экспорт сметы с расчетами обратно в Excel.
-        С детальным выводом через print() для отладки.
+        С детальным выводом через
         """
-        from openpyxl import load_workbook
-        from openpyxl.styles import numbers
-        from django.http import HttpResponse
-        from decimal import Decimal
-        import tempfile
-        import os
-
-        print("\n" + "=" * 80)
-        print(f"========== НАЧАЛО ЭКСПОРТА СМЕТЫ #{object_id} ==========")
-        print("=" * 80)
-
         # Получаем смету
         est = self.get_object(request, object_id)
         if not est:
-            print("❌ ОШИБКА: Смета не найдена")
             messages.error(request, "Смета не найдена")
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
-
-        print(f"✓ Смета найдена: {est.name}")
-
         # Проверяем наличие исходного файла
         if not est.source_file or not est.source_file.file:
-            print("❌ ОШИБКА: Исходный файл не найден")
             messages.error(request, "Исходный файл не найден")
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
-
-        print(f"✓ Исходный файл: {est.source_file.original_name}")
-        print(f"  Путь: {est.source_file.file.path}")
-
         # Проверяем наличие разметки
         if not hasattr(est.source_file, "markup"):
-            print("❌ ОШИБКА: Разметка файла не найдена")
             messages.error(request, "Разметка файла не найдена")
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
-
-        print("✓ Разметка найдена")
 
         try:
             markup = est.source_file.markup
             sheet_index = est.source_sheet_index or 0
-            print(f"✓ Индекс листа: {sheet_index}")
-
             # Получаем схему колонок из разметки
             try:
-                from app_estimate_imports.services.schema_service import (
-                    SchemaService as _SS,
-                )
-
                 col_roles, _, _ = _SS().read_sheet_schema(markup, sheet_index)
-                print("✓ Схема колонок получена через SchemaService")
             except Exception as e:
-                print(f"⚠ SchemaService не сработал: {e}")
-                print("  Используем fallback из annotation")
                 schema = (
                     (markup.annotation or {})
                     .get("schema", {})
@@ -784,45 +510,25 @@ class EstimateAdmin(admin.ModelAdmin):
                     .get(str(sheet_index), {})
                 )
                 col_roles = schema.get("col_roles") or []
-                print("✓ Схема колонок получена из annotation")
-
-            print(f"\n📊 Всего колонок в схеме: {len(col_roles)}")
-            print(f"📊 Первые 25 ролей: {col_roles[:25]}")
-
             if not col_roles:
-                print("❌ ОШИБКА: Не удалось определить структуру колонок")
                 messages.error(request, "Не удалось определить структуру колонок")
                 return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
             # Загружаем Excel файл
             xlsx_path = est.source_file.file.path
-            print(f"\n📂 Загрузка Excel: {xlsx_path}")
-
             wb = load_workbook(xlsx_path)
-            print(f"✓ Файл загружен, листов: {len(wb.worksheets)}")
 
             try:
                 ws = wb.worksheets[sheet_index]
-                print(f"✓ Выбран лист: '{ws.title}'")
             except IndexError:
                 ws = wb.active
-                print(
-                    f"⚠ Индекс {sheet_index} не найден, используем активный: '{ws.title}'"
-                )
-
-            print(f"✓ Размер листа: {ws.max_row} строк × {ws.max_column} колонок")
 
             # ========== ПОДГОТОВКА КОНТЕКСТА НР ==========
-            print("\n" + "-" * 80)
-            print("💰 НАКЛАДНЫЕ РАСХОДЫ")
-            print("-" * 80)
 
             overhead_context = None
             overhead_links = est.overhead_cost_links.filter(
                 is_active=True
             ).select_related("overhead_cost_container")
-
-            print(f"Найдено активных НР: {overhead_links.count()}")
 
             if overhead_links.exists():
                 total_overhead = Decimal("0")
@@ -843,9 +549,6 @@ class EstimateAdmin(admin.ModelAdmin):
                         or link.overhead_cost_container.works_percentage
                     )
 
-                    print(f"  • {link.overhead_cost_container.name}")
-                    print(f"    Сумма: {amount}, МАТ: {mat_pct}%, РАБ: {work_pct}%")
-
                     total_overhead += amount
                     weighted_mat_pct += mat_pct * amount
                     weighted_work_pct += work_pct * amount
@@ -857,10 +560,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     avg_mat_pct = Decimal("0")
                     avg_work_pct = Decimal("0")
 
-                print(f"\n📈 ИТОГО НР: {total_overhead}")
-                print(f"   Средневзвешенный МАТ%: {avg_mat_pct:.2f}")
-                print(f"   Средневзвешенный РАБ%: {avg_work_pct:.2f}")
-
                 # Рассчитываем общую базу из сохраненных ТК
                 from app_outlay.utils_calc import _base_costs_live, _dec
 
@@ -871,8 +570,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     group__estimate=est
                 ).select_related("technical_card_version")
 
-                print(f"\n🔢 Подсчет базы из {tc_links.count()} ТК:")
-
                 for idx, link in enumerate(tc_links[:5], 1):  # показываем первые 5
                     ver = link.technical_card_version
                     base = _base_costs_live(ver)
@@ -881,23 +578,14 @@ class EstimateAdmin(admin.ModelAdmin):
                     total_base_mat += link_base_mat
                     total_base_work += link_base_work
 
-                    print(f"  {idx}. {ver.card.name[:40]}")
-                    print(f"     МАТ: {base.mat} × {link.quantity} = {link_base_mat}")
-                    print(f"     РАБ: {base.work} × {link.quantity} = {link_base_work}")
-
                 if tc_links.count() > 5:
-                    print(f"  ... и еще {tc_links.count() - 5} ТК")
+
                     # считаем остальные
                     for link in tc_links[5:]:
                         ver = link.technical_card_version
                         base = _base_costs_live(ver)
                         total_base_mat += base.mat * _dec(link.quantity)
                         total_base_work += base.work * _dec(link.quantity)
-
-                print(f"\n📊 ОБЩАЯ БАЗА:")
-                print(f"   МАТ: {total_base_mat}")
-                print(f"   РАБ: {total_base_work}")
-                print(f"   ВСЕГО: {total_base_mat + total_base_work}")
 
                 overhead_context = {
                     "total_base_mat": total_base_mat,
@@ -906,23 +594,16 @@ class EstimateAdmin(admin.ModelAdmin):
                     "overhead_mat_pct": avg_mat_pct,
                     "overhead_work_pct": avg_work_pct,
                 }
-                print("✓ Контекст НР создан")
+
             else:
                 print("ℹ НР не используются")
 
             # ========== ПОЛУЧАЕМ ВСЕ СОПОСТАВЛЕНИЯ ==========
-            print("\n" + "-" * 80)
-            print("🔗 СОПОСТАВЛЕНИЯ ТК")
-            print("-" * 80)
 
             mappings = {}  # {row_index: {tc_version, quantity}}
-
             all_links = GroupTechnicalCardLink.objects.filter(
                 group__estimate=est
             ).select_related("technical_card_version", "technical_card_version__card")
-
-            print(f"Всего связей ТК в смете: {all_links.count()}")
-
             links_with_row = 0
             links_without_row = 0
 
@@ -933,29 +614,10 @@ class EstimateAdmin(admin.ModelAdmin):
                         "quantity": link.quantity,
                     }
                     links_with_row += 1
-                    if links_with_row <= 10:  # показываем первые 10
-                        print(
-                            f"  ✓ Строка {link.source_row_index}: {link.technical_card_version.card.name[:40]} × {link.quantity}"
-                        )
                 else:
                     links_without_row += 1
-                    if links_without_row <= 3:
-                        print(
-                            f"  ⚠ БЕЗ row_index: {link.technical_card_version.card.name[:40]}"
-                        )
-
-            if links_with_row > 10:
-                print(f"  ... и еще {links_with_row - 10} сопоставлений")
-
-            if links_without_row > 3:
-                print(f"  ... и еще {links_without_row - 3} без row_index")
-
-            print(f"\n📊 Итого:")
-            print(f"   С row_index: {links_with_row}")
-            print(f"   Без row_index: {links_without_row}")
 
             if not mappings:
-                print("\n❌ НЕТ СОПОСТАВЛЕНИЙ ДЛЯ ЭКСПОРТА!")
                 messages.warning(
                     request,
                     "⚠️ Нет сопоставлений для экспорта. Сначала выполните сопоставление и сохраните.",
@@ -964,12 +626,8 @@ class EstimateAdmin(admin.ModelAdmin):
                 return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
             # ========== ЗАПОЛНЯЕМ EXCEL ==========
-            print("\n" + "-" * 80)
-            print("📝 ЗАПОЛНЕНИЕ EXCEL")
-            print("-" * 80)
 
             updated_count = 0
-
             # Создаем маппинг роль -> индекс колонки
             role_to_col = {}
             target_roles = [
@@ -986,27 +644,16 @@ class EstimateAdmin(admin.ModelAdmin):
                 if role in target_roles:
                     role_to_col[role] = idx
                     col_letter = chr(65 + idx) if idx < 26 else f"A{chr(65 + idx - 26)}"
-                    print(f"  📌 Колонка {idx} ({col_letter}): {role}")
-
-            print(f"\n✓ Найдено колонок для заполнения: {len(role_to_col)}")
 
             if not role_to_col:
-                print("❌ НЕТ РАЗМЕЧЕННЫХ КОЛОНОК ДЛЯ ЗАПИСИ!")
                 messages.error(request, "❌ Нет размеченных колонок для записи данных")
                 wb.close()
                 return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
             # Проходим по всем сопоставлениям
-            print(f"\n🔄 Обработка {len(mappings)} сопоставлений:\n")
-
             for idx, (row_index, mapping) in enumerate(mappings.items(), 1):
                 tc_version = mapping["tc_version"]
                 quantity = mapping["quantity"]
-
-                print(f"{idx}. СТРОКА {row_index} {'='*60}")
-                print(f"   ТК: {tc_version.card.name}")
-                print(f"   ID карточки: {tc_version.card_id}")
-                print(f"   Количество: {quantity}")
 
                 if "QTY" in role_to_col:
                     col_idx = role_to_col["QTY"]
@@ -1022,31 +669,19 @@ class EstimateAdmin(admin.ModelAdmin):
 
                     try:
                         cell = ws.cell(row=excel_row, column=excel_col)
-                        old_qty = cell.value
-
                         # Записываем количество как число
                         cell.value = float(quantity)
                         cell.number_format = "#,##0.000"
-
-                        print(
-                            f"   📊 {cell_address} (QTY): {old_qty} → {float(quantity):.3f}"
-                        )
                     except Exception as e:
-                        print(f"   ❌ Ошибка записи количества в {cell_address}: {e}")
+                        pass
 
                 # Вызываем расчет с НР
                 try:
                     calc, _ = calc_for_tc(
                         tc_version.card_id, quantity, overhead_context=overhead_context
                     )
-                    print(f"   ✓ Расчет выполнен:")
-                    for key, val in calc.items():
-                        print(f"      {key}: {val}")
                 except Exception as e:
                     print(f"   ❌ ОШИБКА РАСЧЕТА: {e}")
-                    import traceback
-
-                    print(traceback.format_exc())
                     continue
 
                 # Записываем значения в соответствующие колонки
@@ -1066,15 +701,9 @@ class EstimateAdmin(admin.ModelAdmin):
 
                         try:
                             cell = ws.cell(row=excel_row, column=excel_col)
-                            old_value = cell.value
-
                             # Записываем значение как число
                             cell.value = float(value)
                             cell.number_format = "#,##0.000"
-
-                            print(
-                                f"      ✓ {cell_address}: {old_value} → {float(value):.3f}"
-                            )
                             cells_written += 1
 
                         except Exception as e:
@@ -1082,17 +711,9 @@ class EstimateAdmin(admin.ModelAdmin):
 
                 if cells_written > 0:
                     updated_count += 1
-                    print(f"   ✓ Записано ячеек: {cells_written}")
-                else:
-                    print(f"   ⚠ НИ ОДНОЙ ЯЧЕЙКИ НЕ ЗАПИСАНО!")
-
-                print()  # пустая строка между записями
 
                 # Показываем только первые 5 детально
                 if idx >= 5 and len(mappings) > 5:
-                    print(
-                        f"... обрабатываются остальные {len(mappings) - 5} строк ...\n"
-                    )
                     # обрабатываем остальные без детального вывода
                     for row_index2, mapping2 in list(mappings.items())[5:]:
                         tc_version2 = mapping2["tc_version"]
@@ -1116,31 +737,19 @@ class EstimateAdmin(admin.ModelAdmin):
                             print(f"   ❌ Ошибка в строке {row_index2}: {e}")
                     break
 
-            print("\n" + "=" * 80)
-            print(f"✅ ИТОГО ОБРАБОТАНО СТРОК: {updated_count} из {len(mappings)}")
-            print("=" * 80)
-
             # ========== СОХРАНЯЕМ ФАЙЛ ==========
-            print("\n💾 Сохранение файла...")
 
             temp_dir = tempfile.gettempdir()
             original_name = os.path.splitext(est.source_file.original_name)[0]
             output_filename = f"{original_name}_calculated.xlsx"
             temp_path = os.path.join(temp_dir, output_filename)
 
-            print(f"   Временный путь: {temp_path}")
-
             wb.save(temp_path)
-            print(f"   ✓ Файл сохранен")
-
             wb.close()
-            print(f"   ✓ Workbook закрыт")
 
             # Читаем и отправляем
             with open(temp_path, "rb") as f:
                 file_content = f.read()
-                file_size = len(file_content)
-                print(f"   ✓ Размер: {file_size:,} байт")
 
                 response = HttpResponse(
                     file_content,
@@ -1153,7 +762,6 @@ class EstimateAdmin(admin.ModelAdmin):
             # Удаляем временный файл
             try:
                 os.unlink(temp_path)
-                print(f"   ✓ Временный файл удален")
             except Exception as e:
                 print(f"   ⚠ Не удалось удалить временный файл: {e}")
 
@@ -1161,23 +769,11 @@ class EstimateAdmin(admin.ModelAdmin):
                 request,
                 f"✅ Экспорт выполнен успешно! Обновлено строк: {updated_count}",
             )
-
-            print("\n" + "=" * 80)
-            print("✅ ЭКСПОРТ ЗАВЕРШЕН УСПЕШНО")
-            print("=" * 80 + "\n")
-
             return response
 
         except Exception as e:
-            import traceback
-
-            error_details = traceback.format_exc()
-            print("\n" + "=" * 80)
             print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА ЭКСПОРТА ❌❌❌")
-            print("=" * 80)
             print(f"Ошибка: {e}")
-            print(error_details)
-            print("=" * 80 + "\n")
             messages.error(request, f"Ошибка экспорта: {e!r}")
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
@@ -1556,16 +1152,13 @@ class EstimateAdmin(admin.ModelAdmin):
         return super().render_change_form(request, context, add, change, form_url, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
-
         extra = dict(extra_context or {})
         est = self.get_object(request, object_id)
 
         # Контекст по умолчанию
-        excel_candidates: list[dict] = []
         table_sections: list[dict] = []
         optional_cols: list[dict] = []
-        present_optional: list[str] = []
-        role_titles = ROLE_TITLES  # константа сверху файла
+        role_titles = ROLE_TITLES
 
         if (
             est
@@ -1578,12 +1171,12 @@ class EstimateAdmin(admin.ModelAdmin):
             sheet_i = est.source_sheet_index or 0
 
             # --- 1) Схема листа: роли колонок, allow-юниты, требование qty>0
-            # Пытаемся через сервис, иначе — из annotation с нормализацией.
             unit_allow_set = set()
             require_qty = False
             col_roles: list[str] = []
 
             def _normalize_unit(u: str) -> str:
+                """Нормализация единиц измерения."""
                 s = (u or "").lower().strip()
                 s = s.replace("\u00b2", "2").replace("\u00b3", "3")
                 compact = "".join(ch for ch in s if ch not in " .,")
@@ -1610,11 +1203,6 @@ class EstimateAdmin(admin.ModelAdmin):
                 return compact
 
             try:
-                # если у тебя есть сервис схем
-                from app_estimate_imports.services.schema_service import (
-                    SchemaService as _SS,
-                )
-
                 col_roles, unit_allow_set, require_qty = _SS().read_sheet_schema(
                     markup, sheet_i
                 )
@@ -1637,20 +1225,18 @@ class EstimateAdmin(admin.ModelAdmin):
                         unit_allow_set.add(n)
                 require_qty = bool(sch.get("require_qty"))
 
-            # --- 2) Загружаем ПОЛНЫЙ лист Excel (никаких ограничений)
+            # --- 2) Загружаем ПОЛНЫЙ лист Excel
             xlsx_path = getattr(est.source_file.file, "path", None) or (
                 (pr.data or {}).get("file") or {}
             ).get("path")
             if xlsx_path:
                 rows_full = _load_full_sheet_rows_cached(xlsx_path, sheet_i)
             else:
-                # фолбэк на parse_result, если файла нет
                 rows_full = ((pr.data or {}).get("sheets") or [{}])[sheet_i].get(
                     "rows"
                 ) or []
 
-            # --- 3) Детектируем кандидатов ТК по тем же правилам, что и в grid.html
-            # ВАЖНО: здесь НЕ ограничиваемся группами — берём весь лист.
+            # --- 3) Детектируем кандидатов ТК
             tcs = self._detect_tc_rows_from_rows(
                 rows_full, col_roles, unit_allow_set, require_qty
             )
@@ -1659,33 +1245,32 @@ class EstimateAdmin(admin.ModelAdmin):
             groups = self._load_groups_from_annotation(markup.annotation or {}, sheet_i)
             tree, loose = self._assign_tc_to_deepest_group(groups, tcs)
 
-            # --- 5) Собираем «кандидатов» для табличного вида
-            # Берём только те строки, которые прошли детект (без «шума»).
+            # --- 5) Собираем кандидатов для табличного вида
             allowed_rows = {tc["row_index"] for tc in tcs}
             excel_all = self._collect_excel_candidates_from_rows(rows_full, col_roles)
-            excel_candidates = [
+            # Фильтруем только те строки, которые прошли детект
+            candidates_filtered = [
                 it for it in excel_all if it["row_index"] in allowed_rows
             ]
 
-            # --- 6) Опциональные колонки: показываем только размеченные
+            # --- 6) Опциональные колонки
             present_optional = [rid for rid in OPTIONAL_ROLE_IDS if rid in col_roles]
             optional_cols = [
                 {"id": rid, "title": role_titles.get(rid, rid)}
                 for rid in present_optional
             ]
-            # xls-значения опций — строго в порядке колонок optional_cols
-            for it in excel_candidates:
+
+            # Добавляем opt_values к каждому кандидату
+            for it in candidates_filtered:
                 raw = it.get("excel_optional") or {}
                 it["opt_values"] = [raw.get(r["id"], "") for r in optional_cols]
 
-            # --- 7) Собираем секции таблицы:
-            #     - если есть группы: секция на каждую + «Без группы» для остатка
-            #     - если групп нет вообще: одна секция «Без группы» со всеми ТК
-            cand_by_row = {it["row_index"]: it for it in excel_candidates}
+            # --- 7) Собираем секции таблицы
+            cand_by_row = {it["row_index"]: it for it in candidates_filtered}
             table_sections = []
 
             if groups:
-                # раскладываем по дереву
+
                 def _flatten(node: dict, parent_path: str | None = None):
                     path = node.get("name") or "Группа"
                     path = path if parent_path is None else f"{parent_path} / {path}"
@@ -1708,7 +1293,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 for root in tree or []:
                     _flatten(root)
 
-                # остаток без группы
+                # Остаток без группы
                 loose_items = []
                 for tc in loose or []:
                     ci = cand_by_row.get(tc["row_index"])
@@ -1719,101 +1304,55 @@ class EstimateAdmin(admin.ModelAdmin):
                         {"path": "Без группы", "color": "#f0f4f8", "items": loose_items}
                     )
             else:
-                # групп нет — одна секция со всеми найденными ТК
-                if excel_candidates:
+                # Групп нет — одна секция со всеми найденными ТК
+                if candidates_filtered:
                     table_sections = [
                         {
                             "path": "Без группы",
                             "color": "#f0f4f8",
-                            "items": excel_candidates,
+                            "items": candidates_filtered,
                         }
                     ]
-                else:
-                    table_sections = []
 
             # --- 8) Загружаем существующие сопоставления из БД
-            existing_mappings = {}  # {row_index: {tc_id, tc_name, quantity}}
+            existing_mappings = {}
 
             if est:
-                # Получаем все связи для этой сметы
                 links_qs = GroupTechnicalCardLink.objects.filter(
                     group__estimate=est
                 ).select_related(
                     "group", "technical_card_version", "technical_card_version__card"
                 )
 
-                # НОВАЯ ЛОГИКА: прямое сопоставление по source_row_index
                 for link in links_qs:
-                    if link.source_row_index:  # Если есть привязка к строке Excel
+                    if link.source_row_index:
                         existing_mappings[link.source_row_index] = {
                             "tc_id": link.technical_card_version.card_id,
                             "tc_name": link.technical_card_version.card.name,
                             "quantity": float(link.quantity),
                         }
 
-        base_materials = Decimal("0.00")
-        base_works = Decimal("0.00")
-        overhead_calc = None
-        overhead_calc_json = "null"
-
-        if est:
-            # Суммируем все ТК в смете
-            links = GroupTechnicalCardLink.objects.filter(
-                group__estimate=est
-            ).select_related("technical_card_version")
-
-            for link in links:
-                base_materials += link.total_cost_materials or Decimal("0.00")
-                base_works += link.total_cost_works or Decimal("0.00")
-
-            # Получаем расчёт с НР
-            overhead_calc = est.calculate_totals_with_overhead(
-                base_materials, base_works
-            )
-
-            # НОВОЕ: Сериализуем для JavaScript
-            if overhead_calc:
-                overhead_calc_json = json.dumps(
-                    {
-                        "base_materials": float(overhead_calc["base_materials"]),
-                        "base_works": float(overhead_calc["base_works"]),
-                        "base_total": float(overhead_calc["base_total"]),
-                        "overhead_materials": float(
-                            overhead_calc["overhead_materials"]
-                        ),
-                        "overhead_works": float(overhead_calc["overhead_works"]),
-                        "overhead_total": float(overhead_calc["overhead_total"]),
-                        "final_materials": float(overhead_calc["final_materials"]),
-                        "final_works": float(overhead_calc["final_works"]),
-                        "final_total": float(overhead_calc["final_total"]),
-                    },
-                    ensure_ascii=False,
-                )
-
+        # URL для изменения ТК
         tc_change_url_zero = reverse(
             f"admin:{_TC._meta.app_label}_{_TC._meta.model_name}_change",
             args=[0],
         )
 
-        # --- 8) Отдаём контекст в шаблон
+        # --- Финальный контекст (только нужное!)
         extra.update(
             {
-                "excel_candidates": excel_candidates,  # если захочешь отрисовать плоско
-                "table_sections": table_sections,  # основной вывод секциями
-                "optional_cols": optional_cols,  # [{id, title}]
+                "table_sections": table_sections,
+                "optional_cols": optional_cols,
                 "calc_order_json": json.dumps(
                     [c["id"] for c in optional_cols], ensure_ascii=False
                 ),
                 "role_titles": role_titles,
-                "table_colspan": 4
-                + len(optional_cols),  # для colspan в заголовках секций
-                "tc_preview": {"ready": False},  # чтобы шаблон не ожидал старую панель
+                "table_colspan": 4 + len(optional_cols),
                 "existing_mappings_json": json.dumps(
                     existing_mappings, ensure_ascii=False
                 ),
-                "overhead_calculation": overhead_calc,
-                "overhead_calculation_json": overhead_calc_json,
                 "tc_change_url_zero": tc_change_url_zero,
             }
         )
+
         return super().change_view(request, object_id, form_url, extra_context=extra)
