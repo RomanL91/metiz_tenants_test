@@ -27,7 +27,7 @@ db.sqlite3-journal
 media/
 staticfiles/
 static_root/
-static/
+#static/
 
 # Migrations (опционально, если ты не коммитишь их)
 **/migrations/
