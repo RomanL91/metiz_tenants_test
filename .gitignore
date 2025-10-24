@@ -30,8 +30,8 @@ static_root/
 #static/
 
 # Migrations (опционально, если ты не коммитишь их)
-**/migrations/
-!*/migrations/__init__.py
+# **/migrations/
+# !*/migrations/__init__.py
 
 # VSCode
 .vscode/
