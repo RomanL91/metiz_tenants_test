@@ -1,21 +1,86 @@
+{# D:\DEV\INSTALLBIZ\TestDjangoTenants\src\templates\admin\base_site.html #}
 {% extends "admin/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 
-
-
-{# 1) jsi18n должен грузиться до админских js #}
+{# jsi18n до админских js #}
 {% block extrahead %}
   <script src="{% url 'admin:jsi18n' %}"></script>
   {{ block.super }}
 {% endblock %}
 
-{# 2) Кликабельный заголовок #}
-{% block branding %}
+{# палитра и стили хедера/заголовков #}
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* 1) Объявляем палитру для обеих тем */
+    :root,
+    html,
+    html[data-theme="light"],
+    html[data-theme="dark"] {
+      --header-bg: #53565A;          /* фон шапки */
+      --header-color: #ffffff;       /* текст в шапке */
+      --header-link-color: #E5E7EB;  /* ссылки в шапке */
+      --header-link-hover-color: #ffffff;
+      --primary: #2563EB;            /* общий акцент админки (опц.) */
+    }
 
+    /* 2) Жёстко перекрашиваем сам хедер (перебиваем любую тему) */
+    #header {
+      background: var(--header-bg) !important;
+      color: var(--header-color) !important;
+    }
+    #branding a {
+      color: var(--header-link-color) !important;
+      text-decoration: none;
+    }
+    #branding a:hover { color: var(--header-link-hover-color) !important; }
+
+    /* Цвета ссылок справа (user-tools) */
+    #user-tools, #user-tools a {
+      color: var(--header-link-color) !important;
+    }
+    #user-tools a:hover { color: var(--header-link-hover-color) !important; }
+
+    /* (опц.) Заголовки модулей в тон шапки */
+    .module h2, .module caption, .inline-group h2 {
+      background: #00B3A6 !important;
+      color: var(--header-color) !important;
+    } 
+
+    /* Выравниваем логотип/брендинг */
+    #branding .brand-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #branding img.brand-logo {
+      height: 70px;      /* подстройте при необходимости */
+      width: auto;
+      display: inline-block;
+    }
+
+    /* A11y: скрытый текст для screen readers, если без видимого названия */
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0);
+      white-space: nowrap; border: 0;
+    }
+
+    /* Убираем лишние отступы у h1 в бренд-блоке */
+    #site-name { margin: 0; }
+  </style>
+{% endblock %}
+
+{# кликабельный брендинг с логотипом #}
+{% block branding %}
   <div id="branding">
     <h1 id="site-name">
-        <span class="header-tagline">🏗️</span>
-      <a href="{% url 'admin:index' %}">{{ site_header }}</a>
+      <a href="{% url 'admin:index' %}" class="brand-wrap">
+        <img src="{% static 'brand/logo.png' %}" alt="Logo" class="brand-logo">
+        <span class="sr-only">{{ site_header }}</span>
+      </a>
     </h1>
   </div>
 {% endblock %}

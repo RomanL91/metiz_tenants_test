@@ -2,145 +2,66 @@
 {% load static %}
 
 {% block extrastyle %}
-<style>
-  .graph-container { display: flex; gap: 12px; height: calc(100vh - 200px); }
-  .graph-main { flex: 1; display: flex; flex-direction: column; }
-  .graph-toolbar { margin:0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#f8f8f8; padding:10px; border-radius:4px; }
-  .control-panel { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px 0; }
-  .control-group { display:flex; gap:4px; align-items:center; border-right:1px solid #ddd; padding-right:8px; margin-right:4px; }
-  .control-group:last-child { border-right:none; }
-  
-  #cy { flex:1; border:1px solid #e0e0e0; border-radius:4px; background:#fafafa; }
-  
-  .sidepanel { 
-    width: 280px; 
-    border:1px solid #e0e0e0; 
-    border-radius:4px; 
-    background:#fff; 
-    padding:12px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .sidepanel-hidden { display: none; }
-  .panel-section { 
-    border-bottom: 1px solid #e0e0e0; 
-    padding-bottom: 12px;
-    margin-bottom: 12px;
-  }
-  .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
-  .panel-title { font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; }
-  .panel-item { font-size: 12px; color: #555; margin: 4px 0; }
-  .panel-label { color: #888; display: inline-block; min-width: 70px; }
-  .panel-value { color: #212121; font-weight: 500; }
-  .breadcrumbs { 
-    font-size: 11px; 
-    color: #666; 
-    padding: 6px 8px; 
-    background: #f5f5f5; 
-    border-radius: 3px;
-    word-break: break-word;
-  }
-  
-  .legend { font-size:12px; color:#555; display:flex; gap:12px; align-items:center; }
-  .chip { 
-    display:inline-flex; 
-    align-items:center;
-    gap:4px;
-    padding:4px 10px; 
-    border-radius:999px; 
-    border:1px solid #ddd; 
-    background:#fff;
-    font-size:11px;
-  }
-  .chip-icon { font-style: normal; }
-  
-  .btn { 
-    padding: 6px 12px; 
-    border: 1px solid #ddd; 
-    background: #fff; 
-    border-radius: 3px; 
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 0.15s;
-  }
-  .btn:hover { background: #f5f5f5; border-color: #999; }
-  .btn:active { background: #e8e8e8; }
-  .btn-icon { padding: 6px 8px; }
-  
-  .filter-group { 
-    display: flex; 
-    gap: 8px; 
-    align-items: center;
-    flex-wrap: wrap;
-  }
-  .filter-checkboxes {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-  .filter-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-  }
-  
-  .stats { 
-    background: #e3f2fd; 
-    padding: 8px 12px; 
-    border-radius: 4px;
-    font-size: 12px;
-    color: #1565c0;
-  }
-  .stats-item { margin: 2px 0; }
-  
-  .info { margin-top:8px; font-size:12px; color:#666; padding:8px; background:#f9f9f9; border-radius:4px; }
-  
-  /* Slider стили */
-  input[type="range"] {
-    width: 120px;
-    height: 4px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: #ddd;
-    outline: none;
-    border-radius: 2px;
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    background: #417690;
-    cursor: pointer;
-    border-radius: 50%;
-  }
-  input[type="range"]::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    background: #417690;
-    cursor: pointer;
-    border-radius: 50%;
-    border: none;
-  }
-  
-  .slider-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .slider-label {
-    font-size: 11px;
-    color: #666;
-  }
-  .slider-value {
-    font-size: 11px;
-    color: #417690;
-    font-weight: 500;
-  }
-</style>
+  {{ block.super }}
+  <style>
+    /* 1) Подтягиваем палитру шапки и усиливаем её для обеих тем */
+    :root,
+    html,
+    html[data-theme="light"],
+    html[data-theme="dark"] {
+      --header-bg: #53565A;          /* фон шапки (как в base_site) */
+      --header-color: #ffffff;
+      --header-link-color: #E5E7EB;
+      --header-link-hover-color: #ffffff;
+    }
+    #header { background: var(--header-bg) !important; color: var(--header-color) !important; }
+    #branding a { color: var(--header-link-color) !important; }
+    #branding a:hover { color: var(--header-link-hover-color) !important; }
+    #user-tools, #user-tools a { color: var(--header-link-color) !important; }
+    #user-tools a:hover { color: var(--header-link-hover-color) !important; }
+
+    /* 2) На этой странице принудительно уменьшаем лого */
+    #branding img.brand-logo { height: 48px !important; width: auto; }
+  </style>
+
+  <style>
+    /* --- твои стили страницы ниже — без изменений --- */
+    .graph-container { display: flex; gap: 12px; height: calc(100vh - 200px); }
+    .graph-main { flex: 1; display: flex; flex-direction: column; }
+    .graph-toolbar { margin:0 0 12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#f8f8f8; padding:10px; border-radius:4px; }
+    .control-panel { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:8px 0; }
+    .control-group { display:flex; gap:4px; align-items:center; border-right:1px solid #ddd; padding-right:8px; margin-right:4px; }
+    .control-group:last-child { border-right:none; }
+    #cy { flex:1; border:1px solid #e0e0e0; border-radius:4px; background:#fafafa; }
+    .sidepanel { width: 280px; border:1px solid #e0e0e0; border-radius:4px; background:#fff; padding:12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .sidepanel-hidden { display: none; }
+    .panel-section { border-bottom: 1px solid #e0e0e0; padding-bottom: 12px; margin-bottom: 12px; }
+    .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
+    .panel-title { font-weight: 600; font-size: 13px; color: #333; margin-bottom: 8px; }
+    .panel-item { font-size: 12px; color: #555; margin: 4px 0; }
+    .panel-label { color: #888; display: inline-block; min-width: 70px; }
+    .panel-value { color: #212121; font-weight: 500; }
+    .breadcrumbs { font-size: 11px; color: #666; padding: 6px 8px; background: #f5f5f5; border-radius: 3px; word-break: break-word; }
+    .legend { font-size:12px; color:#555; display:flex; gap:12px; align-items:center; }
+    .chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:999px; border:1px solid #ddd; background:#fff; font-size:11px; }
+    .chip-icon { font-style: normal; }
+    .btn { padding: 6px 12px; border: 1px solid #ddd; background: #fff; border-radius: 3px; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+    .btn:hover { background: #f5f5f5; border-color: #999; }
+    .btn:active { background: #e8e8e8; }
+    .btn-icon { padding: 6px 8px; }
+    .filter-group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .filter-checkboxes { display: flex; gap: 12px; align-items: center; }
+    .filter-checkbox { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+    .stats { background: #e3f2fd; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #1565c0; }
+    .stats-item { margin: 2px 0; }
+    .info { margin-top:8px; font-size:12px; color:#666; padding:8px; background:#f9f9f9; border-radius:4px; }
+    input[type="range"] { width: 120px; height: 4px; -webkit-appearance: none; appearance: none; background: #ddd; outline: none; border-radius: 2px; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; background: #417690; cursor: pointer; border-radius: 50%; }
+    input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; background: #417690; cursor: pointer; border-radius: 50%; border: none; }
+    .slider-group { display: flex; flex-direction: column; gap: 4px; }
+    .slider-label { font-size: 11px; color: #666; }
+    .slider-value { font-size: 11px; color: #417690; font-weight: 500; }
+  </style>
 {% endblock %}
 
 {% block content %}
