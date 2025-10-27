@@ -105,7 +105,14 @@
     <!-- ИТОГОВОЕ ТАБЛО -->
     <div id="summary-panel" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:4px;padding:12px 16px;margin-bottom:16px;font-size:13px">
       <div style="margin-bottom:16px">
-        <div style="font-weight:600;color:#495057;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">📋 Текущие расчеты</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #dee2e6">
+          <div style="font-weight:600;color:#495057">📋 Текущие расчеты</div>
+          <label class="toggle-switch" style="margin:0">
+            <input type="checkbox" id="toggle-vat-active">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label" id="toggle-vat-label">НДС выключен</span>
+          </label>
+        </div>
         <div id="summary-note-base" class="summary-note"></div>
         <div id="metrics-base" class="metrics"></div>
       </div>
@@ -207,6 +214,7 @@
   <script src="{% static 'app_outlay/js/estimate_sections.js' %}"></script>
   <script src="{% static 'app_outlay/js/estimate_mappings_save.js' %}"></script>
   <script src="{% static 'app_outlay/js/estimate_overheads.js' %}"></script>
+  <script src="{% static 'app_outlay/js/estimate_vat.js' %}"></script>
   <script src="{% static 'app_outlay/js/estimate_filters.js' %}"></script>
   <script src="{% static 'app_outlay/js/estimate_export.js' %}"></script>
   <script src="{% static 'app_outlay/js/estimate_main.js' %}"></script>
@@ -216,6 +224,7 @@
   <script src="{% static 'app_outlay/js/estimate_settings.js' %}"></script>
   <script>
     (function() {
+      // === Инициализация модуля настроек ===
       if (typeof EstimateSettings === 'undefined') {
         console.error('❌ EstimateSettings не загружен!');
         return;

@@ -5,6 +5,7 @@ from app_outlay.views.autocomplete_view import views as autocomplete_view
 from app_outlay.views.estimate_calc_view import views as estimate_calc_view
 from app_outlay.views.estimate_mappings_view import views as estimate_mappings_view
 from app_outlay.views.estimate_overheads_view import views as estimate_overheads_view
+from app_outlay.views.estimate_vat_view import views as estimate_vat_view
 
 app_name = "app_outlay"
 
@@ -52,6 +53,22 @@ urlpatterns = [
         "estimates/<int:estimate_id>/overheads/quantity/",
         estimate_overheads_view.EstimateOverheadsQuantityAPIView.as_view(),
         name="overheads-quantity",
+    ),
+    # НДС
+    path(
+        "estimates/<int:estimate_id>/vat/",
+        estimate_vat_view.EstimateVatStatusAPIView.as_view(),
+        name="vat-status",
+    ),
+    path(
+        "estimates/<int:estimate_id>/vat/toggle/",
+        estimate_vat_view.EstimateVatToggleAPIView.as_view(),
+        name="vat-toggle",
+    ),
+    path(
+        "estimates/<int:estimate_id>/vat/set-rate/",
+        estimate_vat_view.EstimateVatSetRateAPIView.as_view(),
+        name="vat-set-rate",
     ),
     # Автокомплит: поиск ТК по названию
     path(

@@ -30,7 +30,7 @@ from app_estimate_imports.services.schema_service import SchemaService as _SS
 
 
 # ---------- Импорты для ENDPOINTS  ----------
-from app_outlay.utils_calc import calc_for_tc
+from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc
 
 
 # ---------- Для чтения листов  ----------
@@ -136,6 +136,7 @@ class EstimateAdmin(admin.ModelAdmin):
     readonly_fields = (
         "source_file",
         "source_sheet_index",
+        "settings_data",
     )
 
     # Переопределим, чтобы убрать N+1 при списковом виде
@@ -208,7 +209,7 @@ class EstimateAdmin(admin.ModelAdmin):
         from decimal import Decimal
         from django.http import JsonResponse
         from app_outlay.models import GroupTechnicalCardLink
-        from app_outlay.utils_calc import _base_costs_live, _dec, calc_for_tc
+        from app_outlay.utils_calc import _base_costs_live, _dec
 
         est = self.get_object(request, object_id)
         if not est:
@@ -523,7 +524,7 @@ class EstimateAdmin(admin.ModelAdmin):
             except IndexError:
                 ws = wb.active
 
-            # ========== ПОДГОТОВКА КОНТЕКСТА НР ==========
+            # ========== ПОДГОТОВКА КОНТЕКСТА НР + НДС ==========
 
             overhead_context = None
             overhead_links = est.overhead_cost_links.filter(
@@ -579,7 +580,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     total_base_work += link_base_work
 
                 if tc_links.count() > 5:
-
                     # считаем остальные
                     for link in tc_links[5:]:
                         ver = link.technical_card_version
@@ -595,8 +595,25 @@ class EstimateAdmin(admin.ModelAdmin):
                     "overhead_work_pct": avg_work_pct,
                 }
 
+            # ========== ДОБАВЛЯЕМ НДС В КОНТЕКСТ ==========
+            settings = est.settings_data or {}
+            vat_active = settings.get("vat_active", False)
+            vat_rate = settings.get("vat_rate", 20)
+
+            # Если НР нет, но НДС есть — создаём контекст только для НДС
+            if overhead_context is None and vat_active:
+                overhead_context = {}
+
+            # Добавляем НДС в контекст (если он есть)
+            if overhead_context is not None:
+                overhead_context["vat_active"] = vat_active
+                overhead_context["vat_rate"] = vat_rate
+
+            # Лог для отладки
+            if vat_active:
+                print(f"✅ Экспорт с НДС {vat_rate}%")
             else:
-                print("ℹ НР не используются")
+                print("ℹ Экспорт без НДС")
 
             # ========== ПОЛУЧАЕМ ВСЕ СОПОСТАВЛЕНИЯ ==========
 

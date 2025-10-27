@@ -26,7 +26,7 @@
         // Формируем URLs
         const CALC_URL = `/api/v1/estimates/${ESTIMATE_ID}/calc/`;
         const SAVE_MAPPINGS_URL = `/api/v1/estimates/${ESTIMATE_ID}/save-mappings/`;
-        const EXPORT_EXCEL_URL = `/api/v1/estimates/${ESTIMATE_ID}/export-excel/`;
+        const EXPORT_EXCEL_URL = `/admin/app_outlay/estimate/${ESTIMATE_ID}/api/export-excel/`;
 
         const OH_URLS = {
             list: `/api/v1/estimates/${ESTIMATE_ID}/overheads/`,
@@ -34,6 +34,12 @@
             toggle: `/api/v1/estimates/${ESTIMATE_ID}/overheads/toggle/`,
             delete: `/api/v1/estimates/${ESTIMATE_ID}/overheads/delete/`,
             quantity: `/api/v1/estimates/${ESTIMATE_ID}/overheads/quantity/`
+        };
+
+        const VAT_URLS = {
+            status: `/api/v1/estimates/${ESTIMATE_ID}/vat/`,
+            toggle: `/api/v1/estimates/${ESTIMATE_ID}/vat/toggle/`,
+            setRate: `/api/v1/estimates/${ESTIMATE_ID}/vat/set-rate/`
         };
 
         // Инициализация модулей
@@ -52,6 +58,10 @@
 
         if (window.EstimateOverheads) {
             window.EstimateOverheads.init(OH_URLS);
+        }
+
+        if (window.EstimateVat) {
+            window.EstimateVat.init(VAT_URLS);
         }
 
         if (window.EstimateFilters) {

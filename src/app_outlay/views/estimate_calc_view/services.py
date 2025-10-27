@@ -39,6 +39,7 @@ class OverheadContextService:
     - Общую базу (МАТ/РАБ) всех ТК в смете
     - Общую сумму НР
     - Средневзвешенные проценты распределения НР
+    - НДС (активность и ставка)
 
     Кеширование:
     - Использует lru_cache для избежания повторных запросов к БД
@@ -63,55 +64,70 @@ class OverheadContextService:
     @lru_cache(maxsize=100)
     def _calculate_context_cached(self, estimate_id: int) -> Optional[Dict]:
         """
-        Кешированный расчёт контекста НР.
+        Кешированный расчёт контекста НР + НДС.
 
         ВНИМАНИЕ:
         Метод кеширует результат по estimate_id.
-        При изменении НР сметы нужно либо сбросить кеш,
+        При изменении НР или НДС сметы нужно либо сбросить кеш,
         либо использовать версионирование (например, updated_at).
 
         Args:
             estimate_id: ID сметы
 
         Returns:
-            Dict с контекстом НР или None если НР не используются
+            Dict с контекстом НР+НДС или None если НР не используются
         """
         estimate = self.estimate_repo.get_by_id_or_raise(estimate_id)
 
         # 1. Получаем активные накладные расходы
         overhead_links = self.estimate_repo.get_overhead_links(estimate)
 
-        if not overhead_links.exists():
-            return None
+        overhead_context = None
 
-        # 2. Агрегируем данные НР
-        overhead_data = self.overhead_repo.aggregate_overhead_data(overhead_links)
+        if overhead_links.exists():
+            # 2. Агрегируем данные НР
+            overhead_data = self.overhead_repo.aggregate_overhead_data(overhead_links)
 
-        overhead_amount = overhead_data["overhead_amount"]
-        if overhead_amount <= 0:
-            return None
+            overhead_amount = overhead_data["overhead_amount"]
 
-        # 3. Рассчитываем базовые итоги (МАТ/РАБ) по всем ТК сметы
-        base_totals = self.estimate_repo.calculate_base_totals(estimate)
+            if overhead_amount > 0:
+                # 3. Рассчитываем базовые итоги (МАТ/РАБ) по всем ТК сметы
+                base_totals = self.estimate_repo.calculate_base_totals(estimate)
 
-        # 4. Формируем контекст для utils_calc.calc_for_tc()
-        return {
-            "total_base_mat": base_totals["total_base_mat"],
-            "total_base_work": base_totals["total_base_work"],
-            "overhead_amount": overhead_amount,
-            "overhead_mat_pct": overhead_data["avg_materials_pct"],
-            "overhead_work_pct": overhead_data["avg_works_pct"],
-        }
+                # 4. Формируем контекст для utils_calc.calc_for_tc()
+                overhead_context = {
+                    "total_base_mat": base_totals["total_base_mat"],
+                    "total_base_work": base_totals["total_base_work"],
+                    "overhead_amount": overhead_amount,
+                    "overhead_mat_pct": overhead_data["avg_materials_pct"],
+                    "overhead_work_pct": overhead_data["avg_works_pct"],
+                }
+
+        # 5. Добавляем НДС из settings_data
+        settings = estimate.settings_data or {}
+        vat_active = settings.get("vat_active", False)
+        vat_rate = settings.get("vat_rate", 20)
+
+        # Если НР нет, но НДС есть — создаём контекст только для НДС
+        if overhead_context is None and vat_active:
+            overhead_context = {}
+
+        # Добавляем НДС в контекст (если он есть)
+        if overhead_context is not None:
+            overhead_context["vat_active"] = vat_active
+            overhead_context["vat_rate"] = vat_rate
+
+        return overhead_context
 
     def calculate_context(self, estimate: Estimate) -> Optional[Dict]:
         """
-        Получить контекст НР для сметы (с кешированием).
+        Получить контекст НР+НДС для сметы (с кешированием).
 
         Args:
             estimate: Объект сметы
 
         Returns:
-            Dict с контекстом НР или None если НР не используются
+            Dict с контекстом НР+НДС или None если ничего не используется
         """
         try:
             return self._calculate_context_cached(estimate.id)
@@ -121,16 +137,16 @@ class OverheadContextService:
     @staticmethod
     def clear_cache():
         """
-        Очистить кеш контекстов НР.
+        Очистить кеш контекстов НР+НДС.
 
-        Использовать при изменении НР сметы.
+        Использовать при изменении НР или НДС сметы.
         """
         OverheadContextService._calculate_context_cached.cache_clear()
 
 
 class TechnicalCardCalculationService:
     """
-    Сервис для расчёта технических карт с учётом НР.
+    Сервис для расчёта технических карт с учётом НР и НДС.
 
     Делегирует основную логику расчёта в app_outlay.utils_calc.calc_for_tc(),
     но добавляет валидацию и обработку ошибок.
@@ -152,12 +168,12 @@ class TechnicalCardCalculationService:
         overhead_context: Optional[Dict] = None,
     ) -> Tuple[Dict[str, Decimal], List[str]]:
         """
-        Рассчитать показатели ТК с учётом НР.
+        Рассчитать показатели ТК с учётом НР и НДС.
 
         Args:
             tc_id: ID технической карты или версии
             quantity: Количество
-            overhead_context: Контекст НР (опционально)
+            overhead_context: Контекст НР+НДС (опционально)
 
         Returns:
             Tuple:
@@ -202,7 +218,7 @@ class EstimateCalculationFacade:
 
         Args:
             estimate_repo: Репозиторий смет
-            overhead_service: Сервис контекста НР
+            overhead_service: Сервис контекста НР+НДС
             tc_calc_service: Сервис расчёта ТК
         """
         self.estimate_repo = estimate_repo or EstimateRepository()
@@ -216,12 +232,12 @@ class EstimateCalculationFacade:
         quantity: float,
     ) -> Tuple[Dict[str, float], List[str]]:
         """
-        Рассчитать ТК в контексте сметы (с учётом её НР).
+        Рассчитать ТК в контексте сметы (с учётом НР и НДС).
 
         Алгоритм:
         1. Получить смету
-        2. Рассчитать контекст НР сметы
-        3. Рассчитать ТК с учётом контекста НР
+        2. Рассчитать контекст НР+НДС сметы
+        3. Рассчитать ТК с учётом контекста
         4. Вернуть результат
 
         Args:
@@ -241,7 +257,7 @@ class EstimateCalculationFacade:
         # 1. Получаем смету (с валидацией)
         estimate = self.estimate_repo.get_by_id_or_raise(estimate_id)
 
-        # 2. Рассчитываем контекст НР
+        # 2. Рассчитываем контекст НР+НДС
         overhead_context = self.overhead_service.calculate_context(estimate)
 
         # 3. Рассчитываем ТК

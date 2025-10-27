@@ -186,7 +186,7 @@ def calc_for_tc(
     overhead_context: Dict[str, object] | None = None,
 ) -> Tuple[Dict[str, Decimal], List[str]]:
     """
-    Калькуляция для одной ТК (по её живым ценам) с учётом накладных расходов.
+    Калькуляция для одной ТК (по её живым ценам) с учётом накладных расходов и НДС.
 
     ПОРЯДОК:
       1) База по живым ценам (мат/раб) — используется для распределения НР.
@@ -194,6 +194,7 @@ def calc_for_tc(
       3) Накладные расходы ДОБАВЛЯЕМ ПОСЛЕ маржи.
          Распределение НР по ТК идёт по доле «база × количество» в своей категории:
              доля_i = (base_i × qty_i) / Σ(base_j × qty_j)
+      4) НДС применяется ПОСЛЕДНИМ к итоговой сумме (TOTAL_PRICE).
 
       overhead_context (опционально) может содержать:
         {
@@ -203,6 +204,8 @@ def calc_for_tc(
             "overhead_mat_pct": Decimal,  # % НР на МАТ (0..100)
             "overhead_work_pct": Decimal, # % НР на РАБ (0..100)
             "include_self": bool,         # включить ли текущую строку в знаменатель Σ
+            "vat_active": bool,           # НДС активен
+            "vat_rate": int,              # ставка НДС (0-100%)
         }
     """
     order = list(DEFAULT_ORDER)
@@ -278,6 +281,16 @@ def calc_for_tc(
     sum_mat = _round2(sale_mat * qty_dec + oh_mat_line)
     sum_work = _round2(sale_work * qty_dec + oh_work_line)
     total = _round2(sum_mat + sum_work)
+
+    # 6) Применяем НДС к TOTAL_PRICE (последний шаг)
+    vat_active = (
+        overhead_context.get("vat_active", False) if overhead_context else False
+    )
+    vat_rate = overhead_context.get("vat_rate", 0) if overhead_context else 0
+
+    if vat_active and vat_rate > 0:
+        vat_multiplier = Decimal("1") + (_dec(vat_rate) / Decimal("100"))
+        total = _round2(total * vat_multiplier)
 
     calc = {
         RID_UNIT_PRICE_OF_MATERIAL: unit_mat,
