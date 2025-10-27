@@ -1,0 +1,6 @@
+/* admin/css/tc_highlights.css */
+.submit-row input[name="_addanother"],
+.submit-row input[name="_continue"],
+.submit-row input[name="_saveasnew"] {
+    display: none !important;
+}

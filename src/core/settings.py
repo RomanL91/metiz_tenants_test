@@ -248,5 +248,5 @@ REST_FRAMEWORK = {
 
 class CustomAdminSite:
     site_header = _("ERP - METISone")
-    site_title = _("Умные ERP-модули для строительства")
-    index_title = _("Умные ERP-модули для строительства")
+    site_title = _("Автоматизация подготовки предложений")
+    index_title = _("Автоматизация подготовки предложений")

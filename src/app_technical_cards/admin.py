@@ -1,7 +1,10 @@
 import nested_admin
 
 from django.contrib import admin
+from django.urls import reverse
 from django.utils.html import format_html
+from django.http import HttpResponseRedirect
+from django.utils.translation import gettext_lazy as _
 
 from app_technical_cards.models import (
     TechnicalCard,
@@ -9,6 +12,11 @@ from app_technical_cards.models import (
     TechnicalCardVersionMaterial,
     TechnicalCardVersionWork,
 )
+
+
+class OnlySaveMediaMixin:
+    class Media:
+        css = {"all": ("admin/css/only_save.css",)}
 
 
 class WithNestedIndentMedia:
@@ -21,6 +29,29 @@ class WithNestedIndentMedia:
                 "admin/css/tc_highlights.css",
             ),
         }
+
+
+class SaveKeepsEditingMixin(admin.ModelAdmin):
+    """После 'Сохранить' всегда остаёмся на детальной странице (как '_continue')."""
+
+    def _continue_url(self, request, obj):
+        opts = self.model._meta
+        return reverse(
+            f"admin:{opts.app_label}_{opts.model_name}_change", args=[obj.pk]
+        )
+
+    def response_post_save_add(self, request, obj):
+        # не ломаем pop-up добавление из автокомплита
+        if "_popup" in request.POST:
+            return super().response_post_save_add(request, obj)
+        self.message_user(request, _("Сохранено. Продолжаем редактирование."))
+        return HttpResponseRedirect(self._continue_url(request, obj))
+
+    def response_post_save_change(self, request, obj):
+        if "_popup" in request.POST:
+            return super().response_post_save_change(request, obj)
+        self.message_user(request, _("Сохранено. Продолжаем редактирование."))
+        return HttpResponseRedirect(self._continue_url(request, obj))
 
 
 # ---------- NESTED INLINES (материалы и работы внутри версии) ----------
@@ -284,7 +315,12 @@ class TechnicalCardVersionNestedInline(
 
 
 @admin.register(TechnicalCard)
-class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
+class TechnicalCardAdmin(
+    SaveKeepsEditingMixin,
+    OnlySaveMediaMixin,
+    WithNestedIndentMedia,
+    nested_admin.NestedModelAdmin,
+):
     list_display = (
         # "id",
         "name",
@@ -345,7 +381,9 @@ class TechnicalCardAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
 
 
 # @admin.register(TechnicalCardVersion)
-class TechnicalCardVersionAdmin(WithNestedIndentMedia, nested_admin.NestedModelAdmin):
+class TechnicalCardVersionAdmin(
+    SaveKeepsEditingMixin, WithNestedIndentMedia, nested_admin.NestedModelAdmin
+):
     list_display = (
         "id",
         "card",
