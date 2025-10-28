@@ -1,0 +1,12 @@
+<!-- path: src/app_materials/templates/admin/app_materials/material/change_list.html -->
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% block object-tools-items %}
+    <li>
+        <a href="{% url 'admin:app_materials_material_import' %}" class="addlink">
+            {% translate "Загрузить материалы" %}
+        </a>
+    </li>
+    {{ block.super }}
+{% endblock %}

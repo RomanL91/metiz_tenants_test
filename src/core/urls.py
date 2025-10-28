@@ -1,9 +1,11 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.conf.urls.i18n import i18n_patterns
-from django.views.i18n import JavaScriptCatalog
 
 from core.settings import CustomAdminSite
+
+# from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
 
 # urlpatterns = [
 #     path("i18n/", include("django.conf.urls.i18n")),  # /i18n/setlang/ — встроенный переключатель
@@ -12,7 +14,10 @@ from core.settings import CustomAdminSite
 
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
+    # path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    # path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("api/v1/", include("app_outlay.urls")),
+    path("api/v1/materials/", include("app_materials.urls")),
 ]
 
 urlpatterns += i18n_patterns(

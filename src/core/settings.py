@@ -119,6 +119,7 @@ SHARED_APPS = [
     "app_tenants",
     "nested_admin",
     "rest_framework",
+    "drf_spectacular",
 ]
 
 TENANT_APPS = [
@@ -242,6 +243,7 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
         # Можно добавить TokenAuthentication или JWTAuthentication
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 # Настройки DRF ===================================================== END
 
