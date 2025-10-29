@@ -1,4 +1,5 @@
-from typing import Dict, List, Any, Tuple, Optional
+# path: src/app_materials/views/import_view/services.py
+from typing import Dict, List, Any, Tuple, Optional, Set
 from decimal import Decimal, InvalidOperation
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.translation import gettext as _
@@ -169,10 +170,7 @@ class MaterialDataValidator:
     def validate_row(
         row: Dict[str, Any], row_number: int
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Валидация строки данных
-        Возвращает (is_valid, error_message)
-        """
+        """Валидация строки данных"""
         name = row.get("Наименование")
         if not name or str(name).strip() == "":
             return False, _("Наименование не может быть пустым")
@@ -201,37 +199,43 @@ class MaterialDataValidator:
 
 
 class MaterialImportProcessor:
-    """Процессор импорта материалов"""
+    """Процессор импорта материалов с оптимизациями против N+1"""
+
+    BATCH_SIZE = 500
 
     def __init__(self):
         self.units_cache: Dict[str, Unit] = {}
         self.suppliers_cache: Dict[str, Supplier] = {}
+        self.existing_materials: Set[Tuple[str, int]] = set()
+
         self._load_units()
         self._load_suppliers()
 
     def _load_units(self) -> None:
-        """Кэширование единиц измерения"""
+        """Кэширование единиц измерения по symbol"""
         for unit in Unit.objects.all():
             self.units_cache[unit.symbol.strip().lower()] = unit
 
     def _load_suppliers(self) -> None:
-        """Кэширование поставщиков"""
+        """Кэширование поставщиков по name"""
         for supplier in Supplier.objects.all():
-            self.suppliers_cache[supplier.legal_name.strip().lower()] = supplier
+            self.suppliers_cache[supplier.name.strip().lower()] = supplier
+
+    def _load_existing_materials(self, names: List[str], unit_ids: List[int]) -> None:
+        """Предзагрузка существующих материалов (избегаем N+1)"""
+        existing = Material.objects.filter(
+            name__in=names, unit_ref_id__in=unit_ids
+        ).values_list("name", "unit_ref_id")
+
+        self.existing_materials = set(existing)
 
     def process_data(
         self, data: List[Dict[str, Any]]
     ) -> Tuple[int, int, int, List[Dict[str, Any]]]:
-        """
-        Обработка данных и создание материалов
-        Возвращает (created, updated, skipped, errors)
-        """
-        created = 0
-        updated = 0
-        skipped = 0
-        errors = []
-
+        """Основная обработка с оптимизациями"""
         validator = MaterialDataValidator()
+        errors = []
+        valid_rows = []
 
         for row in data:
             row_number = row.get("_row", 0)
@@ -239,106 +243,150 @@ class MaterialImportProcessor:
             is_valid, error_message = validator.validate_row(row, row_number)
             if not is_valid:
                 errors.append(
-                    {
-                        "row": row_number,
-                        "field": "Общая",
-                        "error": error_message,
-                    }
+                    {"row": row_number, "field": "Общая", "error": error_message}
                 )
                 continue
 
             try:
-                result = self._process_single_row(row)
-                if result == "created":
-                    created += 1
-                elif result == "updated":
-                    updated += 1
-                elif result == "skipped":
-                    skipped += 1
-
+                prepared_row = self._prepare_row_data(row)
+                valid_rows.append(prepared_row)
             except Exception as e:
-                errors.append(
-                    {
-                        "row": row_number,
-                        "field": "Общая",
-                        "error": str(e),
-                    }
-                )
+                errors.append({"row": row_number, "field": "Общая", "error": str(e)})
 
-        return created, updated, skipped, errors
+        if not valid_rows:
+            return 0, 0, 0, errors
 
-    def _process_single_row(self, row: Dict[str, Any]) -> str:
-        """
-        Обработка одной строки
-        Возвращает: 'created', 'updated', 'skipped'
-        """
+        names = [r["name"] for r in valid_rows]
+        unit_ids = list(set([r["unit"].id for r in valid_rows]))
+        self._load_existing_materials(names, unit_ids)
+
+        self._ensure_suppliers_exist(valid_rows)
+
+        created, skipped = self._bulk_create_materials(valid_rows)
+
+        return created, 0, skipped, errors
+
+    def _prepare_row_data(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Подготовка данных строки"""
         name = str(row.get("Наименование")).strip()
-        unit_name = str(row.get("Единица измерения")).strip()
+        unit_symbol = str(row.get("Единица измерения")).strip()
         price = Decimal(str(row.get("Цена")))
 
-        unit = self._get_unit(unit_name, row.get("_row", 0))
+        unit = self._get_unit(unit_symbol, row.get("_row", 0))
 
-        existing_material = Material.objects.filter(name=name, unit_ref=unit).first()
-
-        if existing_material:
-            return "skipped"
-
-        supplier = self._get_or_create_supplier(row.get("Поставщик"))
+        supplier_name = row.get("Поставщик")
+        supplier_key = None
+        supplier_name_clean = None
+        if supplier_name and str(supplier_name).strip():
+            supplier_name_clean = str(supplier_name).strip()
+            supplier_key = supplier_name_clean.lower()
 
         vat_percent = None
         vat_value = row.get("НДС %")
         if vat_value is not None and str(vat_value).strip() != "":
             vat_percent = Decimal(str(vat_value))
 
-        Material.objects.create(
-            name=name,
-            unit_ref=unit,
-            price_per_unit=price,
-            supplier_ref=supplier,
-            vat_percent=vat_percent,
-            is_active=True,
+        return {
+            "name": name,
+            "unit": unit,
+            "price": price,
+            "supplier_key": supplier_key,
+            "supplier_name": supplier_name_clean,
+            "vat_percent": vat_percent,
+            "row_number": row.get("_row", 0),
+        }
+
+    def _ensure_suppliers_exist(self, valid_rows: List[Dict[str, Any]]) -> None:
+        """Создание новых поставщиков батчем с заполнением legal_name"""
+        new_supplier_names = {}
+        for row in valid_rows:
+            supplier_key = row.get("supplier_key")
+            supplier_name = row.get("supplier_name")
+            if supplier_key and supplier_key not in self.suppliers_cache:
+                new_supplier_names[supplier_key] = supplier_name
+
+        if not new_supplier_names:
+            return
+
+        new_suppliers = [
+            Supplier(
+                name=name,
+                legal_name=name,
+                supplier_type=Supplier.SupplierType.LEGAL,
+                vat_registered=True,
+                is_active=True,
+            )
+            for name in new_supplier_names.values()
+        ]
+
+        Supplier.objects.bulk_create(new_suppliers, ignore_conflicts=True)
+
+        created_or_existing = Supplier.objects.filter(
+            name__in=list(new_supplier_names.values())
         )
 
-        return "created"
+        for supplier in created_or_existing:
+            self.suppliers_cache[supplier.name.strip().lower()] = supplier
 
-    def _get_unit(self, unit_name: str, row_number: int) -> Unit:
-        """Получение единицы измерения из кэша"""
-        unit_key = unit_name.strip().lower()
+    def _bulk_create_materials(
+        self, valid_rows: List[Dict[str, Any]]
+    ) -> Tuple[int, int]:
+        """Bulk создание материалов батчами"""
+        materials_to_create = []
+        created = 0
+        skipped = 0
+
+        for row in valid_rows:
+            name = row["name"]
+            unit = row["unit"]
+
+            if (name, unit.id) in self.existing_materials:
+                skipped += 1
+                continue
+
+            supplier = None
+            supplier_key = row.get("supplier_key")
+            if supplier_key:
+                supplier = self.suppliers_cache.get(supplier_key)
+
+            materials_to_create.append(
+                Material(
+                    name=name,
+                    unit_ref=unit,
+                    price_per_unit=row["price"],
+                    supplier_ref=supplier,
+                    vat_percent=row["vat_percent"],
+                    is_active=True,
+                )
+            )
+
+            if len(materials_to_create) >= self.BATCH_SIZE:
+                created += len(
+                    Material.objects.bulk_create(
+                        materials_to_create, ignore_conflicts=True
+                    )
+                )
+                materials_to_create = []
+
+        if materials_to_create:
+            created += len(
+                Material.objects.bulk_create(materials_to_create, ignore_conflicts=True)
+            )
+
+        return created, skipped
+
+    def _get_unit(self, unit_symbol: str, row_number: int) -> Unit:
+        """Получение единицы измерения из кэша по symbol"""
+        unit_key = unit_symbol.strip().lower()
 
         if unit_key not in self.units_cache:
             raise ValueError(
                 _("Единица измерения '{unit}' не найдена в справочнике").format(
-                    unit=unit_name
+                    unit=unit_symbol
                 )
             )
 
         return self.units_cache[unit_key]
-
-    def _get_or_create_supplier(
-        self, supplier_name: Optional[Any]
-    ) -> Optional[Supplier]:
-        """Получение или создание поставщика"""
-        if not supplier_name or str(supplier_name).strip() == "":
-            return None
-
-        supplier_key = str(supplier_name).strip().lower()
-
-        if supplier_key in self.suppliers_cache:
-            return self.suppliers_cache[supplier_key]
-
-        supplier_name_clean = str(supplier_name).strip()
-
-        supplier = Supplier.objects.create(
-            name=supplier_name_clean,
-            legal_name=supplier_name_clean,
-            supplier_type=Supplier.SupplierType.LEGAL,
-            vat_registered=True,
-            is_active=True,
-        )
-
-        self.suppliers_cache[supplier_key] = supplier
-
-        return supplier
 
 
 class MaterialImportService:
