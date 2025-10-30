@@ -24,6 +24,11 @@ from app_technical_cards.models import TechnicalCard as _TC
 from app_estimate_imports.services.schema_service import SchemaService as _SS
 
 from app_outlay.utils import ExcelSheetReader
+from app_outlay.estimate_mapping_utils import (
+    TechnicalCardDetector,
+    GroupTreeBuilder,
+    UnitNormalizer,
+)
 
 
 # ---------- АДМИНКИ ----------
@@ -107,290 +112,6 @@ class EstimateAdmin(admin.ModelAdmin):
         return TemplateResponse(
             request, "admin/app_outlay/estimate_analysis.html", context
         )
-
-    # ---------- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ----------
-
-    def _idxs(self, col_roles: list[str], role: str) -> list[int]:
-        """Получение индексов колонок по роли."""
-        return [i for i, r in enumerate(col_roles or []) if r == role]
-
-    def _cell(self, row: dict, idx: int) -> str:
-        """Получение значения ячейки по индексу."""
-        cells = row.get("cells") or []
-        return (cells[idx] if 0 <= idx < len(cells) else "") or ""
-
-    def _detect_tc_rows_from_rows(
-        self,
-        rows: list[dict],
-        col_roles: list[str],
-        unit_allow_set: set[str],
-        require_qty: bool,
-    ) -> list[dict]:
-        """
-        Детектирование строк с техкартами из полного списка строк Excel.
-
-        Args:
-            rows: Список строк из ExcelSheetReader.read_all_rows()
-            col_roles: Роли колонок из схемы
-            unit_allow_set: Разрешённые единицы измерения (нормализованные)
-            require_qty: Требовать наличие количества > 0
-
-        Returns:
-            List[Dict]: Детектированные строки ТК
-                [
-                    {
-                        'row_index': int,
-                        'name': str,
-                        'unit': str,
-                        'qty': str
-                    },
-                    ...
-                ]
-        """
-        name_cols = self._idxs(col_roles, "NAME_OF_WORK")
-        unit_cols = self._idxs(col_roles, "UNIT")
-        qty_cols = self._idxs(col_roles, "QTY")
-
-        def first_text(row, idxs):
-            """Первое непустое значение из списка индексов."""
-            for i in idxs:
-                t = self._cell(row, i).strip()
-                if t:
-                    return t
-            return ""
-
-        def qty_ok(row):
-            """Проверка количества > 0 если требуется."""
-            if not require_qty:
-                return True
-            for i in qty_cols:
-                raw = self._cell(row, i).replace(" ", "").replace(",", ".")
-                try:
-                    if float(raw) > 0:
-                        return True
-                except Exception:
-                    pass
-            return False
-
-        def normalize_unit(u: str) -> str:
-            """Нормализация единицы измерения."""
-            s = (u or "").lower().strip()
-            s = s.replace("\u00b2", "2").replace("\u00b3", "3")
-            compact = "".join(ch for ch in s if ch not in " .,")
-            import re
-
-            if re.fullmatch(r"(м\^?2|м2|квм|мкв|квадратн\w*метр\w*)", compact or ""):
-                return "м2"
-            if re.fullmatch(r"(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)", compact or ""):
-                return "м3"
-            if re.fullmatch(r"(шт|штука|штуки|штук)", compact or ""):
-                return "шт"
-            if re.fullmatch(r"(пм|погм|погонныйметр|погонныхметров)", compact or ""):
-                return "пм"
-            if re.fullmatch(r"(компл|комплект|комплекта|комплектов)", compact or ""):
-                return "компл"
-            return compact
-
-        tcs = []
-        for row in rows:
-            name = first_text(row, name_cols)
-            unit_raw = first_text(row, unit_cols)
-            unit = normalize_unit(unit_raw)
-
-            if not name or not unit:
-                continue
-            if unit_allow_set and unit not in unit_allow_set:
-                continue
-            if not qty_ok(row):
-                continue
-
-            qty_val = first_text(row, qty_cols)
-            tcs.append(
-                {
-                    "row_index": row.get("row_index"),
-                    "name": name,
-                    "unit": unit_raw,
-                    "qty": qty_val,
-                }
-            )
-        return tcs
-
-    def _collect_excel_candidates_from_rows(
-        self, rows: list[dict], col_roles: list[str]
-    ) -> list[dict]:
-        """
-        Сбор строк-кандидатов для таблицы сопоставления.
-
-        Args:
-            rows: Список строк из ExcelSheetReader.read_all_rows()
-            col_roles: Роли колонок
-
-        Returns:
-            List[Dict]: Кандидаты с опциональными колонками
-        """
-        name_cols = self._idxs(col_roles, "NAME_OF_WORK")
-        unit_cols = self._idxs(col_roles, "UNIT")
-        qty_cols = self._idxs(col_roles, "QTY")
-
-        def first_text(row, idxs):
-            for i in idxs:
-                t = self._cell(row, i).strip()
-                if t:
-                    return t
-            return ""
-
-        # Опциональные колонки: индексы
-        opt_idx = {
-            rid: (self._idxs(col_roles, rid)[0] if self._idxs(col_roles, rid) else None)
-            for rid in OPTIONAL_ROLE_IDS
-        }
-
-        out = []
-        for row in rows:
-            name = first_text(row, name_cols)
-            unit = first_text(row, unit_cols)
-            if not name and not unit:
-                continue
-
-            qty = first_text(row, qty_cols)
-            excel_optional = {}
-            for rid, ci in opt_idx.items():
-                excel_optional[rid] = self._cell(row, ci) if ci is not None else ""
-
-            out.append(
-                {
-                    "row_index": row.get("row_index"),
-                    "name": name,
-                    "unit": unit,
-                    "qty": qty,
-                    "excel_optional": excel_optional,
-                }
-            )
-        return out
-
-    def _load_groups_from_annotation(
-        self, annotation: dict, sheet_i: int
-    ) -> list[dict]:
-        """
-        Загрузка групп из annotation markup.
-
-        Args:
-            annotation: Словарь annotation из markup
-            sheet_i: Индекс листа
-
-        Returns:
-            List[Dict]: Список нормализованных групп
-        """
-        sheet_key = str(sheet_i)
-        groups = []
-
-        # Вариант A: annotation["schema"]["sheets"][sheet]["groups"]
-        root = (annotation or {}).get("schema", {}).get("sheets", {}).get(sheet_key, {})
-        if isinstance(root, dict) and isinstance(root.get("groups"), list):
-            groups = root["groups"]
-
-        # Фолбэк: annotation["groups"][sheet]
-        if not groups:
-            alt = (annotation or {}).get("groups", {}).get(sheet_key)
-            if isinstance(alt, list):
-                groups = alt
-            elif isinstance(alt, dict) and isinstance(alt.get("items"), list):
-                groups = alt["items"]
-
-        # Нормализация
-        norm = []
-        for g in groups or []:
-            uid = g.get("uid") or g.get("id") or g.get("gid")
-            if not uid:
-                continue
-            color = g.get("color") or "#e0f7fa"
-            parent = g.get("parent_uid") or g.get("parent") or g.get("parentId")
-            rows = g.get("rows") or g.get("ranges") or []
-            rr = []
-            for r in rows:
-                if isinstance(r, (list, tuple)) and len(r) >= 2:
-                    try:
-                        rr.append([int(r[0]), int(r[1])])
-                    except Exception:
-                        pass
-            norm.append(
-                {
-                    "uid": uid,
-                    "name": g.get("name") or g.get("title") or "Группа",
-                    "color": color,
-                    "parent_uid": parent,
-                    "rows": rr,
-                }
-            )
-        return norm
-
-    def _assign_tc_to_deepest_group(
-        self, groups: list[dict], tcs: list[dict]
-    ) -> tuple[list[dict], list[dict]]:
-        """
-        Распределение ТК по самым глубоким группам.
-
-        Args:
-            groups: Список групп с иерархией
-            tcs: Список детектированных ТК
-
-        Returns:
-            Tuple[tree, loose]:
-                - tree: Дерево корневых групп с children и tcs
-                - loose: ТК без группы
-        """
-        by_id = {g["uid"]: g for g in groups}
-
-        # Глубина группы
-        def depth(uid):
-            d = 0
-            cur = by_id.get(uid)
-            while cur and cur.get("parent_uid"):
-                d += 1
-                cur = by_id.get(cur["parent_uid"])
-            return d
-
-        for g in groups:
-            g["_depth"] = depth(g["uid"])
-
-        def covered(g, row_idx: int) -> bool:
-            """Проверка покрытия строки группой."""
-            for s, e in g.get("rows") or []:
-                if s <= row_idx <= e:
-                    return True
-            return False
-
-        # Построение дерева
-        children = {g["uid"]: [] for g in groups}
-        roots = []
-        for g in groups:
-            pid = g.get("parent_uid")
-            if pid and pid in children:
-                children[pid].append(g)
-            else:
-                roots.append(g)
-
-        # Прикрепление ТК к самой глубокой группе
-        tcs_by_group = {g["uid"]: [] for g in groups}
-        loose = []
-        for tc in tcs:
-            row_idx = tc.get("row_index")
-            cands = [g for g in groups if covered(g, row_idx)]
-            if cands:
-                cands.sort(key=lambda x: x["_depth"])
-                tcs_by_group[cands[-1]["uid"]].append(tc)
-            else:
-                loose.append(tc)
-
-        # Сборка дерева
-        def build(u):
-            node = by_id[u].copy()
-            node["children"] = [build(ch["uid"]) for ch in children[u]]
-            node["tcs"] = tcs_by_group[u]
-            return node
-
-        tree = [build(r["uid"]) for r in roots]
-        return tree, loose
 
     # ---------- ПРЕДСТАВЛЕНИЯ ----------
 
@@ -553,45 +274,20 @@ class EstimateAdmin(admin.ModelAdmin):
             markup = est.source_file.markup
             sheet_i = est.source_sheet_index or 0
 
-            # --- 1) Схема листа
+            # --- 1) Схема листа: роли колонок, allow-юниты, требование qty>0
             unit_allow_set = set()
             require_qty = False
             col_roles: list[str] = []
 
-            def _normalize_unit(u: str) -> str:
-                """Нормализация единиц измерения."""
-                s = (u or "").lower().strip()
-                s = s.replace("\u00b2", "2").replace("\u00b3", "3")
-                compact = "".join(ch for ch in s if ch not in " .,")
-                import re
-
-                if re.fullmatch(
-                    r"(м\^?2|м2|квм|мкв|квадратн\w*метр\w*)", compact or ""
-                ):
-                    return "м2"
-                if re.fullmatch(
-                    r"(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)", compact or ""
-                ):
-                    return "м3"
-                if re.fullmatch(r"(шт|штука|штуки|штук)", compact or ""):
-                    return "шт"
-                if re.fullmatch(
-                    r"(пм|погм|погонныйметр|погонныхметров)", compact or ""
-                ):
-                    return "пм"
-                if re.fullmatch(
-                    r"(компл|комплект|комплекта|комплектов)", compact or ""
-                ):
-                    return "компл"
-                return compact
+            # Создаём normalizer для переиспользования
+            unit_normalizer = UnitNormalizer()
 
             try:
                 col_roles, unit_allow_set, require_qty = _SS().read_sheet_schema(
                     markup, sheet_i
                 )
-                unit_allow_set = set(
-                    _normalize_unit(u) for u in (unit_allow_set or set())
-                )
+                # Нормализуем через UnitNormalizer.normalize_set()
+                unit_allow_set = unit_normalizer.normalize_set(unit_allow_set or set())
             except Exception:
                 sch = (
                     (markup.annotation or {})
@@ -603,7 +299,8 @@ class EstimateAdmin(admin.ModelAdmin):
                 raw = (sch.get("unit_allow_raw") or "") if isinstance(sch, dict) else ""
                 unit_allow_set = set()
                 for part in (raw or "").split(","):
-                    n = _normalize_unit(part)
+                    # Нормализуем каждую единицу через normalizer
+                    n = unit_normalizer.normalize(part)
                     if n:
                         unit_allow_set.add(n)
                 require_qty = bool(sch.get("require_qty"))
@@ -614,33 +311,40 @@ class EstimateAdmin(admin.ModelAdmin):
             ).get("path")
 
             if xlsx_path:
-                # ✅ Используем новый ExcelSheetReader
+                # Используем ExcelSheetReader
                 reader = ExcelSheetReader(
                     path=xlsx_path, sheet_index=sheet_i, use_cache=True, cache_ttl=600
                 )
                 rows_full = reader.read_all_rows()
             else:
-                rows_full = ((pr.data or {}).get("sheets") or [{}])[sheet_i].get(
-                    "rows"
-                ) or []
+                rows_full = []
 
-            # --- 3) Детектируем кандидатов ТК
-            tcs = self._detect_tc_rows_from_rows(
-                rows_full, col_roles, unit_allow_set, require_qty
+            # --- 3) Детектируем ТК через новый детектор
+            detector = TechnicalCardDetector(
+                col_roles=col_roles,
+                unit_allow_set=unit_allow_set,
+                require_qty=require_qty,
+                optional_role_ids=OPTIONAL_ROLE_IDS,
+                unit_normalizer=unit_normalizer,  # Передаём тот же normalizer
             )
 
-            # --- 4) Группы/подгруппы из annotation
-            groups = self._load_groups_from_annotation(markup.annotation or {}, sheet_i)
-            tree, loose = self._assign_tc_to_deepest_group(groups, tcs)
+            tcs = detector.detect_from_rows(rows_full)
 
-            # --- 5) Собираем кандидатов для таблицы
+            # --- 4) Построение дерева групп
+            tree, loose = detector.build_tree_with_groups(
+                tcs=tcs, annotation=markup.annotation or {}, sheet_index=sheet_i
+            )
+
+            # --- 5) Собираем кандидатов для таблицы UI
             allowed_rows = {tc["row_index"] for tc in tcs}
-            excel_all = self._collect_excel_candidates_from_rows(rows_full, col_roles)
+            candidates_all = detector.collect_candidates_with_optional_columns(
+                rows_full
+            )
             candidates_filtered = [
-                it for it in excel_all if it["row_index"] in allowed_rows
+                it for it in candidates_all if it["row_index"] in allowed_rows
             ]
 
-            # --- 6) Опциональные колонки
+            # --- 6) Опциональные колонки для UI
             present_optional = [rid for rid in OPTIONAL_ROLE_IDS if rid in col_roles]
             optional_cols = [
                 {"id": rid, "title": role_titles.get(rid, rid)}
@@ -649,15 +353,16 @@ class EstimateAdmin(admin.ModelAdmin):
 
             for it in candidates_filtered:
                 raw = it.get("excel_optional") or {}
-                it["opt_values"] = [raw.get(r["id"], "") for r in optional_cols]
+                it["opt_values"] = [raw.get(col["id"], "") for col in optional_cols]
 
-            # --- 7) Секции таблицы
+            # --- 7) Формирование секций для UI
             cand_by_row = {it["row_index"]: it for it in candidates_filtered}
             table_sections = []
 
-            if groups:
+            if tree:
 
                 def _flatten(node: dict, parent_path: str | None = None):
+                    """Рекурсивное выравнивание дерева в секции."""
                     path = node.get("name") or "Группа"
                     path = path if parent_path is None else f"{parent_path} / {path}"
                     items = []
@@ -676,19 +381,22 @@ class EstimateAdmin(admin.ModelAdmin):
                     for ch in node.get("children") or []:
                         _flatten(ch, path)
 
-                for root in tree or []:
+                for root in tree:
                     _flatten(root)
 
+                # Loose items
                 loose_items = []
-                for tc in loose or []:
+                for tc in loose:
                     ci = cand_by_row.get(tc["row_index"])
                     if ci:
                         loose_items.append(ci)
+
                 if loose_items:
                     table_sections.append(
                         {"path": "Без группы", "color": "#f0f4f8", "items": loose_items}
                     )
             else:
+                # Нет групп — всё в одной секции
                 if candidates_filtered:
                     table_sections = [
                         {
@@ -698,7 +406,7 @@ class EstimateAdmin(admin.ModelAdmin):
                         }
                     ]
 
-            # --- 8) Загружаем существующие сопоставления
+            # --- 8) Загружаем существующие сопоставления из БД
             if est:
                 links_qs = GroupTechnicalCardLink.objects.filter(
                     group__estimate=est
