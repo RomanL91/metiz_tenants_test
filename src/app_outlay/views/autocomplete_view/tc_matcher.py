@@ -1,5 +1,7 @@
+# path: src/app_outlay/views/autocomplete_view/tc_matcher.py
 import re
 from difflib import SequenceMatcher
+from typing import List, Dict, Optional, Tuple
 
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 from app_outlay.estimate_mapping_utils import UnitNormalizer
@@ -105,7 +107,7 @@ class TCMatcher:
     def find_matching_tc(
         self, name: str, unit: str
     ) -> tuple[TechnicalCardVersion | None, float]:
-        """Найти наиболее подходящую версию ТК."""
+        """Найти наиболее подходящую версию ТК (одиночный поиск)."""
 
         if not name or not name.strip():
             return None, 0.0
@@ -176,13 +178,11 @@ class TCMatcher:
             # 4. Единица измерения
             if card_unit_norm and normalized_unit:
                 if card_unit_norm == normalized_unit:
-
                     # Небольшой бонус если единицы совпадают
                     combined_similarity = min(
                         combined_similarity + self.bonus_for_one_unit, 1.0
                     )
                 else:
-
                     # ЖЁСТКИЙ штраф если единицы разные
                     combined_similarity = combined_similarity * self.penalty_for_units
 
@@ -200,24 +200,184 @@ class TCMatcher:
         return None, 0.0
 
     def batch_match(self, items: list[dict]) -> list[dict]:
-        """Batch-сопоставление с предзагрузкой."""
+        """
+        Batch-сопоставление с оптимизацией.
 
+        Для небольших батчей (<100) использует обычный поиск.
+        Для больших батчей (≥100) предзагружает все ТК.
+        """
+        if not items:
+            return []
+
+        # Для маленьких батчей - обычный поиск (быстрее из-за раннего выхода)
+        if len(items) < 100:
+            return self._batch_match_simple(items)
+
+        # Для больших батчей - оптимизированный поиск
+        return self._batch_match_optimized(items)
+
+    def _batch_match_simple(self, items: list[dict]) -> list[dict]:
+        """
+        Простое batch-сопоставление (для маленьких батчей).
+
+        Использует find_matching_tc для каждого элемента.
+        Быстрее для <100 элементов из-за раннего выхода при точном совпадении.
+        """
+        results = []
+        for item in items:
+            tc_version, similarity = self.find_matching_tc(
+                item.get("name", ""), item.get("unit", "")
+            )
+
+            result = item.copy()
+            if tc_version:
+                result["matched_tc_id"] = tc_version.card_id
+                result["matched_tc_text"] = str(tc_version.card.name)
+                result["similarity"] = round(similarity, 2)
+            else:
+                result["matched_tc_id"] = None
+                result["matched_tc_text"] = ""
+                result["similarity"] = 0.0
+
+            results.append(result)
+
+        return results
+
+    def _batch_match_optimized(self, items: list[dict]) -> list[dict]:
+        """
+        Оптимизированное batch-сопоставление (для больших батчей).
+
+        Предзагружает все ТК одним запросом.
+        Быстрее для ≥100 элементов.
+        """
         # 1. Предзагрузка ВСЕХ техкарт одним запросом
         all_cards = list(
-            TechnicalCard.objects.select_related("unit_ref")
-            .prefetch_related("versions")
-            .only("id", "name", "unit_ref__symbol")
+            TechnicalCard.objects.select_related("unit_ref").only(
+                "id", "name", "unit_ref__symbol"
+            )
         )
 
-        # 2. Кэш нормализованных единиц
+        # 2. Предзагрузка всех версий одним запросом
+        card_ids = [card.id for card in all_cards]
+        versions_map = {}
+
+        if card_ids:
+            versions = (
+                TechnicalCardVersion.objects.filter(
+                    card_id__in=card_ids, is_published=True
+                )
+                .select_related("card")
+                .order_by("card_id", "-created_at")
+                .distinct("card_id")
+            )
+            versions_map = {v.card_id: v for v in versions}
+
+        # 3. Кэш нормализованных единиц
         unit_cache = {
             card.id: self.normalize_unit(card.unit_ref.symbol) for card in all_cards
         }
 
-        # 3. Batch-обработка БЕЗ запросов
+        # 4. Batch-обработка БЕЗ дополнительных запросов к БД
         results = []
         for item in items:
-            best_match = self._find_best_match_from_cache(item, all_cards, unit_cache)
+            best_match = self._find_best_match_from_cache(
+                item, all_cards, unit_cache, versions_map
+            )
             results.append(best_match)
 
         return results
+
+    def _find_best_match_from_cache(
+        self,
+        item: dict,
+        all_cards: List[TechnicalCard],
+        unit_cache: Dict[int, str],
+        versions_map: Dict[int, TechnicalCardVersion],
+    ) -> dict:
+        """
+        Поиск лучшего совпадения из предзагруженных данных.
+
+        Args:
+            item: Элемент для сопоставления {'name': str, 'unit': str, ...}
+            all_cards: Список всех техкарт
+            unit_cache: Кэш нормализованных единиц {card_id: normalized_unit}
+            versions_map: Мапа версий {card_id: version}
+
+        Returns:
+            dict: Результат сопоставления
+        """
+        name = item.get("name", "").strip()
+        unit = item.get("unit", "")
+
+        result = item.copy()
+
+        # Базовые значения
+        result["matched_tc_id"] = None
+        result["matched_tc_text"] = ""
+        result["similarity"] = 0.0
+
+        if not name:
+            return result
+
+        normalized_unit = self.normalize_unit(unit)
+        search_name = name.lower()
+
+        # Шаг 1: Точное совпадение (быстрая проверка)
+        for card in all_cards:
+            if card.name.lower() == search_name:
+                card_unit = unit_cache.get(card.id, "")
+                if card_unit == normalized_unit:
+                    # Точное совпадение найдено!
+                    version = versions_map.get(card.id)
+                    if version:
+                        result["matched_tc_id"] = card.id
+                        result["matched_tc_text"] = card.name
+                        result["similarity"] = 1.0
+                        return result
+
+        # Шаг 2: Нечёткий поиск
+        best_card_id = None
+        best_score = 0.0
+
+        for card in all_cards:
+            card_name_lower = card.name.lower()
+            card_unit = unit_cache.get(card.id, "")
+
+            # Схожесть по символам
+            char_similarity = SequenceMatcher(
+                None, search_name, card_name_lower
+            ).ratio()
+
+            # Схожесть по словам
+            word_similarity = self.calculate_word_similarity(
+                search_name, card_name_lower
+            )
+
+            # Взвешенная схожесть
+            combined_similarity = (
+                word_similarity * self.weight_for_word_similarity
+            ) + (char_similarity * self.weight_for_similarity_of_symbols)
+
+            # Учёт единиц измерения
+            if card_unit and normalized_unit:
+                if card_unit == normalized_unit:
+                    combined_similarity = min(
+                        combined_similarity + self.bonus_for_one_unit, 1.0
+                    )
+                else:
+                    combined_similarity = combined_similarity * self.penalty_for_units
+
+            # Обновление лучшего совпадения
+            if combined_similarity > best_score:
+                best_score = combined_similarity
+                best_card_id = card.id
+
+        # Проверка порога схожести
+        if best_card_id and best_score >= self.similarity_threshold:
+            version = versions_map.get(best_card_id)
+            if version:
+                result["matched_tc_id"] = best_card_id
+                result["matched_tc_text"] = version.card.name
+                result["similarity"] = round(best_score, 2)
+
+        return result

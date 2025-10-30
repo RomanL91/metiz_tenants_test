@@ -221,9 +221,18 @@ class OverheadManagementService:
 
         cid = link.overhead_cost_container_id
 
-        EstimateOverheadCostLink.objects.filter(
+        # вариант оптимизирован, но не вызывае сигналы
+        # EstimateOverheadCostLink.objects.filter(
+        #     estimate=estimate, overhead_cost_container_id=cid
+        # ).update(is_active=is_active)
+        # Обновляем через .save() чтобы сработали сигналы
+        links_to_update = EstimateOverheadCostLink.objects.filter(
             estimate=estimate, overhead_cost_container_id=cid
-        ).update(is_active=is_active)
+        )
+
+        for lnk in links_to_update:
+            lnk.is_active = is_active
+            lnk.save(update_fields=["is_active"])
 
         return self.aggregation_service.get_grouped_payload(estimate)
 
@@ -276,6 +285,14 @@ class OverheadManagementService:
                 for i in range(to_add)
             ]
             EstimateOverheadCostLink.objects.bulk_create(bulk)
+
+            # bulk_create не вызывает сигналы, дёргаем вручную
+            from app_outlay.signals import invalidate_overhead_cache_on_link_change
+
+            if bulk:
+                invalidate_overhead_cache_on_link_change(
+                    sender=EstimateOverheadCostLink, instance=bulk[0], created=True
+                )
 
         elif cur > quantity:
             to_del = cur - quantity
