@@ -200,23 +200,24 @@ class TCMatcher:
         return None, 0.0
 
     def batch_match(self, items: list[dict]) -> list[dict]:
-        """Массовое сопоставление."""
+        """Batch-сопоставление с предзагрузкой."""
+
+        # 1. Предзагрузка ВСЕХ техкарт одним запросом
+        all_cards = list(
+            TechnicalCard.objects.select_related("unit_ref")
+            .prefetch_related("versions")
+            .only("id", "name", "unit_ref__symbol")
+        )
+
+        # 2. Кэш нормализованных единиц
+        unit_cache = {
+            card.id: self.normalize_unit(card.unit_ref.symbol) for card in all_cards
+        }
+
+        # 3. Batch-обработка БЕЗ запросов
         results = []
         for item in items:
-            tc_version, similarity = self.find_matching_tc(
-                item.get("name", ""), item.get("unit", "")
-            )
-
-            result = item.copy()
-            if tc_version:
-                result["matched_tc_id"] = tc_version.card_id
-                result["matched_tc_text"] = str(tc_version.card.name)
-                result["similarity"] = round(similarity, 2)
-            else:
-                result["matched_tc_id"] = None
-                result["matched_tc_text"] = ""
-                result["similarity"] = 0.0
-
-            results.append(result)
+            best_match = self._find_best_match_from_cache(item, all_cards, unit_cache)
+            results.append(best_match)
 
         return results
