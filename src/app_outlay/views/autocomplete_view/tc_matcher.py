@@ -2,6 +2,7 @@ import re
 from difflib import SequenceMatcher
 
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
+from app_outlay.estimate_mapping_utils import UnitNormalizer
 
 
 class TCMatcher:
@@ -25,6 +26,7 @@ class TCMatcher:
         penalty_for_units: float = None,
         weight_for_word_similarity: float = None,
         weight_for_similarity_of_symbols: float = None,
+        unit_normalizer: UnitNormalizer = None,
     ):
         """
         Инициализация matcher'а с конфигурируемыми параметрами.
@@ -71,34 +73,10 @@ class TCMatcher:
             if weight_for_similarity_of_symbols is not None
             else self.DEFAULT_WEIGHT_FOR_SIMILARITY_OF_SYMBOLS
         )
+        self.unit_normalizer = unit_normalizer or UnitNormalizer()
 
-    @staticmethod
-    def normalize_unit(unit: str) -> str:
-        """Нормализация единиц измерения."""
-        if isinstance(unit, str):
-            s = (unit or "").lower().strip()
-            s = s.replace("\u00b2", "2").replace("\u00b3", "3")
-            compact = "".join(ch for ch in s if ch not in " .,")
-        else:
-            return ""
-
-        patterns = {
-            r"(м\^?2|м2|квм|мкв|квадрат\w*метр\w*)": "м2",
-            r"(м\^?3|м3|кубм|мкуб|кубическ\w*метр\w*)": "м3",
-            r"(шт|штука|штуки|штук)": "шт",
-            r"(пм|погм|погонныйметр|погонныхметров)": "пм",
-            r"(компл|комплект|комплекта|комплектов)": "компл",
-            r"(кг|килограмм|килограммов)": "кг",
-            r"(т|тонна|тонн)": "т",
-            r"(л|литр|литров)": "л",
-            r"(м|метр|метров)": "м",
-        }
-
-        for pattern, normalized in patterns.items():
-            if re.fullmatch(pattern, compact or ""):
-                return normalized
-
-        return compact or s
+    def normalize_unit(self, unit: str) -> str:
+        return self.unit_normalizer.normalize(unit)
 
     @staticmethod
     def extract_keywords(text: str) -> set[str]:
