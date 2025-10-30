@@ -30,7 +30,11 @@ from app_estimate_imports.services.schema_service import SchemaService as _SS
 
 
 # ---------- Импорты для ENDPOINTS  ----------
-from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc
+from app_outlay.views.estimate_calc_view.utils_calc import (
+    calc_for_tc,
+    _base_costs_live,
+    _dec,
+)
 
 
 # ---------- Для чтения листов  ----------
@@ -209,7 +213,6 @@ class EstimateAdmin(admin.ModelAdmin):
         from decimal import Decimal
         from django.http import JsonResponse
         from app_outlay.models import GroupTechnicalCardLink
-        from app_outlay.utils_calc import _base_costs_live, _dec
 
         est = self.get_object(request, object_id)
         if not est:
@@ -562,7 +565,6 @@ class EstimateAdmin(admin.ModelAdmin):
                     avg_work_pct = Decimal("0")
 
                 # Рассчитываем общую базу из сохраненных ТК
-                from app_outlay.utils_calc import _base_costs_live, _dec
 
                 total_base_mat = Decimal("0")
                 total_base_work = Decimal("0")

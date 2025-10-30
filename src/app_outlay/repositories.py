@@ -23,6 +23,7 @@ from app_outlay.models import (
     GroupTechnicalCardLink,
 )
 from app_outlay.exceptions import EstimateNotFoundError
+from app_outlay.views.estimate_calc_view.utils_calc import _base_costs_live, _dec
 from app_technical_cards.models import TechnicalCardVersion
 from core.base_repository import BaseRepository
 
@@ -119,8 +120,6 @@ class EstimateRepository(BaseRepository[Estimate]):
         Note:
             Расчёт базы делегируется в utils_calc._base_costs_live()
         """
-        from app_outlay.utils_calc import _base_costs_live, _dec
-
         tc_links = self.get_tc_links_for_base_calculation(estimate)
 
         total_base_mat = Decimal("0")
