@@ -4,9 +4,7 @@
 
 import os
 import json
-import tempfile
 
-from decimal import Decimal
 from openpyxl import load_workbook
 
 from django.db import transaction
@@ -15,7 +13,7 @@ from django.core.cache import cache
 from django.urls import reverse, path
 from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
-from django.http import HttpResponseRedirect, HttpResponse
+from django.http import HttpResponseRedirect
 
 
 from app_outlay.forms import GroupFormSet, LinkFormSet
@@ -152,13 +150,10 @@ class EstimateAdmin(admin.ModelAdmin):
             _overhead_count=Count("overhead_cost_links", distinct=True),
         )
 
-    # ---------- URLS: роутинг ----------
-    # это нужно будет вынести отсюда. можно использовать DRF
-
     def get_urls(self):
         urls = super().get_urls()
         custom = [
-            # НОВЫЙ ЭНДПОИНТ - страница детального анализа
+            # Страница детального анализа
             path(
                 "<path:object_id>/analysis/",
                 self.admin_site.admin_view(self.analysis_view),
@@ -185,7 +180,7 @@ class EstimateAdmin(admin.ModelAdmin):
             return HttpResponseRedirect(request.META.get("HTTP_REFERER", ".."))
 
         context = dict(
-            self.admin_site.each_context(request),  # ← ИСПРАВЛЕНО
+            self.admin_site.each_context(request),
             title=f"Анализ сметы: {est.name}",
             estimate=est,
             has_data=est.groups.exists(),
@@ -211,7 +206,6 @@ class EstimateAdmin(admin.ModelAdmin):
 
         est = self.get_object(request, object_id)
         if not est:
-
             return JsonResponse({"ok": False, "error": "Смета не найдена"}, status=404)
 
         try:
@@ -226,7 +220,6 @@ class EstimateAdmin(admin.ModelAdmin):
             tc_count = tc_links.count()
 
             if not tc_count:
-
                 return JsonResponse(
                     {
                         "ok": True,
@@ -472,11 +465,10 @@ class EstimateAdmin(admin.ModelAdmin):
             )
 
         except Exception as e:
-            import traceback
-
             return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
-    # ---------- ВСПОМОГАТЕЛЬНОЕ: вытаскиваем индексы колонок по ролям ----------
+    # ---------- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ----------
+
     def _idxs(self, col_roles: list[str], role: str) -> list[int]:
         return [i for i, r in enumerate(col_roles or []) if r == role]
 
@@ -839,10 +831,8 @@ class EstimateAdmin(admin.ModelAdmin):
                 "tree": tree,
                 "group_formset": gfs,
                 "link_formset": lfs,
-                "overhead_formset": ofs,  # НОВОЕ
-                "overhead_links": list(
-                    overhead_qs
-                ),  # НОВОЕ: для удобного доступа в шаблоне
+                "overhead_formset": ofs,
+                "overhead_links": list(overhead_qs),
                 "list_url": reverse(
                     f"admin:{Estimate._meta.app_label}_{Estimate._meta.model_name}_changelist"
                 ),
@@ -858,6 +848,7 @@ class EstimateAdmin(admin.ModelAdmin):
         table_sections: list[dict] = []
         optional_cols: list[dict] = []
         role_titles = ROLE_TITLES
+        existing_mappings = {}  # ← ДОБАВИТЬ ЭТУ СТРОКУ (инициализация ДО блока if)
 
         if (
             est
@@ -1014,7 +1005,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     ]
 
             # --- 8) Загружаем существующие сопоставления из БД
-            existing_mappings = {}
+            # existing_mappings = {}  ← УДАЛИТЬ ОТСЮДА
 
             if est:
                 links_qs = GroupTechnicalCardLink.objects.filter(
@@ -1048,7 +1039,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 "role_titles": role_titles,
                 "table_colspan": 4 + len(optional_cols),
                 "existing_mappings_json": json.dumps(
-                    existing_mappings, ensure_ascii=False
+                    existing_mappings, ensure_ascii=False  # ← Теперь всегда определена
                 ),
                 "tc_change_url_zero": tc_change_url_zero,
             }

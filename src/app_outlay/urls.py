@@ -6,6 +6,7 @@ from app_outlay.views.estimate_calc_view import views as estimate_calc_view
 from app_outlay.views.estimate_mappings_view import views as estimate_mappings_view
 from app_outlay.views.estimate_overheads_view import views as estimate_overheads_view
 from app_outlay.views.estimate_vat_view import views as estimate_vat_view
+from app_outlay.views.export_excel_view import views as export_excel_view
 
 app_name = "app_outlay"
 
@@ -81,5 +82,11 @@ urlpatterns = [
         "batch-match/",
         autocomplete_view.TechnicalCardBatchMatchView.as_view(),
         name="batch-match",
+    ),
+    # Экспорт сметы в Excel
+    path(
+        "estimates/<int:estimate_id>/export-excel/",
+        export_excel_view.EstimateExportExcelView.as_view(),
+        name="export-excel",
     ),
 ]

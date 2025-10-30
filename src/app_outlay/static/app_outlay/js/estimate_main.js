@@ -23,10 +23,10 @@
             return;
         }
 
-        // Формируем URLs
+        // Формируем URLs (все на /api/v1/)
         const CALC_URL = `/api/v1/estimates/${ESTIMATE_ID}/calc/`;
         const SAVE_MAPPINGS_URL = `/api/v1/estimates/${ESTIMATE_ID}/save-mappings/`;
-        const EXPORT_EXCEL_URL = `/admin/app_outlay/estimate/${ESTIMATE_ID}/api/export-excel/`;
+        const EXPORT_EXCEL_URL = `/api/v1/estimates/${ESTIMATE_ID}/export-excel/`;
 
         const OH_URLS = {
             list: `/api/v1/estimates/${ESTIMATE_ID}/overheads/`,
