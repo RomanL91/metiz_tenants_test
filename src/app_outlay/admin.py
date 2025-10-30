@@ -5,11 +5,8 @@
 import os
 import json
 
-from openpyxl import load_workbook
-
 from django.db import transaction
 from django.db.models import Count
-from django.core.cache import cache
 from django.urls import reverse, path
 from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
@@ -26,71 +23,7 @@ from app_outlay.models import (
 from app_technical_cards.models import TechnicalCard as _TC
 from app_estimate_imports.services.schema_service import SchemaService as _SS
 
-
-# ---------- Для чтения листов  ----------
-# это бы потом вынести от сюда, например в утилиты
-def _xlsx_cache_key(path: str, sheet_index: int) -> str:
-    try:
-        mtime = int(os.path.getmtime(path))
-    except Exception:
-        mtime = 0
-    return f"outlay:xlsx:{path}:{mtime}:sheet:{sheet_index}"
-
-
-def _load_full_sheet_rows(xlsx_path: str, sheet_index: int) -> list[dict]:
-    """
-    Возвращает ВСЕ строки листа в виде [{'row_index': int, 'cells': [..]}, ..]
-    row_index — 1-based как в разметке групп.
-    """
-    wb = load_workbook(xlsx_path, data_only=True, read_only=True)
-    try:
-        ws = wb.worksheets[sheet_index]
-    except IndexError:
-        ws = wb.active
-
-    rows = []
-    # оценим ширину по первой непустой сотне строк
-    max_cols = 0
-    sample = 0
-    for r in ws.iter_rows(min_row=1, max_row=min(200, ws.max_row), values_only=True):
-        if any(c not in (None, "", " ") for c in r):
-            max_cols = max(max_cols, len(r))
-        sample += 1
-        if sample >= 200:
-            break
-    if max_cols <= 0:
-        max_cols = ws.max_column or 1
-
-    # теперь читаем всё
-    for idx, r in enumerate(
-        ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True), start=1
-    ):
-        cells = list(r)[:max_cols]
-        # нормализация текста
-        norm = [(str(c).strip() if c is not None else "") for c in cells]
-        rows.append({"row_index": idx, "cells": norm})
-    wb.close()
-    return rows
-
-
-def _load_full_sheet_rows_cached(
-    xlsx_path: str, sheet_index: int, ttl: int = 600
-) -> list[dict]:
-    """
-    Обёртка над `_load_full_sheet_rows` с кешированием результатов.
-
-    :param xlsx_path: путь к файлу .xlsx
-    :param sheet_index: индекс листа
-    :param ttl: время жизни кеша в секундах (дефолт: 10 минут)
-    :return: список словарей строк листа
-    """
-    key = _xlsx_cache_key(xlsx_path, sheet_index)
-    cached = cache.get(key)
-    if cached is not None:
-        return cached
-    rows = _load_full_sheet_rows(xlsx_path, sheet_index)
-    cache.set(key, rows, ttl)
-    return rows
+from app_outlay.utils import ExcelSheetReader
 
 
 # ---------- АДМИНКИ ----------
@@ -133,7 +66,6 @@ class EstimateAdmin(admin.ModelAdmin):
         "settings_data",
     )
 
-    # Переопределим, чтобы убрать N+1 при списковом виде
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.annotate(
@@ -179,13 +111,14 @@ class EstimateAdmin(admin.ModelAdmin):
     # ---------- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ----------
 
     def _idxs(self, col_roles: list[str], role: str) -> list[int]:
+        """Получение индексов колонок по роли."""
         return [i for i, r in enumerate(col_roles or []) if r == role]
 
     def _cell(self, row: dict, idx: int) -> str:
+        """Получение значения ячейки по индексу."""
         cells = row.get("cells") or []
         return (cells[idx] if 0 <= idx < len(cells) else "") or ""
 
-    # ---------- ВСПОМОГАТЕЛЬНОЕ: детект ТК из ПОЛНЫХ строк ----------
     def _detect_tc_rows_from_rows(
         self,
         rows: list[dict],
@@ -193,11 +126,33 @@ class EstimateAdmin(admin.ModelAdmin):
         unit_allow_set: set[str],
         require_qty: bool,
     ) -> list[dict]:
+        """
+        Детектирование строк с техкартами из полного списка строк Excel.
+
+        Args:
+            rows: Список строк из ExcelSheetReader.read_all_rows()
+            col_roles: Роли колонок из схемы
+            unit_allow_set: Разрешённые единицы измерения (нормализованные)
+            require_qty: Требовать наличие количества > 0
+
+        Returns:
+            List[Dict]: Детектированные строки ТК
+                [
+                    {
+                        'row_index': int,
+                        'name': str,
+                        'unit': str,
+                        'qty': str
+                    },
+                    ...
+                ]
+        """
         name_cols = self._idxs(col_roles, "NAME_OF_WORK")
         unit_cols = self._idxs(col_roles, "UNIT")
         qty_cols = self._idxs(col_roles, "QTY")
 
         def first_text(row, idxs):
+            """Первое непустое значение из списка индексов."""
             for i in idxs:
                 t = self._cell(row, i).strip()
                 if t:
@@ -205,6 +160,7 @@ class EstimateAdmin(admin.ModelAdmin):
             return ""
 
         def qty_ok(row):
+            """Проверка количества > 0 если требуется."""
             if not require_qty:
                 return True
             for i in qty_cols:
@@ -217,6 +173,7 @@ class EstimateAdmin(admin.ModelAdmin):
             return False
 
         def normalize_unit(u: str) -> str:
+            """Нормализация единицы измерения."""
             s = (u or "").lower().strip()
             s = s.replace("\u00b2", "2").replace("\u00b3", "3")
             compact = "".join(ch for ch in s if ch not in " .,")
@@ -239,13 +196,14 @@ class EstimateAdmin(admin.ModelAdmin):
             name = first_text(row, name_cols)
             unit_raw = first_text(row, unit_cols)
             unit = normalize_unit(unit_raw)
+
             if not name or not unit:
                 continue
             if unit_allow_set and unit not in unit_allow_set:
                 continue
             if not qty_ok(row):
                 continue
-            # qty для превью (может быть пустым)
+
             qty_val = first_text(row, qty_cols)
             tcs.append(
                 {
@@ -257,11 +215,19 @@ class EstimateAdmin(admin.ModelAdmin):
             )
         return tcs
 
-    # ---------- ВСПОМОГАТЕЛЬНОЕ: собираем строки сопоставления (таблица) ----------
-
     def _collect_excel_candidates_from_rows(
         self, rows: list[dict], col_roles: list[str]
     ) -> list[dict]:
+        """
+        Сбор строк-кандидатов для таблицы сопоставления.
+
+        Args:
+            rows: Список строк из ExcelSheetReader.read_all_rows()
+            col_roles: Роли колонок
+
+        Returns:
+            List[Dict]: Кандидаты с опциональными колонками
+        """
         name_cols = self._idxs(col_roles, "NAME_OF_WORK")
         unit_cols = self._idxs(col_roles, "UNIT")
         qty_cols = self._idxs(col_roles, "QTY")
@@ -273,7 +239,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     return t
             return ""
 
-        # опциональные колонки: соберём индекс для каждой роли, если есть
+        # Опциональные колонки: индексы
         opt_idx = {
             rid: (self._idxs(col_roles, rid)[0] if self._idxs(col_roles, rid) else None)
             for rid in OPTIONAL_ROLE_IDS
@@ -285,10 +251,12 @@ class EstimateAdmin(admin.ModelAdmin):
             unit = first_text(row, unit_cols)
             if not name and not unit:
                 continue
+
             qty = first_text(row, qty_cols)
             excel_optional = {}
             for rid, ci in opt_idx.items():
                 excel_optional[rid] = self._cell(row, ci) if ci is not None else ""
+
             out.append(
                 {
                     "row_index": row.get("row_index"),
@@ -300,10 +268,19 @@ class EstimateAdmin(admin.ModelAdmin):
             )
         return out
 
-    # ---------- ВСПОМОГАТЕЛЬНОЕ: группы из annotation (толерантно) ----------
     def _load_groups_from_annotation(
         self, annotation: dict, sheet_i: int
     ) -> list[dict]:
+        """
+        Загрузка групп из annotation markup.
+
+        Args:
+            annotation: Словарь annotation из markup
+            sheet_i: Индекс листа
+
+        Returns:
+            List[Dict]: Список нормализованных групп
+        """
         sheet_key = str(sheet_i)
         groups = []
 
@@ -320,7 +297,7 @@ class EstimateAdmin(admin.ModelAdmin):
             elif isinstance(alt, dict) and isinstance(alt.get("items"), list):
                 groups = alt["items"]
 
-        # нормализация
+        # Нормализация
         norm = []
         for g in groups or []:
             uid = g.get("uid") or g.get("id") or g.get("gid")
@@ -350,10 +327,21 @@ class EstimateAdmin(admin.ModelAdmin):
     def _assign_tc_to_deepest_group(
         self, groups: list[dict], tcs: list[dict]
     ) -> tuple[list[dict], list[dict]]:
-        """Возвращает (tree, loose). tree — список корневых групп с children и tcs."""
+        """
+        Распределение ТК по самым глубоким группам.
+
+        Args:
+            groups: Список групп с иерархией
+            tcs: Список детектированных ТК
+
+        Returns:
+            Tuple[tree, loose]:
+                - tree: Дерево корневых групп с children и tcs
+                - loose: ТК без группы
+        """
         by_id = {g["uid"]: g for g in groups}
 
-        # глубина
+        # Глубина группы
         def depth(uid):
             d = 0
             cur = by_id.get(uid)
@@ -366,12 +354,13 @@ class EstimateAdmin(admin.ModelAdmin):
             g["_depth"] = depth(g["uid"])
 
         def covered(g, row_idx: int) -> bool:
+            """Проверка покрытия строки группой."""
             for s, e in g.get("rows") or []:
                 if s <= row_idx <= e:
                     return True
             return False
 
-        # дерево групп
+        # Построение дерева
         children = {g["uid"]: [] for g in groups}
         roots = []
         for g in groups:
@@ -381,7 +370,7 @@ class EstimateAdmin(admin.ModelAdmin):
             else:
                 roots.append(g)
 
-        # прикрепим ТК к самой глубокой накрывающей группе
+        # Прикрепление ТК к самой глубокой группе
         tcs_by_group = {g["uid"]: [] for g in groups}
         loose = []
         for tc in tcs:
@@ -393,7 +382,7 @@ class EstimateAdmin(admin.ModelAdmin):
             else:
                 loose.append(tc)
 
-        # соберём дерево для вывода
+        # Сборка дерева
         def build(u):
             node = by_id[u].copy()
             node["children"] = [build(ch["uid"]) for ch in children[u]]
@@ -403,12 +392,12 @@ class EstimateAdmin(admin.ModelAdmin):
         tree = [build(r["uid"]) for r in roots]
         return tree, loose
 
-    # ---------- ПРЕДСТАВЛЕНИЯ: переопределенные представления ----------
+    # ---------- ПРЕДСТАВЛЕНИЯ ----------
 
     def render_change_form(
         self, request, context, add=False, change=False, form_url="", obj=None
     ):
-        # на стандартный add оставляем дефолтное поведение
+        """Переопределение формы редактирования сметы."""
         if add or obj is None:
             return super().render_change_form(
                 request, context, add, change, form_url, obj
@@ -444,7 +433,7 @@ class EstimateAdmin(admin.ModelAdmin):
             .order_by("order", "id")
         )
 
-        # POST: валидируем и сохраняем формсеты
+        # POST: валидация и сохранение формсетов
         if request.method == "POST":
             gfs = GroupFormSet(request.POST, queryset=group_qs, prefix="grp")
             lfs = LinkFormSet(request.POST, queryset=link_qs, prefix="lnk")
@@ -460,13 +449,11 @@ class EstimateAdmin(admin.ModelAdmin):
             )
             ofs = OverheadFormSet(request.POST, queryset=overhead_qs, prefix="overhead")
 
-            # Валидация всех формсетов
             if gfs.is_valid() and lfs.is_valid() and ofs.is_valid():
                 with transaction.atomic():
                     gfs.save()
                     lfs.save()
 
-                    # Сохраняем накладные расходы
                     for form in ofs.forms:
                         if form.cleaned_data and not form.cleaned_data.get(
                             "DELETE", False
@@ -475,7 +462,6 @@ class EstimateAdmin(admin.ModelAdmin):
                             instance.estimate = obj
                             instance.save()
 
-                    # Удаляем помеченные
                     for form in ofs.deleted_forms:
                         if form.instance.pk:
                             form.instance.delete()
@@ -492,7 +478,6 @@ class EstimateAdmin(admin.ModelAdmin):
             gfs = GroupFormSet(queryset=group_qs, prefix="grp")
             lfs = LinkFormSet(queryset=link_qs, prefix="lnk")
 
-            # Формсет для накладных расходов (GET)
             from django.forms import modelformset_factory
 
             OverheadFormSet = modelformset_factory(
@@ -523,9 +508,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     {
                         "group": g,
                         "group_form": gform_by_id.get(g.pk),
-                        "links": lforms_by_gid.get(
-                            g.pk, []
-                        ),  # [(link_obj, link_form), ...]
+                        "links": lforms_by_gid.get(g.pk, []),
                         "children": build(g.pk),
                     }
                 )
@@ -550,6 +533,7 @@ class EstimateAdmin(admin.ModelAdmin):
         return super().render_change_form(request, context, add, change, form_url, obj)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
+        """Переопределение view для добавления превью сопоставления ТК."""
         extra = dict(extra_context or {})
         est = self.get_object(request, object_id)
 
@@ -557,7 +541,7 @@ class EstimateAdmin(admin.ModelAdmin):
         table_sections: list[dict] = []
         optional_cols: list[dict] = []
         role_titles = ROLE_TITLES
-        existing_mappings = {}  # ← ДОБАВИТЬ ЭТУ СТРОКУ (инициализация ДО блока if)
+        existing_mappings = {}
 
         if (
             est
@@ -569,7 +553,7 @@ class EstimateAdmin(admin.ModelAdmin):
             markup = est.source_file.markup
             sheet_i = est.source_sheet_index or 0
 
-            # --- 1) Схема листа: роли колонок, allow-юниты, требование qty>0
+            # --- 1) Схема листа
             unit_allow_set = set()
             require_qty = False
             col_roles: list[str] = []
@@ -624,12 +608,17 @@ class EstimateAdmin(admin.ModelAdmin):
                         unit_allow_set.add(n)
                 require_qty = bool(sch.get("require_qty"))
 
-            # --- 2) Загружаем ПОЛНЫЙ лист Excel
+            # --- 2) Загружаем ПОЛНЫЙ лист Excel через новый ООП reader
             xlsx_path = getattr(est.source_file.file, "path", None) or (
                 (pr.data or {}).get("file") or {}
             ).get("path")
+
             if xlsx_path:
-                rows_full = _load_full_sheet_rows_cached(xlsx_path, sheet_i)
+                # ✅ Используем новый ExcelSheetReader
+                reader = ExcelSheetReader(
+                    path=xlsx_path, sheet_index=sheet_i, use_cache=True, cache_ttl=600
+                )
+                rows_full = reader.read_all_rows()
             else:
                 rows_full = ((pr.data or {}).get("sheets") or [{}])[sheet_i].get(
                     "rows"
@@ -640,14 +629,13 @@ class EstimateAdmin(admin.ModelAdmin):
                 rows_full, col_roles, unit_allow_set, require_qty
             )
 
-            # --- 4) Группы/подгруппы из annotation и раскладка ТК
+            # --- 4) Группы/подгруппы из annotation
             groups = self._load_groups_from_annotation(markup.annotation or {}, sheet_i)
             tree, loose = self._assign_tc_to_deepest_group(groups, tcs)
 
-            # --- 5) Собираем кандидатов для табличного вида
+            # --- 5) Собираем кандидатов для таблицы
             allowed_rows = {tc["row_index"] for tc in tcs}
             excel_all = self._collect_excel_candidates_from_rows(rows_full, col_roles)
-            # Фильтруем только те строки, которые прошли детект
             candidates_filtered = [
                 it for it in excel_all if it["row_index"] in allowed_rows
             ]
@@ -659,12 +647,11 @@ class EstimateAdmin(admin.ModelAdmin):
                 for rid in present_optional
             ]
 
-            # Добавляем opt_values к каждому кандидату
             for it in candidates_filtered:
                 raw = it.get("excel_optional") or {}
                 it["opt_values"] = [raw.get(r["id"], "") for r in optional_cols]
 
-            # --- 7) Собираем секции таблицы
+            # --- 7) Секции таблицы
             cand_by_row = {it["row_index"]: it for it in candidates_filtered}
             table_sections = []
 
@@ -692,7 +679,6 @@ class EstimateAdmin(admin.ModelAdmin):
                 for root in tree or []:
                     _flatten(root)
 
-                # Остаток без группы
                 loose_items = []
                 for tc in loose or []:
                     ci = cand_by_row.get(tc["row_index"])
@@ -703,7 +689,6 @@ class EstimateAdmin(admin.ModelAdmin):
                         {"path": "Без группы", "color": "#f0f4f8", "items": loose_items}
                     )
             else:
-                # Групп нет — одна секция со всеми найденными ТК
                 if candidates_filtered:
                     table_sections = [
                         {
@@ -713,9 +698,7 @@ class EstimateAdmin(admin.ModelAdmin):
                         }
                     ]
 
-            # --- 8) Загружаем существующие сопоставления из БД
-            # existing_mappings = {}  ← УДАЛИТЬ ОТСЮДА
-
+            # --- 8) Загружаем существующие сопоставления
             if est:
                 links_qs = GroupTechnicalCardLink.objects.filter(
                     group__estimate=est
@@ -737,7 +720,7 @@ class EstimateAdmin(admin.ModelAdmin):
             args=[0],
         )
 
-        # --- Финальный контекст (только нужное!)
+        # Финальный контекст
         extra.update(
             {
                 "table_sections": table_sections,
@@ -748,7 +731,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 "role_titles": role_titles,
                 "table_colspan": 4 + len(optional_cols),
                 "existing_mappings_json": json.dumps(
-                    existing_mappings, ensure_ascii=False  # ← Теперь всегда определена
+                    existing_mappings, ensure_ascii=False
                 ),
                 "tc_change_url_zero": tc_change_url_zero,
             }
