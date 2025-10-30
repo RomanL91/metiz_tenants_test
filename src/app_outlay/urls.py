@@ -7,6 +7,7 @@ from app_outlay.views.estimate_mappings_view import views as estimate_mappings_v
 from app_outlay.views.estimate_overheads_view import views as estimate_overheads_view
 from app_outlay.views.estimate_vat_view import views as estimate_vat_view
 from app_outlay.views.export_excel_view import views as export_excel_view
+from app_outlay.views.analysis_view import views as analysis_view
 
 app_name = "app_outlay"
 
@@ -88,5 +89,11 @@ urlpatterns = [
         "estimates/<int:estimate_id>/export-excel/",
         export_excel_view.EstimateExportExcelView.as_view(),
         name="export-excel",
+    ),
+    # Анализ сметы (данные для графиков)
+    path(
+        "estimates/<int:estimate_id>/analysis-data/",
+        analysis_view.EstimateAnalysisDataView.as_view(),
+        name="analysis-data",
     ),
 ]

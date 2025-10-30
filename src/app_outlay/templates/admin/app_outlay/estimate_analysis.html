@@ -206,7 +206,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 (function(){
-  const API_URL = "{% url 'admin:estimate_analysis_data' estimate.pk %}";
+  const API_URL = "/api/v1/estimates/{{ estimate.pk }}/analysis-data/";
 
   const state = {
     base_total:0, sales_total:0, overhead_total:0, server_final_with_oh:0,
