@@ -173,9 +173,15 @@ TENANT_DOMAIN_MODEL = "app_tenants.Domain"
 PUBLIC_SCHEMA_URLCONF = "core.urls_public"
 ROOT_URLCONF = "core.urls"
 # django-tenants ======================================================== END
-
-
-ALLOWED_HOSTS = ["91.199.149.128", ".sslip.io", "localhost", "127.0.0.1", ".localhost"]
+ALLOWED_HOSTS = [
+    ".metisone.com",
+    "metisone.com",
+    ".sslip.io",
+    ".localhost",
+    "localhost",
+    "127.0.0.1",
+    "91.199.149.128",
+]
 CSRF_TRUSTED_ORIGINS = ["http://*.91-199-149-128.sslip.io", "http://91.199.149.128"]
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
@@ -243,7 +249,6 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
         # Можно добавить TokenAuthentication или JWTAuthentication
     ],
-    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 # Настройки DRF ===================================================== END
 
@@ -252,3 +257,8 @@ class CustomAdminSite:
     site_header = _("ERP - METISone")
     site_title = _("Автоматизация подготовки предложений")
     index_title = _("Автоматизация подготовки предложений")
+
+
+TENANT_NOT_FOUND_VIEW = "core.tenant_nf.tenant_not_found"
+
+USE_X_FORWARDED_HOST = True
