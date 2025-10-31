@@ -13,6 +13,8 @@ ROLE_DEFS_RAW = [
     ("UNIT_PRICE_OF_MATERIALS_AND_WORKS", "ЦЕНА МАТ+РАБ/ЕД", "#E1F5FE", False),
     ("PRICE_FOR_ALL_MATERIAL", "ИТОГО МАТЕРИАЛ", "#FBE9E7", False),
     ("PRICE_FOR_ALL_WORK", "ИТОГО РАБОТА", "#FFF3E0", False),
+    ("TOTAL_PRICE_WITHOUT_VAT", "ИТОГО БЕЗ НДС", "#FFF9C4", False),
+    ("VAT_AMOUNT", "НДС", "#FFECB3", False),
     ("TOTAL_PRICE", "ОБЩАЯ ЦЕНА", "#FFEBEE", False),
 ]
 

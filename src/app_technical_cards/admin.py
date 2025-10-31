@@ -345,9 +345,11 @@ class TechnicalCardAdmin(
             "Надбавки и транспортные расходы (%)",
             {
                 "fields": (
-                    "materials_markup_percent",
-                    "works_markup_percent",
-                    "transport_costs_percent",
+                    (
+                        "materials_markup_percent",
+                        "works_markup_percent",
+                        "transport_costs_percent",
+                    ),
                 ),
                 "description": "Эти проценты будут скопированы в версию при её создании",
             },
@@ -356,8 +358,10 @@ class TechnicalCardAdmin(
             "Маржинальность (%)",
             {
                 "fields": (
-                    "materials_margin_percent",
-                    "works_margin_percent",
+                    (
+                        "materials_margin_percent",
+                        "works_margin_percent",
+                    ),
                 ),
                 "description": "Эти проценты будут скопированы в версию при её создании",
             },

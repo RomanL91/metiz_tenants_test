@@ -42,6 +42,8 @@ ROLE_TITLES = {
     "UNIT_PRICE_OF_MATERIALS_AND_WORKS": "ЦЕНА МАТ+РАБ/ЕД",
     "PRICE_FOR_ALL_MATERIAL": "ИТОГО МАТЕРИАЛ",
     "PRICE_FOR_ALL_WORK": "ИТОГО РАБОТА",
+    "TOTAL_PRICE_WITHOUT_VAT": "ИТОГО БЕЗ НДС",
+    "VAT_AMOUNT": "НДС",
     "TOTAL_PRICE": "ОБЩАЯ ЦЕНА",
 }
 OPTIONAL_ROLE_IDS = [
@@ -50,6 +52,8 @@ OPTIONAL_ROLE_IDS = [
     "UNIT_PRICE_OF_MATERIALS_AND_WORKS",
     "PRICE_FOR_ALL_MATERIAL",
     "PRICE_FOR_ALL_WORK",
+    "TOTAL_PRICE_WITHOUT_VAT",
+    "VAT_AMOUNT",
     "TOTAL_PRICE",
 ]
 

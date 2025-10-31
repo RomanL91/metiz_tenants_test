@@ -18,6 +18,8 @@ RID_UNIT_PRICE_OF_MATERIALS_AND_WORKS = (
 RID_PRICE_FOR_ALL_MATERIAL = "PRICE_FOR_ALL_MATERIAL"  # Итого материалы (× qty)
 RID_PRICE_FOR_ALL_WORK = "PRICE_FOR_ALL_WORK"  # Итого работы (× qty)
 RID_TOTAL_PRICE = "TOTAL_PRICE"  # Итого сумма (× qty)
+RID_TOTAL_PRICE_WITHOUT_VAT = "TOTAL_PRICE_WITHOUT_VAT"  # Итого без НДС
+RID_VAT_AMOUNT = "VAT_AMOUNT"  # Сумма НДС
 
 DEFAULT_ORDER: List[str] = [
     RID_UNIT_PRICE_OF_MATERIAL,
@@ -25,6 +27,8 @@ DEFAULT_ORDER: List[str] = [
     RID_UNIT_PRICE_OF_MATERIALS_AND_WORKS,
     RID_PRICE_FOR_ALL_MATERIAL,
     RID_PRICE_FOR_ALL_WORK,
+    RID_TOTAL_PRICE_WITHOUT_VAT,
+    RID_VAT_AMOUNT,
     RID_TOTAL_PRICE,
 ]
 
@@ -280,7 +284,7 @@ def calc_for_tc(
     # 5) Итоги по количеству (точное сложение «продажа×qty + НР_строки»)
     sum_mat = _round2(sale_mat * qty_dec + oh_mat_line)
     sum_work = _round2(sale_work * qty_dec + oh_work_line)
-    total = _round2(sum_mat + sum_work)
+    total_without_vat = _round2(sum_mat + sum_work)
 
     # 6) Применяем НДС к TOTAL_PRICE (последний шаг)
     vat_active = (
@@ -288,9 +292,12 @@ def calc_for_tc(
     )
     vat_rate = overhead_context.get("vat_rate", 0) if overhead_context else 0
 
+    vat_amount = Decimal("0")
+    total_with_vat = total_without_vat
+
     if vat_active and vat_rate > 0:
-        vat_multiplier = Decimal("1") + (_dec(vat_rate) / Decimal("100"))
-        total = _round2(total * vat_multiplier)
+        vat_amount = _round2(total_without_vat * (_dec(vat_rate) / Decimal("100")))
+        total_with_vat = _round2(total_without_vat + vat_amount)
 
     calc = {
         RID_UNIT_PRICE_OF_MATERIAL: unit_mat,
@@ -298,6 +305,8 @@ def calc_for_tc(
         RID_UNIT_PRICE_OF_MATERIALS_AND_WORKS: unit_both,
         RID_PRICE_FOR_ALL_MATERIAL: sum_mat,
         RID_PRICE_FOR_ALL_WORK: sum_work,
-        RID_TOTAL_PRICE: total,
+        RID_TOTAL_PRICE_WITHOUT_VAT: total_without_vat,
+        RID_VAT_AMOUNT: vat_amount,
+        RID_TOTAL_PRICE: total_with_vat,
     }
     return calc, order

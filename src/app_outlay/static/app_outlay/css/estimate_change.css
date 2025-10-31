@@ -3,6 +3,28 @@
    Стили для страницы редактирования сметы
    ======================================== */
 
+.metric-card.metric-vat {
+    border-left: 3px solid #ffc107;
+    background: #fffbf0;
+
+}
+
+.metric-card.metric-vat .metric-title {
+    color: #856404;
+
+}
+
+.metric-card.metric-total {
+    border-left: 3px solid #28a745;
+    background: #f0f8f4;
+
+}
+
+.metric-card.metric-total .metric-title {
+    color: #155724;
+
+}
+
 /* ========== БАЗОВЫЕ СТИЛИ ТАБЛИЦЫ ========== */
 .tc-map {
     width: 100%;

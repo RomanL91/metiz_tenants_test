@@ -94,23 +94,21 @@
                 calculatedRows,
                 baseMat: Number(totals['PRICE_FOR_ALL_MATERIAL'] || 0),
                 baseWorks: Number(totals['PRICE_FOR_ALL_WORK'] || 0),
-                baseTotal: Number(totals['TOTAL_PRICE'] || 0)
+                totalWithoutVat: Number(totals['TOTAL_PRICE_WITHOUT_VAT'] || 0),
+                vatAmount: Number(totals['VAT_AMOUNT'] || 0),
+                totalWithVat: Number(totals['TOTAL_PRICE'] || 0)
             };
         },
 
-        renderMetricCards(container, { titleMat, titleWorks, titleTotal, mainMat, mainWorks, mainTotal }) {
+        renderMetricCards(container, cards) {
             const fmt = n => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const card = (title, main) => `
-          <div class="metric-card">
+            const card = (title, main, extraClass = '') => `
+          <div class="metric-card ${extraClass}">
             <div class="metric-title">${title}</div>
             <div class="metric-value">${fmt(main)}</div>
           </div>`;
 
-            container.innerHTML = [
-                card(titleMat, mainMat),
-                card(titleWorks, mainWorks),
-                card(titleTotal, mainTotal)
-            ].join('');
+            container.innerHTML = cards.map(c => card(c.title, c.value, c.extraClass || '')).join('');
         },
 
         updateSummary() {
@@ -123,14 +121,20 @@
             }
 
             if (boxBase) {
-                this.renderMetricCards(boxBase, {
-                    titleMat: 'Материалы',
-                    titleWorks: 'Работы',
-                    titleTotal: 'Итого',
-                    mainMat: base.baseMat,
-                    mainWorks: base.baseWorks,
-                    mainTotal: base.baseTotal
-                });
+                const cards = [
+                    { title: 'Материалы', value: base.baseMat },
+                    { title: 'Работы', value: base.baseWorks },
+                    { title: 'Итого (без НДС)', value: base.totalWithoutVat }
+                ];
+
+                if (base.vatAmount > 0) {
+                    cards.push(
+                        { title: 'НДС', value: base.vatAmount, extraClass: 'metric-vat' },
+                        { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: 'metric-total' }
+                    );
+                }
+
+                this.renderMetricCards(boxBase, cards);
             }
 
             // Триггер для других модулей
