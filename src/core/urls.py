@@ -18,6 +18,7 @@ urlpatterns = [
     # path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("api/v1/", include("app_outlay.urls")),
     path("api/v1/materials/", include("app_materials.urls")),
+    path("api/v1/", include("app_technical_cards.urls")),
 ]
 
 urlpatterns += i18n_patterns(
