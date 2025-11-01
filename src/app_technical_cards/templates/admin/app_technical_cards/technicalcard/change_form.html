@@ -1,6 +1,5 @@
-{# path: src/app_technical_cards/templates/admin/app_technical_cards/technicalcard/change_form.html #}
 {% extends "admin/change_form.html" %}
-{% load i18n static %}
+{% load i18n static l10n %}
 
 {% block form_top %}
   {{ block.super }}
@@ -11,8 +10,11 @@
 {% block extrastyle %}
   {{ block.super }}
   <style>
+    .tc-hide-percents { display: none !important; }
+
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
     #tc-composition-block .spinner{width:20px;height:20px;border:3px solid #f3f3f3;border-top:3px solid #3498db;border-radius:50%;animation:spin 1s linear infinite}
+
     .tc-composition-table{width:100%;border-collapse:collapse;font-size:13px}
     .tc-composition-table th{background:#f8f9fa;padding:8px;border-bottom:2px solid #dee2e6;font-weight:600;text-align:left}
     .tc-composition-table td{padding:8px;border-bottom:1px solid #e9ecef}
@@ -37,6 +39,38 @@
     .tc-ac-item:hover,.tc-ac-item.active{background:#f3f4f6}
     .tc-ac-item .tc-ac-name{font-weight:600;color:#111827}
     .tc-ac-item .tc-ac-meta{color:#6b7280;font-size:12px;white-space:nowrap}
+
+    :root { --tc-card-min: 280px; }
+    .tc-dashboard{
+      margin-top:18px;
+      display:grid;
+      gap:12px;
+      grid-template-columns: repeat(auto-fit, minmax(var(--tc-card-min), 1fr));
+      align-items: stretch;
+      width:100%;
+    }
+    .tc-card{
+      border:1px solid #e5e7eb;
+      border-radius:10px;
+      background:#fff;
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+    }
+    .tc-card > .tc-card-h{padding:10px 12px;border-bottom:1px solid #eef2f7;font-weight:600}
+    .tc-card > .tc-card-b{padding:12px;display:flex;flex-direction:column;gap:10px}
+    .tc-kv{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;background:#f9fafb}
+    .tc-kv strong{font-size:14px}
+    .tc-fig{font-variant-numeric:tabular-nums}
+    .tc-field{display:flex;flex-direction:column;gap:6px}
+    .tc-input{width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;text-align:right}
+    .tc-sub{font-size:12px;color:#6b7280}
+    .tc-grand-total{background:rgba(59,130,246,.08); border-radius:8px; padding:15px; text-align:right; margin-top:8px;}
+
+    @media (max-width: 480px){
+      :root { --tc-card-min: 240px; }
+      .tc-qty-input{ width:90px; }
+    }
   </style>
 {% endblock %}
 
@@ -59,7 +93,6 @@
 
       <div id="tc-composition-content" style="display:none;">
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
-          <!-- Материалы -->
           <div class="tc-section tc-materials">
             <h3 style="margin:0 0 10px 0; padding:8px 10px; background:rgba(239,68,68,.05); border-left:3px solid rgba(239,68,68,.30); border-radius:8px;">
               <span style="display:inline-block; width:20px; height:20px; background:#ef4444; border-radius:50%; margin-right:8px;"></span>
@@ -101,7 +134,6 @@
             </div>
           </div>
 
-          <!-- Работы -->
           <div class="tc-section tc-works">
             <h3 style="margin:0 0 10px 0; padding:8px 10px; background:rgba(16,185,129,.06); border-left:3px solid rgba(16,185,129,.35); border-radius:8px;">
               <span style="display:inline-block; width:20px; height:20px; background:#10b981; border-radius:50%; margin-right:8px;"></span>
@@ -144,17 +176,66 @@
           </div>
         </div>
 
-        <div class="tc-grand-total" style="background:rgba(59,130,246,.08); border-radius:8px; padding:15px; text-align:right;">
-          <div style="display:inline-block; text-align:left;">
-            <div style="margin-bottom:8px;">
-              <span style="display:inline-block; min-width:250px;">{% trans "Итого по версии:" %}</span>
-              <strong id="version-grand-total" style="font-size:1.05em; color:#666;">—</strong>
-            </div>
-            <div>
-              <span style="display:inline-block; min-width:250px;">{% trans "Итого с текущими ценами:" %}</span>
-              <strong id="live-grand-total" style="font-size:1.15em; color:#0d6efd;">—</strong>
+        <div class="tc-dashboard">
+          <div class="tc-card">
+            <div class="tc-card-h">{% trans "Себестоимость (по текущим ценам), за ед. выпуска" %}</div>
+            <div class="tc-card-b">
+              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-cost-mats">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-cost-works">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Итого" %}</span>      <strong class="tc-fig" id="d-cost-total">—</strong></div>
             </div>
           </div>
+
+          <div class="tc-card">
+            <div class="tc-card-h">{% trans "Надбавки и транспорт (%)" %}</div>
+            <div class="tc-card-b">
+              <div class="tc-field">
+                <label class="tc-sub" for="p-mat-markup">{% trans "Надбавка на материалы, %" %}</label>
+                <input id="p-mat-markup" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
+              </div>
+              <div class="tc-field">
+                <label class="tc-sub" for="p-work-markup">{% trans "Надбавка на работы, %" %}</label>
+                <input id="p-work-markup" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
+              </div>
+              <div class="tc-field">
+                <label class="tc-sub" for="p-transport">{% trans "Транспортные расходы, %" %}</label>
+                <input id="p-transport" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
+              </div>
+            </div>
+          </div>
+
+          <div class="tc-card">
+            <div class="tc-card-h">{% trans "Общая стоимость (с надбавками и транспортом), за ед." %}</div>
+            <div class="tc-card-b">
+              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-marked-mats">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-marked-works">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Итого" %}</span>      <strong class="tc-fig" id="d-marked-total">—</strong></div>
+            </div>
+          </div>
+
+          <div class="tc-card">
+            <div class="tc-card-h">{% trans "Маржинальность (%)" %}</div>
+            <div class="tc-card-b">
+              <div class="tc-field">
+                <label class="tc-sub" for="p-mat-margin">{% trans "Маржа на материалы, %" %}</label>
+                <input id="p-mat-margin" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
+              </div>
+              <div class="tc-field">
+                <label class="tc-sub" for="p-work-margin">{% trans "Маржа на работы, %" %}</label>
+                <input id="p-work-margin" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
+              </div>
+            </div>
+          </div>
+
+          <div class="tc-card">
+            <div class="tc-card-h">{% trans "Цена продажи, за ед." %}</div>
+            <div class="tc-card-b">
+              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-sale-mats">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-sale-works">—</strong></div>
+              <div class="tc-kv"><span>{% trans "Итого" %}</span>      <strong class="tc-fig" id="d-sale-total">—</strong></div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -171,7 +252,6 @@
 
     const tcId = {{ original.pk|default:"null" }};
     const isNew = !tcId;
-    console.log("[TC][UI] init, tcId=", tcId, " isNew=", isNew);
 
     const $  = (sel, ctx=document)=>ctx.querySelector(sel);
     const $$ = (sel, ctx=document)=>Array.from(ctx.querySelectorAll(sel));
@@ -189,38 +269,132 @@
       liveGrand: $('#live-grand-total'),
       hiddenInit: $('#tc-initial-composition-input'),
       flagCreated: $('#tc-version-created-flag'),
+
+      dCostMats: $('#d-cost-mats'),
+      dCostWorks: $('#d-cost-works'),
+      dCostTotal: $('#d-cost-total'),
+      dMarkedMats: $('#d-marked-mats'),
+      dMarkedWorks: $('#d-marked-works'),
+      dMarkedTotal: $('#d-marked-total'),
+      dSaleMats: $('#d-sale-mats'),
+      dSaleWorks: $('#d-sale-works'),
+      dSaleTotal: $('#d-sale-total'),
+
+      pMatMarkup:  $('#p-mat-markup'),
+      pWorkMarkup: $('#p-work-markup'),
+      pTransport:  $('#p-transport'),
+      pMatMargin:  $('#p-mat-margin'),
+      pWorkMargin: $('#p-work-margin'),
+
+      rMatMarkup:  document.querySelector('input[name="materials_markup_percent"]'),
+      rWorkMarkup: document.querySelector('input[name="works_markup_percent"]'),
+      rTransport:  document.querySelector('input[name="transport_costs_percent"]'),
+      rMatMargin:  document.querySelector('input[name="materials_margin_percent"]'),
+      rWorkMargin: document.querySelector('input[name="works_margin_percent"]'),
     };
 
     const API_LIVE = tcId ? `/api/v1/technical-cards/${tcId}/live-composition/` : null;
-    const API_SAVE = tcId ? `/api/v1/technical-cards/${tcId}/save-new-version/` : null;
     const API_MATERIALS = "/api/v1/technical-cards/search/materials/";
     const API_WORKS     = "/api/v1/technical-cards/search/works/";
 
-    function num(x){ const n = Number(x); return Number.isFinite(n) ? n : 0; }
-    function fnum(x,d=2){ const n = Number(x); return Number.isFinite(n) ? n.toFixed(d) : '—'; }
+    const toNum = (x)=> {
+      if (x == null) return 0;
+      const s = String(x).trim().replace(/\s+/g,'').replace(',', '.');
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const fmt2 = (n)=> Number(n).toFixed(2);
+
     function clearError(){ els.err.textContent=''; els.err.style.display='none'; }
-    function showError(msg){ els.loading.style.display='none'; els.err.textContent=msg; els.err.style.display='block'; console.error("[TC][UI] ERROR:", msg); }
+    function showError(msg){ els.loading.style.display='none'; els.err.textContent=msg; els.err.style.display='block'; }
+
+    function unhideRealPercentFieldsOnError(){
+      const hasError = document.querySelector('.errornote, .errorlist');
+      if (!hasError) return;
+      ['materials_markup_percent','works_markup_percent','transport_costs_percent','materials_margin_percent','works_margin_percent']
+        .forEach(name=>{
+          const wrap = document.querySelector('.field-' + name);
+          if (wrap) wrap.style.display = '';
+        });
+    }
+
+    function hydrateDashboardFromRealFields(){
+      const pairs = [
+        [els.pMatMarkup, els.rMatMarkup],
+        [els.pWorkMarkup, els.rWorkMarkup],
+        [els.pTransport, els.rTransport],
+        [els.pMatMargin, els.rMatMargin],
+        [els.pWorkMargin, els.rWorkMargin],
+      ];
+      pairs.forEach(([vis, real])=>{
+        if (!vis || !real) return;
+        vis.value = String(toNum(real.value));
+      });
+    }
+
+    function syncRealPercentFieldsFromDashboard(){
+      // ВАЖНО: для type="number" нужна ТОЧКА, а не запятая!
+      if (els.rMatMarkup)  els.rMatMarkup.value  = fmt2(toNum(els.pMatMarkup.value));
+      if (els.rWorkMarkup) els.rWorkMarkup.value = fmt2(toNum(els.pWorkMarkup.value));
+      if (els.rTransport)  els.rTransport.value  = fmt2(toNum(els.pTransport.value));
+      if (els.rMatMargin)  els.rMatMargin.value  = fmt2(toNum(els.pMatMargin.value));
+      if (els.rWorkMargin) els.rWorkMargin.value = fmt2(toNum(els.pWorkMargin.value));
+    }
 
     function recalcAll(){
-      let live=0, ver=0;
+      let live=0, ver=0, matsLive=0, worksLive=0;
+      const fnum=(x)=>fmt2(x);
+
       const sumBlock=(tbody)=>{
         let l=0, v=0;
         $$('tr',tbody).forEach(tr=>{
-          const qty = num(tr.querySelector('.tc-qty-input')?.value);
-          const lp  = num(tr.dataset.livePrice);
-          const vp  = num(tr.dataset.versionPrice);
+          const qty = toNum(tr.querySelector('.tc-qty-input')?.value);
+          const lp  = toNum(tr.dataset.livePrice);
+          const vp  = toNum(tr.dataset.versionPrice);
           l += qty*lp; v += qty*vp;
           tr.lastElementChild.textContent = fnum(qty*lp);
         });
         return {l,v};
       };
+
       const mats = sumBlock(els.matBody); const works = sumBlock(els.workBody);
+      matsLive = mats.l; worksLive = works.l;
       live = mats.l + works.l; ver = mats.v + works.v;
-      els.matTotal.textContent  = fnum(mats.l);
-      els.workTotal.textContent = fnum(works.l);
-      els.liveGrand.textContent = fnum(live);
-      els.verGrand.textContent  = fnum(ver);
-      console.log("[TC][UI] recalc live=", live, " ver=", ver);
+
+      if (els.matTotal)  els.matTotal.textContent  = fnum(matsLive);
+      if (els.workTotal) els.workTotal.textContent = fnum(worksLive);
+      if (els.liveGrand) els.liveGrand.textContent = fnum(live);
+      if (els.verGrand)  els.verGrand.textContent  = fnum(ver);
+
+      const p = {
+        matMarkup:  toNum(els.pMatMarkup.value)/100,
+        workMarkup: toNum(els.pWorkMarkup.value)/100,
+        transport:  toNum(els.pTransport.value)/100,
+        matMargin:  toNum(els.pMatMargin.value)/100,
+        workMargin: toNum(els.pWorkMargin.value)/100,
+      };
+
+      const markedMats  = matsLive  * (1 + p.matMarkup  + p.transport);
+      const markedWorks = worksLive * (1 + p.workMarkup + p.transport);
+      const markedTotal = markedMats + markedWorks;
+
+      const saleMats  = markedMats  * (1 + p.matMargin);
+      const saleWorks = markedWorks * (1 + p.workMargin);
+      const saleTotal = saleMats + saleWorks;
+
+      els.dCostMats.textContent  = fnum(matsLive);
+      els.dCostWorks.textContent = fnum(worksLive);
+      els.dCostTotal.textContent = fnum(matsLive + worksLive);
+
+      els.dMarkedMats.textContent  = fnum(markedMats);
+      els.dMarkedWorks.textContent = fnum(markedWorks);
+      els.dMarkedTotal.textContent = fnum(markedTotal);
+
+      els.dSaleMats.textContent  = fnum(saleMats);
+      els.dSaleWorks.textContent = fnum(saleWorks);
+      els.dSaleTotal.textContent = fnum(saleTotal);
+
+      syncRealPercentFieldsFromDashboard();
     }
 
     function createRow(item, kind){
@@ -239,8 +413,8 @@
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${item.qty_per_unit}"></td>
         <td style="text-align:right;">${item.unit || "—"}</td>
-        <td style="text-align:right;">${fnum(versionPrice)}</td>
-        <td style="text-align:right;" class="${priceClass}">${badge}${fnum(livePrice)}</td>
+        <td style="text-align:right;">${fmt2(versionPrice)}</td>
+        <td style="text-align:right;" class="${priceClass}">${badge}${fmt2(livePrice)}</td>
         <td style="text-align:right; font-weight:600;">—</td>`;
       return tr;
     }
@@ -250,8 +424,7 @@
       const exist = Array.from(tbody.querySelectorAll('tr')).find(tr => parseInt(tr.dataset.refId,10) === refId);
       if (exist){
         const inp = exist.querySelector('.tc-qty-input');
-        inp.value = (num(inp.value) + num(qty)).toString();
-        console.log("[TC][UI] merged", kind, "#"+refId, " newQty=", inp.value);
+        inp.value = (toNum(inp.value) + toNum(qty)).toString();
         recalcAll(); return;
       }
       const tr = document.createElement('tr');
@@ -264,46 +437,42 @@
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${qty}"></td>
         <td style="text-align:right;">${unit || '—'}</td>
-        <td style="text-align:right;">${fnum(p)}</td>
-        <td style="text-align:right;">${fnum(p)}</td>
+        <td style="text-align:right;">${fmt2(p)}</td>
+        <td style="text-align:right;">${fmt2(p)}</td>
         <td style="text-align:right; font-weight:600;">—</td>`;
       tbody.appendChild(tr);
-      console.log("[TC][UI] added", kind, "#"+refId, " qty=", qty, " price=", p);
       recalcAll();
     }
 
     function snapshotFromDOM(){
       const grab=(tbody)=>$$('tr',tbody).map(tr=>({
         ref_id: parseInt(tr.dataset.refId,10),
-        qty: num(tr.querySelector('.tc-qty-input')?.value)
+        qty: toNum(tr.querySelector('.tc-qty-input')?.value)
       })).filter(x=>Number.isFinite(x.ref_id));
-      const s = { materials: grab(els.matBody), works: grab(els.workBody) };
-      console.log("[TC][UI] snapshot:", s);
-      return s;
+      return { materials: grab(els.matBody), works: grab(els.workBody) };
     }
 
     async function loadComposition(){
       clearError();
       if (isNew){
         els.loading.style.display='none'; els.content.style.display='';
-        console.log("[TC][UI] new card — show empty composition");
-        recalcAll(); return;
+        hydrateDashboardFromRealFields();
+        recalcAll();
+        return;
       }
       els.content.style.display='none'; els.loading.style.display='';
       els.matBody.innerHTML=''; els.workBody.innerHTML=''; els.vlabel.textContent='';
       try{
-        console.log("[TC][UI] fetch", API_LIVE);
         const r = await fetch(API_LIVE, {credentials:'same-origin'});
-        console.log("[TC][UI] /live-composition status", r.status);
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
         const data = await r.json();
-        console.log("[TC][UI] /live-composition payload", data);
         const verNum = data.version_number ?? data.version ?? '—';
         els.vlabel.textContent = ` (v${verNum})`;
         (data.materials||[]).forEach(item=>els.matBody.appendChild(createRow(item,'material')));
         (data.works||[]).forEach(item=>els.workBody.appendChild(createRow(item,'work')));
-        window.__TC_ORIG__ = snapshotFromDOM();
         els.loading.style.display='none'; els.content.style.display='';
+
+        hydrateDashboardFromRealFields();
         recalcAll();
       }catch(e){
         showError(e.message || 'Не удалось загрузить состав');
@@ -315,8 +484,7 @@
       if(!q || q.trim().length<1) return [];
       const url=(kind==='material'?API_MATERIALS:API_WORKS)+`?q=${encodeURIComponent(q)}&limit=10`;
       const r=await fetch(url,{credentials:'same-origin'}); if(!r.ok) return [];
-      const data = await r.json(); console.log("[TC][UI] search", kind, q, "→", data);
-      return data;
+      return await r.json();
     }
     function renderSuggestions(listEl, items, activeIdx){
       listEl.innerHTML='';
@@ -334,22 +502,21 @@
       const input=root.querySelector('.tc-ac-input');
       const list =root.querySelector('.tc-ac-list');
       const qtyInput=document.querySelector(kind==='material'?'.tc-new-qty-material':'.tc-new-qty-work');
-      let items=[], active=-1, chosen=null;
-      const doSearch = debounce(async ()=>{ chosen=null; items=await fetchSearch(kind,input.value); active=items.length?0:-1; renderSuggestions(list,items,active); },160);
+      let items=[], active=-1;
+      const doSearch = debounce(async ()=>{ items=await fetchSearch(kind,input.value); active=items.length?0:-1; renderSuggestions(list,items,active); },160);
       input.addEventListener('input', doSearch);
       input.addEventListener('keydown',(e)=>{ if(e.key==='Enter') e.preventDefault();
         if(list.style.display==='none') return;
         if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(items.length-1,active+1); renderSuggestions(list,items,active); }
         else if(e.key==='ArrowUp'){ e.preventDefault(); active=Math.max(0,active-1); renderSuggestions(list,items,active); }
-        else if(e.key==='Enter'){ e.preventDefault(); if(active>=0&&items[active]){ chosen=items[active]; applyChosen(); } else if(items.length===1){ chosen=items[0]; applyChosen(); } }
+        else if(e.key==='Enter'){ e.preventDefault(); if(active>=0&&items[active]){ apply(items[active]); } else if(items.length===1){ apply(items[0]); } }
         else if(e.key==='Escape'){ list.style.display='none'; }
       });
       list.addEventListener('click',(e)=>{
         const li=e.target.closest('.tc-ac-item'); if(!li) return;
-        const chosen={ id: parseInt(li.dataset.id,10), name: li.dataset.name, unit: (li.dataset.unit || ''), price: li.dataset.price ? Number(li.dataset.price) : undefined };
-        applyChosen(chosen);
+        apply({ id: parseInt(li.dataset.id,10), name: li.dataset.name, unit: (li.dataset.unit || ''), price: li.dataset.price ? Number(li.dataset.price) : undefined });
       });
-      function applyChosen(chosen){
+      function apply(chosen){
         if(!chosen) return;
         const q=Number(qtyInput.value||1); const qty=Number.isFinite(q)&&q>=0 ? q:1;
         addOrMergeRow(kind, chosen.id, chosen.name, chosen.unit, qty, chosen.price);
@@ -363,11 +530,10 @@
         if(!btn) return;
         e.preventDefault();
         const tr = btn.closest('tr');
-        if(tr){ console.log("[TC][UI] delete", tr.dataset.kind, "#"+tr.dataset.refId); tr.remove(); recalcAll(); }
+        if(tr){ tr.remove(); recalcAll(); }
       };
       const onChange=(e)=>{
         if(!e.target.classList.contains('tc-qty-input')) return;
-        console.log("[TC][UI] qty change", e.target.closest('tr')?.dataset);
         recalcAll();
       };
       $('#materials-tbody').addEventListener('click', onClick);
@@ -380,14 +546,12 @@
       const tbody = kind==='material'? $('#materials-tbody') : $('#works-tbody');
       return Array.from(tbody.querySelectorAll('tr')).map(tr=>{
         const ref = parseInt(tr.dataset.refId,10);
-        const qty = Number(tr.querySelector('.tc-qty-input')?.value);
+        const qty = Number(toNum(tr.querySelector('.tc-qty-input')?.value));
         return Number.isFinite(ref)&&Number.isFinite(qty)&&qty>=0 ? {ref_id:ref, qty:qty} : null;
       }).filter(Boolean);
     }
 
-    // ======== НАДЁЖНО НАХОДИМ ФОРМУ + ГЛОБАЛЬНЫЙ ПЕРЕХВАТ SUBMIT ========
     function findAdminForm(){
-      // Стандартный id у формы: {{ opts.model_name }}_form, например technicalcard_form
       return document.querySelector('main form[id$="_form"][method="post"]')
           || document.querySelector('form[id$="_form"][method="post"]')
           || document.querySelector('form[method="post"][action]')
@@ -396,70 +560,40 @@
     }
 
     function handleSubmit(form){
-      if (form.__tcSubmitting) return; // защита от повторной обработки
+      if (form.__tcSubmitting) return;
       form.__tcSubmitting = true;
+
+      syncRealPercentFieldsFromDashboard();
 
       const current = { materials: collect('material'), works: collect('work') };
       els.hiddenInit.value = JSON.stringify(current);
-      console.log("[TC][UI] onSubmit (capture) form.id=", form.id, " current=", current, " hidden.len=", els.hiddenInit.value.length);
-
-      if (isNew){
-        form.submit(); // admin.save_model создаст v1 из hiddenInit
-        return;
-      }
-
-      if (!API_SAVE){
-        form.submit(); // fallback на сервер
-        return;
-      }
-
-      // Пытаемся сохранить версию через API, затем обычный submit формы
-      fetch(API_SAVE, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': (document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '')
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ note:'', materials: current.materials, works: current.works }),
-      }).then(async (r)=>{
-        const t = await r.text();
-        console.log("[TC][UI] /save-new-version status", r.status, " body:", t);
-        if (!r.ok) throw new Error("HTTP "+r.status);
-        els.flagCreated.value = '1';
-        form.submit();
-      }).catch((e)=>{
-        console.warn("[TC][UI] save-new-version failed, fallback to server:", e);
-        form.submit();
-      });
+      form.submit();
     }
 
     function attachSubmitHooks(){
       const form = findAdminForm();
-      if (form){
-        console.log("[TC][UI] interceptSubmit: hooked to form#", form.id || '(no id)');
-      }else{
-        console.warn("[TC][UI] interceptSubmit: form not found, using global capture");
-      }
-      // Глобальный перехват — на случай, если форма найдётся позднее/заменится
       window.addEventListener('submit', function(ev){
         const target = ev.target;
         if (!(target instanceof HTMLFormElement)) return;
-        // Только формы админки и только если на странице есть наш блок
         if (!document.getElementById('tc-composition-block')) return;
         ev.preventDefault();
         handleSubmit(target);
       }, true);
     }
-    // =====================================================================
 
-    function start(){
-      console.log("[TC][UI] start()");
-      loadComposition();
+    function bindPercents(){
+      [els.pMatMarkup, els.pWorkMarkup, els.pTransport, els.pMatMargin, els.pWorkMargin]
+        .forEach(inp => inp.addEventListener('input', recalcAll));
+    }
+
+    async function start(){
+      await loadComposition();
       attachAutocomplete($('.tc-ac[data-kind="material"]'));
       attachAutocomplete($('.tc-ac[data-kind="work"]'));
       bindDeleteAndQty();
+      bindPercents();
       attachSubmitHooks();
+      unhideRealPercentFieldsOnError();
       if (isNew){ els.loading.style.display='none'; els.content.style.display=''; }
     }
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
