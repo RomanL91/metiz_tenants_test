@@ -346,7 +346,7 @@ class TechnicalCardAdmin(
         print("=" * 80)
 
 
-@admin.register(TechnicalCardVersion)
+# @admin.register(TechnicalCardVersion)
 class TechnicalCardVersionAdmin(
     SaveKeepsEditingMixin, WithNestedIndentMedia, nested_admin.NestedModelAdmin
 ):
@@ -377,7 +377,7 @@ class TechnicalCardVersionAdmin(
     )
 
 
-@admin.register(TechnicalCardVersionMaterial)
+# @admin.register(TechnicalCardVersionMaterial)
 class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     list_display = (
         "id",
@@ -392,7 +392,7 @@ class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     readonly_fields = ("material_name", "unit_ref", "price_per_unit")
 
 
-@admin.register(TechnicalCardVersionWork)
+# @admin.register(TechnicalCardVersionWork)
 class TechnicalCardVersionWorkAdmin(admin.ModelAdmin):
     list_display = (
         "id",
