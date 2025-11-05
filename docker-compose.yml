@@ -9,7 +9,6 @@ services:
       - .env.django
     working_dir: /app/src
     volumes:
-      - /srv/metiz/static_src:/app/src/static:ro
       - /srv/metiz/static:/app/src/staticfiles:rw
       - /srv/metiz/media:/app/src/media:rw
     ports:

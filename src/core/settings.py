@@ -182,9 +182,10 @@ SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 SECURE_SSL_REDIRECT = False
 SECURE_HSTS_SECONDS = 0
-STATICFILES_DIRS = [
-    p for p in [BASE_DIR / "static", Path("/app/src/static")] if p.exists()
-]
+STATICFILES_DIRS = []
+project_static = BASE_DIR / "static"
+if project_static.exists():
+    STATICFILES_DIRS.append(project_static)
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
