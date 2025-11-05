@@ -16,7 +16,7 @@ fi
 cd /app/src
 
 # миграции для django-tenants
-# python manage.py migrate_schemas --shared --noinput
+python manage.py migrate_schemas --shared --noinput
 # при необходимости можно мигрировать и тенантов (когда они уже созданы)
 # python manage.py migrate_schemas --executor tenant --noinput || true
 

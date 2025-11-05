@@ -60,11 +60,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_URL = "static/"
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -188,8 +183,7 @@ CSRF_COOKIE_SECURE = False
 SECURE_SSL_REDIRECT = False
 SECURE_HSTS_SECONDS = 0
 STATICFILES_DIRS = [
-    BASE_DIR / "static",  # /app/src/static
-    (BASE_DIR.parent / "static"),  # /app/static  (корневой static за пределами src)
+    p for p in [BASE_DIR / "static", Path("/app/src/static")] if p.exists()
 ]
 
 STATIC_URL = "/static/"
