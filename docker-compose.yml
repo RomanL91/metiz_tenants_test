@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: metiz_web
+    container_name: metisone_web
     env_file:
       - DATABASE/.env
       - .env.django
