@@ -159,13 +159,9 @@ class ExcelExportService:
 
         Делегирует логику в OverheadCalculator.
         """
-        tc_links = GroupTechnicalCardLink.objects.filter(
-            group__estimate=self.estimate
-        ).select_related("technical_card_version")
 
         self.overhead_context = OverheadCalculator.calculate_overhead_context(
             estimate=self.estimate,
-            tc_links=tc_links,
         )
 
     def export_to_excel(self) -> Tuple[str, str, int]:

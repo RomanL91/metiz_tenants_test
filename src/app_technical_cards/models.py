@@ -1,10 +1,8 @@
 from django.db import models
 
-from django.db.models import Sum, F, DecimalField, Value
-from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from app_units.models import Unit
 
@@ -268,96 +266,90 @@ class TechnicalCardVersion(models.Model):
         """Единица выпуска берётся из родительской карточки."""
         return str(self.card.unit_ref)
 
-    def recalc_totals(self, save=True):
+    def recalc_totals(self, save: bool = True) -> dict:
         """
-        Пересчитать все агрегаты на 1 ед. выпуска ТК.
-
-        Порядок расчета:
-        1. Себестоимость (базовая)
-        2. Общая стоимость (себестоимость + надбавки + транспорт; транспорт начисляется на чистую себестоимость)
-        3. Цена продажи (общая стоимость + маржинальность)
+        Пересчитывает и (опционально) сохраняет все агрегаты версии:
+        - себестоимость (materials/works/total)
+        - общая стоимость с надбавками и транспортом
+        - цена продажи с маржинальностью
+        Возвращает словарь с подсчитанными суммами.
         """
-        # 1. СЕБЕСТОИМОСТЬ (базовая сумма из строк состава)
-        materials_base = self.material_items.annotate(
-            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), Value(Decimal("0")))
-        ).aggregate(
-            s=Coalesce(
-                Sum("line"),
-                Value(Decimal("0")),
-                output_field=DecimalField(max_digits=14, decimal_places=2),
-            )
-        )[
-            "s"
-        ] or Decimal(
-            "0"
-        )
+        TWO = Decimal("0.01")
+        ONE = Decimal("1")
 
-        works_base = self.work_items.annotate(
-            line=Coalesce(F("qty_per_unit") * F("price_per_unit"), Value(Decimal("0")))
-        ).aggregate(
-            s=Coalesce(
-                Sum("line"),
-                Value(Decimal("0")),
-                output_field=DecimalField(max_digits=14, decimal_places=2),
-            )
-        )[
-            "s"
-        ] or Decimal(
-            "0"
+        # 1) СЕБЕСТОИМОСТЬ (по снапшот-ценам версии)
+        mats_sum = sum(
+            (
+                Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
+            ).quantize(TWO, ROUND_HALF_UP)
+            for row in self.material_items.all()
         )
-
-        self.materials_cost_per_unit = materials_base
-        self.works_cost_per_unit = works_base
-        self.total_cost_per_unit = materials_base + works_base
-
-        # 2. ОБЩАЯ СТОИМОСТЬ (с надбавками + транспорт)
-        # ТРАНСПОРТ НАЧИСЛЯЕТСЯ НА ЧИСТУЮ СЕБЕСТОИМОСТЬ:
-        # materials_total = materials_base * (1 + materials_markup% + transport%)
-        # works_total     = works_base     * (1 + works_markup%     + transport%)
-        materials_total = materials_base * (
-            Decimal("1")
-            + self.materials_markup_percent / Decimal("100")
-            + self.transport_costs_percent / Decimal("100")
+        works_sum = sum(
+            (
+                Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
+            ).quantize(TWO, ROUND_HALF_UP)
+            for row in self.work_items.all()
         )
-        works_total = works_base * (
-            Decimal("1")
-            + self.works_markup_percent / Decimal("100")
-            + self.transport_costs_percent / Decimal("100")
-        )
+        total_cost = (mats_sum + works_sum).quantize(TWO, ROUND_HALF_UP)
 
-        self.materials_total_cost_per_unit = materials_total
-        self.works_total_cost_per_unit = works_total
-        self.total_cost_with_markups_per_unit = materials_total + works_total
+        # 2) ПРОЦЕНТЫ (в доли)
+        m_markup = Decimal(self.materials_markup_percent or 0) / Decimal("100")
+        w_markup = Decimal(self.works_markup_percent or 0) / Decimal("100")
+        transport = Decimal(self.transport_costs_percent or 0) / Decimal("100")
+        m_margin = Decimal(self.materials_margin_percent or 0) / Decimal("100")
+        w_margin = Decimal(self.works_margin_percent or 0) / Decimal("100")
 
-        # 3. ЦЕНА ПРОДАЖИ (общая стоимость × (1 + маржа%))
-        materials_sale = materials_total * (
-            Decimal("1") + self.materials_margin_percent / Decimal("100")
+        # 3) ОБЩАЯ СТОИМОСТЬ (с надбавками + транспорт)
+        mats_marked = (mats_sum * (ONE + m_markup + transport)).quantize(
+            TWO, ROUND_HALF_UP
         )
-        works_sale = works_total * (
-            Decimal("1") + self.works_margin_percent / Decimal("100")
+        works_marked = (works_sum * (ONE + w_markup + transport)).quantize(
+            TWO, ROUND_HALF_UP
         )
+        total_marked = (mats_marked + works_marked).quantize(TWO, ROUND_HALF_UP)
 
-        self.materials_sale_price_per_unit = materials_sale
+        # 4) ЦЕНА ПРОДАЖИ (с маржей)
+        mats_sale = (mats_marked * (ONE + m_margin)).quantize(TWO, ROUND_HALF_UP)
+        works_sale = (works_marked * (ONE + w_margin)).quantize(TWO, ROUND_HALF_UP)
+        total_sale = (mats_sale + works_sale).quantize(TWO, ROUND_HALF_UP)
+
+        # 5) Записываем ровно в ВАШИ поля (они уже есть в модели)
+        self.materials_cost_per_unit = mats_sum
+        self.works_cost_per_unit = works_sum
+        self.total_cost_per_unit = total_cost
+
+        self.materials_total_cost_per_unit = mats_marked
+        self.works_total_cost_per_unit = works_marked
+        self.total_cost_with_markups_per_unit = total_marked
+
+        self.materials_sale_price_per_unit = mats_sale
         self.works_sale_price_per_unit = works_sale
-        self.total_sale_price_per_unit = materials_sale + works_sale
+        self.total_sale_price_per_unit = total_sale
 
         if save:
             self.save(
                 update_fields=[
-                    # Себестоимость
                     "materials_cost_per_unit",
                     "works_cost_per_unit",
                     "total_cost_per_unit",
-                    # Общая стоимость
                     "materials_total_cost_per_unit",
                     "works_total_cost_per_unit",
                     "total_cost_with_markups_per_unit",
-                    # Цена продажи
                     "materials_sale_price_per_unit",
                     "works_sale_price_per_unit",
                     "total_sale_price_per_unit",
                 ]
             )
+
+        return {
+            "cost": {"materials": mats_sum, "works": works_sum, "total": total_cost},
+            "marked": {
+                "materials": mats_marked,
+                "works": works_marked,
+                "total": total_marked,
+            },
+            "sale": {"materials": mats_sale, "works": works_sale, "total": total_sale},
+        }
 
 
 class TechnicalCardVersionMaterial(models.Model):

@@ -1,9 +1,7 @@
-# src/app_technical_cards/services_versioning.py
-from __future__ import annotations
-
-from decimal import Decimal
-from typing import Sequence
-import logging
+import json
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from typing import Any, List
 
 from django.db import transaction
 from django.utils import timezone
@@ -17,175 +15,233 @@ from app_technical_cards.models import (
 from app_materials.models import Material
 from app_works.models import Work
 
-log = logging.getLogger("app_technical_cards.versioning")
 
-PercentFields = (
+TRIGGER_FIELDS = {
     "materials_markup_percent",
     "works_markup_percent",
     "transport_costs_percent",
     "materials_margin_percent",
     "works_margin_percent",
-)
+}
 
 
-def _next_version_value(card: TechnicalCard) -> str:
-    # Строковый, монотонный таймстамп — не конфликтует с CharField в модели
+@dataclass
+class ItemSpec:
+    ref_id: int
+    qty: Decimal
+
+
+@dataclass
+class CompositionPayload:
+    materials: List[ItemSpec]
+    works: List[ItemSpec]
+
+
+def _to_decimal(x: Any) -> Decimal:
+    if x is None:
+        return Decimal("0")
+    s = str(x).replace(" ", "").replace(",", ".")
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+def parse_payload_from_hidden(raw: str | None) -> CompositionPayload:
+    mats: List[ItemSpec] = []
+    wrks: List[ItemSpec] = []
+    if not raw:
+        return CompositionPayload(mats, wrks)
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = {}
+    for key, collector in (("materials", mats), ("works", wrks)):
+        for it in data.get(key) or []:
+            rid = it.get("ref_id") or it.get("id")
+            qty = _to_decimal(it.get("qty"))
+            if isinstance(rid, int) and qty >= 0:
+                collector.append(ItemSpec(ref_id=rid, qty=qty))
+    return CompositionPayload(mats, wrks)
+
+
+def composition_payload_from_post(request) -> CompositionPayload:
+    return parse_payload_from_hidden(request.POST.get("_tc_initial_composition"))
+
+
+def _next_version_str() -> str:
     return timezone.now().strftime("%Y%m%d-%H%M%S")
-
-
-def _snapshot_percents_from_card(card: TechnicalCard) -> dict:
-    return {f: getattr(card, f) for f in PercentFields}
 
 
 @transaction.atomic
 def create_version_from_payload(
-    *,
-    card: TechnicalCard,
-    materials: Sequence[dict],
-    works: Sequence[dict],
-    publish: bool = False,
+    tc: TechnicalCard, payload: CompositionPayload
 ) -> TechnicalCardVersion:
-    log.debug(
-        "create_version_from_payload(card_id=%s) START mats=%s works=%s",
-        getattr(card, "id", None),
-        len(materials or []),
-        len(works or []),
-    )
-    print(
-        "[TC] create_version_from_payload: card_id=",
-        getattr(card, "id", None),
-        " mats=",
-        len(materials or []),
-        " works=",
-        len(works or []),
-    )
-
     ver = TechnicalCardVersion.objects.create(
-        card=card,
-        version=_next_version_value(card),
-        is_published=publish,
-        **_snapshot_percents_from_card(card),
+        card=tc,
+        version=_next_version_str(),
+        materials_markup_percent=tc.materials_markup_percent,
+        works_markup_percent=tc.works_markup_percent,
+        transport_costs_percent=tc.transport_costs_percent,
+        materials_margin_percent=tc.materials_margin_percent,
+        works_margin_percent=tc.works_margin_percent,
     )
 
-    # Материалы
-    if materials:
-        mats = Material.objects.in_bulk([m["ref_id"] for m in materials])
-        order = 1
-        for m in materials:
-            src = mats.get(m["ref_id"])
-            if not src:
-                log.warning("Material id=%s not found, skip", m["ref_id"])
-                continue
-            qty = Decimal(str(m.get("qty", "0")))
-            TechnicalCardVersionMaterial.objects.create(
-                technical_card_version=ver,
-                material=src,
-                material_name=src.name,
-                unit_ref=src.unit_ref,
-                qty_per_unit=qty,
-                price_per_unit=src.price_per_unit,
-                order=order,
+    # материалы
+    if payload.materials:
+        mats = {
+            m.pk: m
+            for m in Material.objects.filter(
+                pk__in=[i.ref_id for i in payload.materials]
             )
-            order += 1
-
-    # Работы
-    if works:
-        works_map = Work.objects.in_bulk([w["ref_id"] for w in works])
-        order = 1
-        for w in works:
-            src = works_map.get(w["ref_id"])
-            if not src:
-                log.warning("Work id=%s not found, skip", w["ref_id"])
+        }
+        bulk = []
+        for idx, i in enumerate(payload.materials, start=1):
+            m = mats.get(i.ref_id)
+            if not m:
                 continue
-            qty = Decimal(str(w.get("qty", "0")))
-            TechnicalCardVersionWork.objects.create(
-                technical_card_version=ver,
-                work=src,
-                work_name=src.name,
-                unit_ref=src.unit_ref,
-                qty_per_unit=qty,
-                price_per_unit=src.price_per_unit,
-                order=order,
+            bulk.append(
+                TechnicalCardVersionMaterial(
+                    technical_card_version=ver,
+                    material=m,
+                    material_name=m.name,
+                    unit_ref=m.unit_ref,
+                    price_per_unit=m.price_per_unit,
+                    qty_per_unit=i.qty,
+                    order=idx,
+                )
             )
-            order += 1
+        if bulk:
+            TechnicalCardVersionMaterial.objects.bulk_create(bulk)
 
-    if hasattr(ver, "recalc_totals"):
-        ver.recalc_totals(save=True)
+    # работы
+    if payload.works:
+        wrks = {
+            w.pk: w
+            for w in Work.objects.filter(pk__in=[i.ref_id for i in payload.works])
+        }
+        bulk = []
+        for idx, i in enumerate(payload.works, start=1):
+            w = wrks.get(i.ref_id)
+            if not w:
+                continue
+            bulk.append(
+                TechnicalCardVersionWork(
+                    technical_card_version=ver,
+                    work=w,
+                    work_name=w.name,
+                    unit_ref=w.unit_ref,
+                    price_per_unit=w.price_per_unit,
+                    qty_per_unit=i.qty,
+                    order=idx,
+                )
+            )
+        if bulk:
+            TechnicalCardVersionWork.objects.bulk_create(bulk)
 
-    log.debug(
-        "create_version_from_payload DONE: version_id=%s, version=%s",
-        ver.id,
-        ver.version,
-    )
-    print(
-        "[TC] create_version_from_payload: DONE version_id=",
-        ver.id,
-        " version=",
-        ver.version,
-    )
+    # итоги
+    ver.recalc_totals(save=True)
     return ver
 
 
 @transaction.atomic
-def create_version_from_latest(
-    *, card: TechnicalCard, publish: bool = False
-) -> TechnicalCardVersion:
-    log.debug("create_version_from_latest(card_id=%s) START", getattr(card, "id", None))
-    print("[TC] create_version_from_latest: card_id=", getattr(card, "id", None))
+def create_version_from_latest(tc: TechnicalCard) -> TechnicalCardVersion:
+    last = tc.latest_version
+    if not last:
+        return create_version_from_payload(tc, CompositionPayload([], []))
 
-    latest = (
-        TechnicalCardVersion.objects.filter(card=card).order_by("-created_at").first()
-    )
     ver = TechnicalCardVersion.objects.create(
-        card=card,
-        version=_next_version_value(card),
-        is_published=publish,
-        **_snapshot_percents_from_card(card),
+        card=tc,
+        version=_next_version_str(),
+        materials_markup_percent=tc.materials_markup_percent,
+        works_markup_percent=tc.works_markup_percent,
+        transport_costs_percent=tc.transport_costs_percent,
+        materials_margin_percent=tc.materials_margin_percent,
+        works_margin_percent=tc.works_margin_percent,
     )
-    if latest:
-        mats = list(
-            TechnicalCardVersionMaterial.objects.filter(
-                technical_card_version=latest
-            ).select_related("material", "unit_ref")
-        )
-        for m in mats:
-            TechnicalCardVersionMaterial.objects.create(
-                technical_card_version=ver,
-                material=m.material,
-                material_name=m.material_name,
-                unit_ref=m.unit_ref,
-                qty_per_unit=m.qty_per_unit,
-                price_per_unit=m.price_per_unit,
-                order=m.order,
-            )
-        works = list(
-            TechnicalCardVersionWork.objects.filter(
-                technical_card_version=latest
-            ).select_related("work", "unit_ref")
-        )
-        for w in works:
-            TechnicalCardVersionWork.objects.create(
-                technical_card_version=ver,
-                work=w.work,
-                work_name=w.work_name,
-                unit_ref=w.unit_ref,
-                qty_per_unit=w.qty_per_unit,
-                price_per_unit=w.price_per_unit,
-                order=w.order,
-            )
 
-    if hasattr(ver, "recalc_totals"):
-        ver.recalc_totals(save=True)
+    # клон материалов
+    for r in last.material_items.all():
+        row = TechnicalCardVersionMaterial.objects.create(
+            technical_card_version=ver,
+            material=r.material,
+            qty_per_unit=r.qty_per_unit,
+            order=r.order,
+        )
+        # переносим снапшот-цену (иначе возьмётся текущая)
+        if r.price_per_unit is not None:
+            row.price_per_unit = r.price_per_unit
+            row.save(update_fields=["price_per_unit"])
 
-    log.debug(
-        "create_version_from_latest DONE: version_id=%s, version=%s",
-        ver.id,
-        ver.version,
-    )
-    print(
-        "[TC] create_version_from_latest: DONE version_id=",
-        ver.id,
-        " version=",
-        ver.version,
-    )
+    # клон работ
+    for r in last.work_items.all():
+        row = TechnicalCardVersionWork.objects.create(
+            technical_card_version=ver,
+            work=r.work,
+            qty_per_unit=r.qty_per_unit,
+            order=r.order,
+        )
+        if r.price_per_unit is not None:
+            row.price_per_unit = r.price_per_unit
+            row.save(update_fields=["price_per_unit"])
+
+    ver.recalc_totals(save=True)
     return ver
+
+
+def composition_differs_from_latest(
+    tc: TechnicalCard, payload: CompositionPayload
+) -> bool:
+    last = tc.latest_version
+    if not last:
+        return bool(payload.materials or payload.works)
+
+    def norm(items):
+        return sorted(
+            [(i.ref_id, str(Decimal(i.qty).normalize())) for i in items],
+            key=lambda t: (t[0], t[1]),
+        )
+
+    cur_m = norm(payload.materials)
+    cur_w = norm(payload.works)
+
+    last_m = []
+    for r in last.material_items.all():
+        last_m.append((r.material_id, str(Decimal(r.qty_per_unit).normalize())))
+    last_m.sort(key=lambda t: (t[0], t[1]))
+
+    last_w = []
+    for r in last.work_items.all():
+        last_w.append((r.work_id, str(Decimal(r.qty_per_unit).normalize())))
+    last_w.sort(key=lambda t: (t[0], t[1]))
+
+    return cur_m != last_m or cur_w != last_w
+
+
+def handle_tc_save(tc: TechnicalCard, request, *, change: bool, changed_fields=None):
+    """
+    Хук для admin.save_model:
+    - читаем скрытый состав,
+    - решаем, нужно ли делать новую версию,
+    - создаём из payload или клонируем последнюю (если менялись только проценты).
+    """
+    payload = composition_payload_from_post(request)
+    created = None
+
+    if payload.materials or payload.works:
+        need = True
+        if change:
+            try:
+                need = composition_differs_from_latest(tc, payload)
+            except Exception:
+                need = True
+        if need:
+            created = create_version_from_payload(tc, payload)
+        else:
+            if changed_fields and (TRIGGER_FIELDS & set(changed_fields)):
+                created = create_version_from_latest(tc)
+    else:
+        if changed_fields and (TRIGGER_FIELDS & set(changed_fields)):
+            created = create_version_from_latest(tc)
+
+    return created

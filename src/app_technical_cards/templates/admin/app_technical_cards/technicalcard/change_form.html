@@ -1,4 +1,3 @@
-# path: templates/admin/app_technical_cards/technicalcard/change_form.html
 {% extends "admin/change_form.html" %}
 {% load i18n static l10n %}
 
@@ -52,17 +51,18 @@
     :root { --tc-card-min: 300px; }
     
     .tc-section-header{
-      display:inline-block;
-      padding:8px 16px;
-      background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color:#fff;
-      font-weight:700;
-      font-size:13px;
-      text-transform:uppercase;
-      letter-spacing:1px;
-      border-radius:20px;
-      margin-bottom:20px;
-      box-shadow:0 4px 12px rgba(102,126,234,0.3);
+            display:block;
+            width:100%;
+            padding:16px 20px;
+            background:linear-gradient(to right, #f8f9fa 0%, #fff 100%);
+            color:#495057;
+            font-weight:600;
+            font-size:14px;
+             text-transform:uppercase;
+            letter-spacing:1.2px;
+            border-left:4px solid #667eea;
+            border-bottom:2px solid #e9ecef;
+            margin:0;
     }
     
     .tc-dashboard{

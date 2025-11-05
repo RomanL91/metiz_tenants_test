@@ -1,7 +1,4 @@
-import json
-import logging
 import nested_admin
-
 from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
@@ -15,12 +12,7 @@ from app_technical_cards.models import (
     TechnicalCardVersionWork,
 )
 
-from .services_versioning import (
-    create_version_from_payload,
-    create_version_from_latest,
-)
-
-log = logging.getLogger("app_technical_cards.admin")
+from .services_versioning import handle_tc_save
 
 
 class OnlySaveMediaMixin:
@@ -36,6 +28,7 @@ class WithNestedIndentMedia:
                 "admin/css/entity_highlight.css",
                 "admin/css/entity_version_heading.css",
                 "admin/css/tc_highlights.css",
+                "admin/css/autocomplete.css",
             ),
         }
 
@@ -120,7 +113,6 @@ class TechnicalCardVersionNestedInline(
                     "works_margin_percent_display",
                 ),
                 "classes": ["collapse", "entity-percents"],
-                "description": "Проценты скопированы из TechnicalCard на момент создания версии.",
             },
         ),
         (
@@ -177,7 +169,6 @@ class TechnicalCardVersionNestedInline(
         "works_margin_percent_display",
     )
 
-    # — Метаданные
     def version_display(self, obj):
         return obj.version if obj.pk else "—"
 
@@ -188,61 +179,42 @@ class TechnicalCardVersionNestedInline(
 
     created_at_display.short_description = "Дата создания"
 
-    # — Деньги
+    def _fmt_money(self, v):
+        return "—" if v in (None, "") else f"{v:.2f}"
+
+    def _pill(self, label, tone="neutral"):
+        return format_html('<span class="tc-pill tc-{}">{}</span>', tone, label)
+
     def materials_cost_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.materials_cost_per_unit), "neutral")
-
-    materials_cost_per_unit_display.short_description = (
-        "Себестоимость материалов за ед."
-    )
 
     def works_cost_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.works_cost_per_unit), "neutral")
 
-    works_cost_per_unit_display.short_description = "Себестоимость работ за ед."
-
     def total_cost_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.total_cost_per_unit), "neutral")
-
-    total_cost_per_unit_display.short_description = "Общая себестоимость за ед."
 
     def materials_total_cost_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.materials_total_cost_per_unit), "info")
 
-    materials_total_cost_per_unit_display.short_description = (
-        "Общая стоимость материалов за ед."
-    )
-
     def works_total_cost_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.works_total_cost_per_unit), "info")
-
-    works_total_cost_per_unit_display.short_description = "Общая стоимость работ за ед."
 
     def total_cost_with_markups_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.total_cost_with_markups_per_unit), "info")
 
-    total_cost_with_markups_per_unit_display.short_description = (
-        "Общая стоимость техкарты за ед."
-    )
-
     def materials_sale_price_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.materials_sale_price_per_unit), "success")
-
-    materials_sale_price_per_unit_display.short_description = (
-        "Цена продажи материалов за ед."
-    )
 
     def works_sale_price_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.works_sale_price_per_unit), "success")
 
-    works_sale_price_per_unit_display.short_description = "Цена продажи работ за ед."
-
     def total_sale_price_per_unit_display(self, obj):
         return self._pill(self._fmt_money(obj.total_sale_price_per_unit), "success")
 
-    total_sale_price_per_unit_display.short_description = "Цена продажи техкарты за ед."
+    def _fmt_percent(self, v):
+        return "—" if v in (None, "") else f"{v:.2f} %"
 
-    # — Проценты
     def materials_markup_percent_display(self, obj):
         return self._fmt_percent(obj.materials_markup_percent)
 
@@ -268,16 +240,6 @@ class TechnicalCardVersionNestedInline(
 
     works_margin_percent_display.short_description = "Маржинальность работ"
 
-    # — Утилиты
-    def _fmt_money(self, v):
-        return "—" if v in (None, "") else f"{v:.2f}"
-
-    def _fmt_percent(self, v):
-        return "—" if v in (None, "") else f"{v:.2f} %"
-
-    def _pill(self, label: str, tone: str = "neutral"):
-        return format_html('<span class="tc-pill tc-{}">{}</span>', tone, label)
-
 
 @admin.register(TechnicalCard)
 class TechnicalCardAdmin(
@@ -287,6 +249,7 @@ class TechnicalCardAdmin(
     nested_admin.NestedModelAdmin,
 ):
     change_form_template = "admin/app_technical_cards/technicalcard/change_form.html"
+
     list_display = (
         "name",
         "unit_ref",
@@ -302,9 +265,9 @@ class TechnicalCardAdmin(
     inlines = [TechnicalCardVersionNestedInline]
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name", "unit_ref")}),
+        (_("Основная информация"), {"fields": ("name", "unit_ref")}),
         (
-            "Надбавки и транспортные расходы (%)",
+            _("Надбавки и транспорт (%)"),
             {
                 "fields": (
                     (
@@ -313,14 +276,14 @@ class TechnicalCardAdmin(
                         "transport_costs_percent",
                     ),
                 ),
-                "description": "Эти проценты будут скопированы в версию при её создании",
+                "classes": ["tc-hide-percents"],
             },
         ),
         (
-            "Маржинальность (%)",
+            _("Маржинальность (%)"),
             {
                 "fields": (("materials_margin_percent", "works_margin_percent"),),
-                "description": "Эти проценты будут скопированы в версию при её создании",
+                "classes": ["tc-hide-percents"],
             },
         ),
     )
@@ -338,128 +301,52 @@ class TechnicalCardAdmin(
         v = latest.total_sale_price_per_unit
         return "—" if v in (None, "") else f"{v:.2f}"
 
-    latest_version_total_sale_price.short_description = "Цена продажи за 1 ед. версии"
-
-    VERSION_TRIGGER_FIELDS = {
-        "materials_markup_percent",
-        "works_markup_percent",
-        "transport_costs_percent",
-        "materials_margin_percent",
-        "works_margin_percent",
-    }
+    latest_version_total_sale_price.short_description = "Цена продажи (за 1 ед.)"
 
     def save_model(self, request, obj, form, change):
+
+        changed = set(getattr(form, "changed_data", []) or [])
+
+        if change and obj.pk:
+            try:
+                old_obj = TechnicalCard.objects.get(pk=obj.pk)
+                percent_fields = [
+                    "materials_markup_percent",
+                    "works_markup_percent",
+                    "transport_costs_percent",
+                    "materials_margin_percent",
+                    "works_margin_percent",
+                ]
+                for field_name in percent_fields:
+                    old_val = getattr(old_obj, field_name)
+                    new_val = getattr(obj, field_name)
+                    print(f"{field_name}: {old_val} -> {new_val}")
+                    if old_val != new_val:
+                        changed.add(field_name)
+                        print(f"  ^^^ CHANGED!")
+            except TechnicalCard.DoesNotExist:
+                pass
+
         super().save_model(request, obj, form, change)
 
-        print("[TC][admin.save_model] change=", change, " obj_id=", obj.id)
-        log.debug(
-            "admin.save_model change=%s obj_id=%s", change, getattr(obj, "id", None)
-        )
+        created = handle_tc_save(obj, request, change=change, changed_fields=changed)
 
-        if not change:
-            payload_raw = request.POST.get("_tc_initial_composition") or ""
-            print(
-                "[TC][admin.save_model] _tc_initial_composition length=",
-                len(payload_raw),
-            )
-            if payload_raw.strip():
-                try:
-                    payload = json.loads(payload_raw)
-                    mats = payload.get("materials") or []
-                    works = payload.get("works") or []
-                    print(
-                        "[TC][admin.save_model] parsed composition: mats=",
-                        len(mats),
-                        " works=",
-                        len(works),
-                    )
-                except Exception as e:
-                    self.message_user(
-                        request,
-                        f"DEBUG: не удалось разобрать стартовый состав ({e})",
-                        level=messages.WARNING,
-                    )
-                    print("[TC][admin.save_model] JSON parse error:", e)
-                    return
-                ver = create_version_from_payload(
-                    card=obj, materials=mats, works=works, publish=False
-                )
-                self.message_user(
-                    request,
-                    f"DEBUG: создана версия v{ver.version} из стартового состава.",
-                )
-                print(
-                    "[TC][admin.save_model] created version id=",
-                    ver.id,
-                    " version=",
-                    ver.version,
-                )
-            else:
-                self.message_user(
-                    request,
-                    "DEBUG: _tc_initial_composition пуст — версия при создании не создана.",
-                    level=messages.WARNING,
-                )
-            return
-
-        # Если фронт заранее создал версию — выходим
-        if request.POST.get("_tc_version_created_by_js"):
+        if created:
             self.message_user(
                 request,
-                "DEBUG: фронт уже создал новую версию (флаг _tc_version_created_by_js).",
+                f"✅ Создана новая версия v{created.version}",
+                level=messages.SUCCESS,
             )
-            print(
-                "[TC][admin.save_model] skip — flag _tc_version_created_by_js present"
-            )
-            return
-
-        # Fallback: если фронт не вызвал API, но в скрытом поле есть состав — создаём версию из него
-        hidden_raw = request.POST.get("_tc_initial_composition") or ""
-        if hidden_raw.strip():
-            try:
-                payload = json.loads(hidden_raw)
-                mats = payload.get("materials") or []
-                works = payload.get("works") or []
-                if mats or works:
-                    ver = create_version_from_payload(
-                        card=obj, materials=mats, works=works, publish=False
-                    )
-                    self.message_user(
-                        request,
-                        f"DEBUG: создана версия v{ver.version} (fallback из скрытого поля).",
-                    )
-                    print(
-                        "[TC][admin.save_model] Fallback created version id=",
-                        ver.id,
-                        " version=",
-                        ver.version,
-                    )
-                    return
-            except Exception as e:
-                self.message_user(
-                    request,
-                    f"DEBUG: fallback не сработал — плохой JSON ({e})",
-                    level=messages.WARNING,
-                )
-                print("[TC][admin.save_model] Fallback JSON parse error:", e)
-
-        # Если проценты менялись — клонируем latest в новую версию
-        changed = set(getattr(form, "changed_data", []) or [])
-        print("[TC][admin.save_model] changed_fields=", changed)
-        if changed & self.VERSION_TRIGGER_FIELDS:
-            ver = create_version_from_latest(card=obj, publish=False)
+        else:
             self.message_user(
                 request,
-                f"DEBUG: проценты изменены — создана новая версия v{ver.version}.",
+                "⚠️ Версия НЕ создана",
+                level=messages.WARNING,
             )
-            print(
-                "[TC][admin.save_model] created (from latest) version id=",
-                ver.id,
-                " version=",
-                ver.version,
-            )
+        print("=" * 80)
 
 
+@admin.register(TechnicalCardVersion)
 class TechnicalCardVersionAdmin(
     SaveKeepsEditingMixin, WithNestedIndentMedia, nested_admin.NestedModelAdmin
 ):
@@ -477,72 +364,7 @@ class TechnicalCardVersionAdmin(
     search_fields = ("card__name", "version")
     autocomplete_fields = ("card",)
     inlines = [TCVMaterialNestedInline, TCVWorkNestedInline]
-
-    fieldsets = (
-        (
-            "Основная информация",
-            {
-                "fields": (
-                    "card",
-                    "is_published",
-                    "version_display",
-                    "created_at_display",
-                )
-            },
-        ),
-        (
-            "Проценты (снапшот из TechnicalCard)",
-            {
-                "fields": (
-                    "materials_markup_percent_display",
-                    "works_markup_percent_display",
-                    "transport_costs_percent_display",
-                    "materials_margin_percent_display",
-                    "works_margin_percent_display",
-                ),
-                "classes": ["collapse"],
-            },
-        ),
-        (
-            "Себестоимость",
-            {
-                "fields": (
-                    "materials_cost_per_unit",
-                    "works_cost_per_unit",
-                    "total_cost_per_unit",
-                )
-            },
-        ),
-        (
-            "Общая стоимость (с надбавками + транспорт)",
-            {
-                "fields": (
-                    "materials_total_cost_per_unit",
-                    "works_total_cost_per_unit",
-                    "total_cost_with_markups_per_unit",
-                )
-            },
-        ),
-        (
-            "Цена продажи (с маржинальностью)",
-            {
-                "fields": (
-                    "materials_sale_price_per_unit",
-                    "works_sale_price_per_unit",
-                    "total_sale_price_per_unit",
-                )
-            },
-        ),
-    )
-
     readonly_fields = (
-        "version_display",
-        "created_at_display",
-        "materials_markup_percent_display",
-        "works_markup_percent_display",
-        "transport_costs_percent_display",
-        "materials_margin_percent_display",
-        "works_margin_percent_display",
         "materials_cost_per_unit",
         "works_cost_per_unit",
         "total_cost_per_unit",
@@ -554,50 +376,8 @@ class TechnicalCardVersionAdmin(
         "total_sale_price_per_unit",
     )
 
-    def version_display(self, obj):
-        return obj.version if obj.pk else "—"
 
-    version_display.short_description = "Версия"
-
-    def created_at_display(self, obj):
-        return obj.created_at if obj.pk else "—"
-
-    created_at_display.short_description = "Дата создания"
-
-    def materials_markup_percent_display(self, obj):
-        return f"{obj.materials_markup_percent:.2f}%" if obj.pk else "—"
-
-    materials_markup_percent_display.short_description = "Надбавка на материалы"
-
-    def works_markup_percent_display(self, obj):
-        return f"{obj.works_markup_percent:.2f}%" if obj.pk else "—"
-
-    works_markup_percent_display.short_description = "Надбавка на работы"
-
-    def transport_costs_percent_display(self, obj):
-        return f"{obj.transport_costs_percent:.2f}%" if obj.pk else "—"
-
-    transport_costs_percent_display.short_description = "Транспортные расходы"
-
-    def materials_margin_percent_display(self, obj):
-        return f"{obj.materials_margin_percent:.2f}%" if obj.pk else "—"
-
-    materials_margin_percent_display.short_description = "Маржинальность материалов"
-
-    def works_margin_percent_display(self, obj):
-        return f"{obj.works_margin_percent:.2f}%" if obj.pk else "—"
-
-    works_margin_percent_display.short_description = "Маржинальность работ"
-
-    def save_formset(self, request, form, formset, change):
-        resp = super().save_formset(request, form, formset, change)
-        try:
-            form.instance.recalc_totals(save=True)
-        except Exception:
-            pass
-        return resp
-
-
+@admin.register(TechnicalCardVersionMaterial)
 class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     list_display = (
         "id",
@@ -612,6 +392,7 @@ class TechnicalCardVersionMaterialAdmin(admin.ModelAdmin):
     readonly_fields = ("material_name", "unit_ref", "price_per_unit")
 
 
+@admin.register(TechnicalCardVersionWork)
 class TechnicalCardVersionWorkAdmin(admin.ModelAdmin):
     list_display = (
         "id",

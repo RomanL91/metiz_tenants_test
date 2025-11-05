@@ -7,11 +7,9 @@
 - Clear API: явный контракт методов
 """
 
-from decimal import Decimal
-from typing import Dict, Optional, List
+from typing import Dict, List
 
-from app_outlay.models import GroupTechnicalCardLink
-from app_outlay.views.estimate_calc_view.utils_calc import _base_costs_live, _dec
+from app_outlay.views.estimate_calc_view.utils_calc import _dec
 from app_outlay.views.estimate_calc_view.services import OverheadContextService
 
 
