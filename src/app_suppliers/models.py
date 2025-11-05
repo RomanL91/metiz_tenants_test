@@ -36,16 +36,14 @@ class Supplier(models.Model):
         verbose_name=_("Тип поставщика"),
         help_text=_("Юрлицо / ИП / Физлицо."),
     )
-
-    # Казахстан: БИН (для юрлиц) или ИИН (для физлиц/ИП) — 12 цифр.
     tax_id = models.CharField(
-        max_length=12,
+        max_length=10,
         blank=True,
         default="",
-        verbose_name=_("БИН/ИИН"),
-        help_text=_("12 цифр, если известен."),
+        verbose_name=_("ИНН"),
+        help_text=_("10 цифр, если известен."),
         validators=[
-            RegexValidator(regex=r"^\d{12}$", message=_("Должно быть 12 цифр."))
+            RegexValidator(regex=r"^\d{10}$", message=_("Должно быть 10 цифр."))
         ],
     )
 
