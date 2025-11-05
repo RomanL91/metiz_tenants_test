@@ -21,6 +21,8 @@ python manage.py migrate_schemas --shared --noinput
 # python manage.py migrate_schemas --executor tenant --noinput || true
 
 # собрать статику
+echo "..................."
 python manage.py collectstatic --noinput --clear
 
+echo "..................."
 gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
