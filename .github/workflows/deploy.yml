@@ -1,0 +1,70 @@
+name: Deploy (full rebuild)
+
+on:
+  push:
+    branches: ["__prod__"]
+
+concurrency:
+  group: "prod-deploy"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust remote host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rsync repository to server
+        run: |
+          EXCLUDES=(
+            "--exclude" ".git"
+            "--exclude" ".github"
+            "--exclude" "__pycache__"
+            "--exclude" "src/staticfiles"
+            "--exclude" "src/media"
+            "--exclude" "DATABASE/.env"
+            "--exclude" ".env.django"
+          )
+          rsync -az --delete "${EXCLUDES[@]}" ./ \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+
+      - name: Remote full rebuild & deploy
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
+            set -euo pipefail
+            cd '${DEPLOY_PATH}'
+
+            # ensure network exists
+            docker network inspect metiz_network >/dev/null 2>&1 || docker network create metiz_network
+
+            # choose compose command
+            if docker compose version >/dev/null 2>&1; then DC='docker compose'; else DC='docker-compose'; fi
+
+            # full rebuild WITHOUT cache
+            export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
+            \$DC down --remove-orphans || true
+            \$DC build --pull --no-cache
+            \$DC up -d --force-recreate --remove-orphans
+
+            # cleanup builders/images (dangling)
+            docker builder prune -f >/dev/null 2>&1 || true
+            docker image prune   -f >/dev/null 2>&1 || true
+
+            \$DC ps
+          "
