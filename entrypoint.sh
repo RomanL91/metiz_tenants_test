@@ -5,6 +5,8 @@ set -e
 DBH="${DB_HOST:-${POSTGRES_HOST}}"
 DBP="${DB_PORT:-${POSTGRES_PORT:-3333}}"
 
+echo "..................."
+
 if [ -n "${DBH}" ]; then
   echo "Waiting for Postgres at ${DBH}:${DBP}..."
   for i in {1..60}; do
