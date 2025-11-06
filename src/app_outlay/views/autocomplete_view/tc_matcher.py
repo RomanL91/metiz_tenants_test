@@ -1,7 +1,6 @@
-# path: src/app_outlay/views/autocomplete_view/tc_matcher.py
 import re
 from difflib import SequenceMatcher
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict
 
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 from app_outlay.estimate_mapping_utils import UnitNormalizer
