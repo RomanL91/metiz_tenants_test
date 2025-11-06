@@ -65,26 +65,38 @@ class UnitCosts:
 
 def _get_version(tc_or_ver_id: int) -> Optional[TechnicalCardVersion]:
     """
-    Возвращает версию ТК по:
-      - ID версии, если существует;
-      - ИЛИ по ID карточки — последнюю (по id) версию.
+    Возвращает ПОСЛЕДНЮЮ ОПУБЛИКОВАННУЮ версию ТК.
+
+    Логика:
+    1. Если tc_or_ver_id - это ID TechnicalCard → берём последнюю опубликованную версию
+    2. Если tc_or_ver_id - это ID конкретной TechnicalCardVersion → берём её карточку, затем последнюю версию
+
+    ВАЖНО: Цены берутся из живых справочников, архитектура (qty) - из последней версии.
     """
-    ver = (
+
+    # Сначала пробуем найти версию по ID
+    existing_version = (
         TechnicalCardVersion.objects.filter(pk=tc_or_ver_id)
         .select_related("card")
         .first()
     )
-    if ver:
-        return ver
 
-    # Иначе считаем, что передали ID TechnicalCard
-    ver = (
-        TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id)
-        .order_by("-id")
+    if existing_version:
+        # Нашли версию → берём её карточку и ищем последнюю опубликованную версию этой карточки
+        card_id = existing_version.card_id
+    else:
+        # Не нашли версию → считаем что передали ID карточки
+        card_id = tc_or_ver_id
+
+    # Возвращаем ПОСЛЕДНЮЮ опубликованную версию карточки
+    latest_version = (
+        TechnicalCardVersion.objects.filter(card_id=card_id, is_published=True)
+        .order_by("-created_at", "-id")
         .select_related("card")
         .first()
     )
-    return ver
+
+    return latest_version
 
 
 # --- БАЗА: «ЖИВЫЕ» ЦЕНЫ ИЗ СПРАВОЧНИКОВ ---------------------------------------
@@ -92,12 +104,12 @@ def _get_version(tc_or_ver_id: int) -> Optional[TechnicalCardVersion]:
 
 def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     """
-    Базовая стоимость на 1 ед. выпуска ТК по живым ценам (БЕЗ надбавок/маржи/НР).
-    Только чистая сумма материалов и работ из справочников.
+    Базовая стоимость на 1 ед. выпуска ТК по ЖИВЫМ ценам (БЕЗ надбавок/маржи/НР).
+    Архитектура (qty) из последней версии, цены из живых справочников.
     Используется как база для распределения НР.
     """
 
-    # Материалы: сумма (qty_per_unit × material.price_per_unit)
+    # Материалы: сумма (qty_per_unit из версии × price_per_unit из ЖИВОГО справочника)
     m_q = Coalesce(F("qty_per_unit"), Value(0))
     m_p = Coalesce(F("material__price_per_unit"), Value(0))
     m_line = ExpressionWrapper(
@@ -116,7 +128,7 @@ def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
         "0"
     )
 
-    # Работы: сумма (qty_per_unit × work.price_per_unit)
+    # Работы: сумма (qty_per_unit из версии × price_per_unit из ЖИВОГО справочника)
     w_q = Coalesce(F("qty_per_unit"), Value(0))
     w_p = Coalesce(F("work__price_per_unit"), Value(0))
     w_line = ExpressionWrapper(
@@ -134,8 +146,9 @@ def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
 
 def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     """
-    Стоимость на 1 ед. выпуска ТК из живых цен с применением НАДБАВОК/ТРАНСПОРТА/МАРЖИ
-    (НО БЕЗ НАКЛАДНЫХ РАСХОДОВ).
+    Стоимость на 1 ед. выпуска ТК с применением НАДБАВОК/ТРАНСПОРТА/МАРЖИ:
+    - База: из _base_costs_live() (живые цены × qty из версии)
+    - Проценты: из ЖИВОЙ карточки TechnicalCard (чтобы можно было менять без новой версии)
     """
     tc: Optional[TechnicalCard] = getattr(v, "card", None) or getattr(
         v, "technical_card", None
@@ -143,7 +156,7 @@ def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     base = _base_costs_live(v)
     m_base, w_base = base.mat, base.work
 
-    # Надбавки/транспорт/маржинальность из карточки (в процентах → доли)
+    # Надбавки/транспорт/маржинальность из ЖИВОЙ карточки (в процентах → доли)
     m_markup = (
         _dec(getattr(tc, "materials_markup_percent", 0)) / Decimal("100")
         if tc

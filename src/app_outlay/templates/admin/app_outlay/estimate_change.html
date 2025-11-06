@@ -191,8 +191,10 @@
                 <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…" data-id="" data-text="">
                 <div class="muted">строка Excel: {{ it.row_index }}</div>
               </td>
-              {% for v in it.opt_values %}
-                <td class="cell-2lines opt-cell"><div class="sys">—</div><div class="muted">xls: {{ v|default:"—" }}</div></td>
+              {% for col_data in it.opt_values %}
+                <td class="cell-2lines opt-cell" data-rid="{{ col_data.rid }}">
+                  <div class="sys">—</div>
+                  <div class="muted">xls: {{ col_data.value|default:"—" }}</div>
               {% endfor %}
             </tr>
           {% endfor %}

@@ -36,31 +36,36 @@
                 if (!sectionId) return;
 
                 if (!sections[sectionId]) {
-                    sections[sectionId] = {};
-                    this.CALC_ORDER.forEach(rid => sections[sectionId][rid] = 0);
-                    sections[sectionId].count = 0;
+                    sections[sectionId] = {
+                        mat: 0,
+                        work: 0,
+                        total: 0,
+                        count: 0
+                    };
                 }
 
                 if (tr.style.display === 'none') return;
 
-                const cells = tr.querySelectorAll('.opt-cell');
-                let hasValues = false;
+                // Читаем из data-атрибута (как в computeBaseTotals)
+                const calcDataStr = tr.dataset.calcData;
+                if (!calcDataStr) return;
 
-                this.CALC_ORDER.forEach((rid, idx) => {
-                    const cell = cells[idx];
-                    if (!cell) return;
+                try {
+                    const calc = JSON.parse(calcDataStr);
 
-                    const text = (cell.querySelector('.sys')?.textContent || '').trim();
-                    if (!text || text === '—') return;
+                    const mat = Number(calc.PRICE_FOR_ALL_MATERIAL || 0);
+                    const work = Number(calc.PRICE_FOR_ALL_WORK || 0);
+                    const total = Number(calc.TOTAL_PRICE || 0);
 
-                    const val = parseFloat(text.replace(/\s/g, '').replace(',', '.'));
-                    if (!isNaN(val)) {
-                        sections[sectionId][rid] += val;
-                        hasValues = true;
+                    if (mat > 0 || work > 0 || total > 0) {
+                        sections[sectionId].mat += mat;
+                        sections[sectionId].work += work;
+                        sections[sectionId].total += total;
+                        sections[sectionId].count++;
                     }
-                });
-
-                if (hasValues) sections[sectionId].count++;
+                } catch (e) {
+                    console.warn('Parse calcData error in section:', e);
+                }
             });
 
             Object.keys(sections).forEach(sectionId => {
@@ -72,9 +77,9 @@
                 if (!totalsSpan) return;
 
                 if (data.count > 0) {
-                    const mat = Number(data['PRICE_FOR_ALL_MATERIAL'] || 0);
-                    const works = Number(data['PRICE_FOR_ALL_WORK'] || 0);
-                    const total = Number(data['TOTAL_PRICE'] || 0);
+                    const mat = data.mat;
+                    const works = data.work;
+                    const total = data.total;
 
                     const fmt = n => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                     totalsSpan.textContent = `(МАТ: ${fmt(mat)} | РАБ: ${fmt(works)} | Итого: ${fmt(total)})`;

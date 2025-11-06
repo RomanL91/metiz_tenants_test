@@ -30,7 +30,9 @@
             const tcId = parseInt(inpTC?.dataset.id || '0', 10) || 0;
             const qty = parseFloat((inpQty?.value || '').replace(',', '.')) || 0;
 
+            // Очищаем ячейки и данные
             tr.querySelectorAll('.opt-cell .sys').forEach(el => el.textContent = '—');
+            delete tr.dataset.calcData;
 
             if (!tcId || !isFinite(qty) || qty === 0) return;
 
@@ -41,14 +43,20 @@
                 if (!data.ok) return;
 
                 const calc = data.calc || {};
-                const cells = tr.querySelectorAll('.opt-cell');
 
-                this.CALC_ORDER.forEach((rid, idx) => {
-                    const td = cells[idx];
-                    if (!td) return;
+                // КРИТИЧНО: Сохраняем ПОЛНЫЕ данные расчёта в data-атрибут строки
+                tr.dataset.calcData = JSON.stringify(calc);
 
-                    const val = (calc[rid] != null)
-                        ? Number(calc[rid]).toLocaleString(undefined, { maximumFractionDigits: 4 })
+                // Заполняем ячейки ПО КЛЮЧУ (data-rid), а не по индексу!
+                tr.querySelectorAll('.opt-cell[data-rid]').forEach(td => {
+                    const rid = td.dataset.rid;
+                    if (!rid) return;
+
+                    // Проверяем, есть ли такой ключ в calc
+                    if (!(rid in calc)) return;
+
+                    const val = (calc[rid] != null && calc[rid] !== undefined)
+                        ? this._formatNumber(calc[rid])
                         : '—';
 
                     td.querySelector('.sys').textContent = val;
@@ -60,57 +68,97 @@
             }
         },
 
+        /**
+         * Безопасное форматирование чисел (включая большие суммы).
+         */
+        _formatNumber(value) {
+            if (value == null) return '—';
+
+            const num = Number(value);
+            if (!isFinite(num)) return '—';
+
+            // Для больших чисел используем более строгий формат
+            return num.toLocaleString('ru-RU', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+                useGrouping: true
+            });
+        },
+
+        /**
+         * Вычисление итогов из data-атрибутов строк (независимо от размеченных колонок).
+         * Читаем ПОЛНЫЕ данные расчёта, сохранённые бэкендом.
+         */
         computeBaseTotals() {
             const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-            const totals = {};
 
-            this.CALC_ORDER.forEach(rid => totals[rid] = 0);
+            // Фиксированные ключи для итогового табло (независимо от разметки)
+            const totals = {
+                PRICE_FOR_ALL_MATERIAL: 0,
+                PRICE_FOR_ALL_WORK: 0,
+                TOTAL_PRICE_WITHOUT_VAT: 0,
+                VAT_AMOUNT: 0,
+                TOTAL_PRICE: 0
+            };
 
             let calculatedRows = 0;
 
             rows.forEach(tr => {
-                const cells = tr.querySelectorAll('.opt-cell');
-                let hasValues = false;
+                if (tr.style.display === 'none') return;
 
-                this.CALC_ORDER.forEach((rid, idx) => {
-                    const cell = cells[idx];
-                    if (!cell) return;
+                // Читаем ПОЛНЫЕ данные из data-атрибута (где хранится весь calc)
+                const calcDataStr = tr.dataset.calcData;
+                if (!calcDataStr) return;
 
-                    const text = (cell.querySelector('.sys')?.textContent || '').trim();
-                    if (!text || text === '—') return;
+                try {
+                    const calc = JSON.parse(calcDataStr);
 
-                    const val = parseFloat(text.replace(/\s/g, '').replace(',', '.'));
-                    if (!isNaN(val)) {
-                        totals[rid] += val;
-                        hasValues = true;
+                    // Суммируем нужные ключи
+                    // Используем Number() вместо parseFloat() для точности с большими числами
+                    const mat = Number(calc.PRICE_FOR_ALL_MATERIAL || 0);
+                    const work = Number(calc.PRICE_FOR_ALL_WORK || 0);
+                    const withoutVat = Number(calc.TOTAL_PRICE_WITHOUT_VAT || 0);
+                    const vat = Number(calc.VAT_AMOUNT || 0);
+                    const withVat = Number(calc.TOTAL_PRICE || 0);
+
+                    if (mat > 0 || work > 0 || withoutVat > 0 || withVat > 0) {
+                        totals.PRICE_FOR_ALL_MATERIAL += mat;
+                        totals.PRICE_FOR_ALL_WORK += work;
+                        totals.TOTAL_PRICE_WITHOUT_VAT += withoutVat;
+                        totals.VAT_AMOUNT += vat;
+                        totals.TOTAL_PRICE += withVat;
+                        calculatedRows++;
                     }
-                });
-
-                if (hasValues) calculatedRows++;
+                } catch (e) {
+                    console.warn('Parse calcData error:', e);
+                }
             });
 
             return {
                 rows: rows.length,
                 calculatedRows,
-                baseMat: Number(totals['PRICE_FOR_ALL_MATERIAL'] || 0),
-                baseWorks: Number(totals['PRICE_FOR_ALL_WORK'] || 0),
-                totalWithoutVat: Number(totals['TOTAL_PRICE_WITHOUT_VAT'] || 0),
-                vatAmount: Number(totals['VAT_AMOUNT'] || 0),
-                totalWithVat: Number(totals['TOTAL_PRICE'] || 0)
+                baseMat: totals.PRICE_FOR_ALL_MATERIAL,
+                baseWorks: totals.PRICE_FOR_ALL_WORK,
+                totalWithoutVat: totals.TOTAL_PRICE_WITHOUT_VAT,
+                vatAmount: totals.VAT_AMOUNT,
+                totalWithVat: totals.TOTAL_PRICE
             };
         },
 
         renderMetricCards(container, cards) {
-            const fmt = n => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const card = (title, main, extraClass = '') => `
           <div class="metric-card ${extraClass}">
             <div class="metric-title">${title}</div>
-            <div class="metric-value">${fmt(main)}</div>
+            <div class="metric-value">${this._formatNumber(main)}</div>
           </div>`;
 
             container.innerHTML = cards.map(c => card(c.title, c.value, c.extraClass || '')).join('');
         },
 
+        /**
+         * Обновление итогового табло "📋 Текущие расчеты".
+         * Всегда показываем 5 метрик независимо от размеченных колонок.
+         */
         updateSummary() {
             const base = this.computeBaseTotals();
             const noteBase = document.getElementById('summary-note-base');
@@ -121,18 +169,14 @@
             }
 
             if (boxBase) {
+                // ВСЕГДА показываем ВСЕ метрики (даже если 0)
                 const cards = [
                     { title: 'Материалы', value: base.baseMat },
                     { title: 'Работы', value: base.baseWorks },
-                    { title: 'Итого (без НДС)', value: base.totalWithoutVat }
+                    { title: 'Итого (без НДС)', value: base.totalWithoutVat },
+                    { title: 'НДС', value: base.vatAmount, extraClass: base.vatAmount > 0 ? 'metric-vat' : '' },
+                    { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: base.totalWithVat > 0 ? 'metric-total' : '' }
                 ];
-
-                if (base.vatAmount > 0) {
-                    cards.push(
-                        { title: 'НДС', value: base.vatAmount, extraClass: 'metric-vat' },
-                        { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: 'metric-total' }
-                    );
-                }
 
                 this.renderMetricCards(boxBase, cards);
             }

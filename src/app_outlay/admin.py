@@ -24,6 +24,8 @@ from app_technical_cards.models import TechnicalCard as _TC
 from app_overhead_costs.models import OverheadCostContainer as _OHC
 from app_estimate_imports.services.schema_service import SchemaService as _SS
 
+from app_outlay.views.estimate_calc_view.utils_calc import DEFAULT_ORDER
+
 from app_outlay.utils import ExcelSheetReader
 from app_outlay.estimate_mapping_utils import (
     TechnicalCardDetector,
@@ -355,9 +357,17 @@ class EstimateAdmin(admin.ModelAdmin):
                 for rid in present_optional
             ]
 
+            # КРИТИЧНО: для JS-расчетов всегда передаём ПОЛНЫЙ порядок (DEFAULT_ORDER)
+            # чтобы итоговое табло работало независимо от разметки колонок
+            full_calc_order = list(DEFAULT_ORDER)
+
             for it in candidates_filtered:
                 raw = it.get("excel_optional") or {}
-                it["opt_values"] = [raw.get(col["id"], "") for col in optional_cols]
+                # Сохраняем и значения, и ID колонок
+                it["opt_values"] = [
+                    {"value": raw.get(col["id"], ""), "rid": col["id"]}
+                    for col in optional_cols
+                ]
 
             # --- 7) Формирование секций для UI
             cand_by_row = {it["row_index"]: it for it in candidates_filtered}
@@ -442,9 +452,10 @@ class EstimateAdmin(admin.ModelAdmin):
             {
                 "table_sections": table_sections,
                 "optional_cols": optional_cols,
-                "calc_order_json": json.dumps(
-                    [c["id"] for c in optional_cols], ensure_ascii=False
-                ),
+                # Передаём ПОЛНЫЙ порядок для корректной работы итогового табло
+                "calc_order_json": json.dumps(full_calc_order, ensure_ascii=False),
+                # Для UI таблицы — только размеченные колонки
+                "optional_cols_ids": [c["id"] for c in optional_cols],
                 "role_titles": role_titles,
                 "table_colspan": 4 + len(optional_cols),
                 "existing_mappings_json": json.dumps(
