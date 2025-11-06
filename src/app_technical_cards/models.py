@@ -280,16 +280,23 @@ class TechnicalCardVersion(models.Model):
         # 1) СЕБЕСТОИМОСТЬ (по снапшот-ценам версии)
         mats_sum = sum(
             (
-                Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
-            ).quantize(TWO, ROUND_HALF_UP)
-            for row in self.material_items.all()
+                (
+                    Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
+                ).quantize(TWO, ROUND_HALF_UP)
+                for row in self.material_items.all()
+            ),
+            Decimal("0"),
         )
         works_sum = sum(
             (
-                Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
-            ).quantize(TWO, ROUND_HALF_UP)
-            for row in self.work_items.all()
+                (
+                    Decimal(row.qty_per_unit or 0) * Decimal(row.price_per_unit or 0)
+                ).quantize(TWO, ROUND_HALF_UP)
+                for row in self.work_items.all()
+            ),
+            Decimal("0"),
         )
+
         total_cost = (mats_sum + works_sum).quantize(TWO, ROUND_HALF_UP)
 
         # 2) ПРОЦЕНТЫ (в доли)

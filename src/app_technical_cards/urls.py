@@ -6,6 +6,7 @@ from app_technical_cards.views import (
     TechnicalCardSearchWorksView,
     SaveNewVersionApiView,
     LiveCompositionApiView,
+    TechnicalCardDuplicateApiView,
 )
 
 app_name = "app_technical_cards"
@@ -31,5 +32,10 @@ urlpatterns = [
         "technical-cards/search/works/",
         TechnicalCardSearchWorksView.as_view(),
         name="tc-search-works",
+    ),
+    path(
+        "technical-cards/<int:pk>/duplicate/",
+        TechnicalCardDuplicateApiView.as_view(),
+        name="tc-duplicate",
     ),
 ]

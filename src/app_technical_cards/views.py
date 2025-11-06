@@ -53,12 +53,12 @@ from app_technical_cards.models import (
     TechnicalCardVersionMaterial,
     TechnicalCardVersionWork,
 )
-from app_materials.models import Material  # проверь название приложения
+from app_materials.models import Material
 from app_works.models import Work
 
 
 class _CompositionItemInSerializer(serializers.Serializer):
-    ref_id = serializers.IntegerField()  # id материала/работы
+    ref_id = serializers.IntegerField()
     qty = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=0)
 
 
@@ -91,10 +91,8 @@ class TechnicalCardSaveNewVersionView(APIView):
         with transaction.atomic():
             latest = getattr(tc, "latest_version", None)
 
-            # создаём новую версию с «снапшотом процентов» из головы ТК
             new_ver = TechnicalCardVersion.objects.create(
                 technical_card=tc,
-                # если номер версии у тебя автогенерируется сигналом — эти поля не нужны
                 version=(latest.version + 1) if latest else 1,
                 materials_markup_percent=tc.materials_markup_percent,
                 works_markup_percent=tc.works_markup_percent,
@@ -104,7 +102,6 @@ class TechnicalCardSaveNewVersionView(APIView):
                 note=data.get("note", ""),
             )
 
-            # материалы
             mat_ids = [i["ref_id"] for i in mat_items]
             mats = {m.id: m for m in Material.objects.filter(id__in=mat_ids)}
             tcv_mats = []
@@ -125,7 +122,6 @@ class TechnicalCardSaveNewVersionView(APIView):
             if tcv_mats:
                 TechnicalCardVersionMaterial.objects.bulk_create(tcv_mats)
 
-            # работы
             work_ids = [i["ref_id"] for i in work_items]
             wrks = {w.id: w for w in Work.objects.filter(id__in=work_ids)}
             tcv_wrks = []
@@ -158,8 +154,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import serializers, status
 
-from app_materials.models import Material  # проверь пути
-from app_works.models import Work  # проверь пути
+from app_materials.models import Material
+from app_works.models import Work
 
 
 class _SearchOutSerializer(serializers.Serializer):
@@ -196,7 +192,6 @@ class TechnicalCardSearchMaterialsView(APIView):
             "id", "name", "price_per_unit", "unit_ref__symbol"
         )[:limit]
 
-        # Преобразуем ключ 'unit_ref__symbol' → 'unit' для фронтенда
         data = [
             {
                 "id": r["id"],
@@ -261,7 +256,7 @@ from .services_versioning import create_version_from_payload
 
 
 class SaveNewVersionApiView(APIView):
-    permission_classes = [permissions.IsAuthenticated]  # по ситуации
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk: int):
         card = get_object_or_404(TechnicalCard, pk=pk)
@@ -283,7 +278,6 @@ def _to_decimal(x) -> Decimal:
 
 
 def _unit_label(u) -> str:
-    """Корректно отдать подпись единицы из Unit (поля у всех разные)."""
     if not u:
         return ""
     for attr in ("symbol", "short_name", "name", "code"):
@@ -303,7 +297,7 @@ class LiveCompositionApiView(APIView):
     - version_number
     """
 
-    permission_classes = [permissions.IsAuthenticated]  # при необходимости скорректируй
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk: int):
         card = get_object_or_404(TechnicalCard, pk=pk)
@@ -315,7 +309,6 @@ class LiveCompositionApiView(APIView):
             .first()
         )
 
-        # Если версий вообще нет — отдадим пустой состав (UI всё равно нужен)
         if not latest:
             payload = {
                 "version_number": 0,
@@ -347,7 +340,6 @@ class LiveCompositionApiView(APIView):
         work_live_sum = Decimal("0")
         work_ver_sum = Decimal("0")
 
-        # Материалы
         for row in mats_qs:
             qty = _to_decimal(row.qty_per_unit)
             ver_price = _to_decimal(row.price_per_unit)
@@ -375,7 +367,6 @@ class LiveCompositionApiView(APIView):
                 }
             )
 
-        # Работы
         for row in works_qs:
             qty = _to_decimal(row.qty_per_unit)
             ver_price = _to_decimal(row.price_per_unit)
@@ -421,3 +412,97 @@ class LiveCompositionApiView(APIView):
             },
         }
         return Response(payload, status=status.HTTP_200_OK)
+
+
+# ===================================================================================================
+from django.utils import timezone
+
+
+class TechnicalCardDuplicateApiView(APIView):
+    """
+    POST /api/v1/technical-cards/<pk>/duplicate/
+    → 201: {"id": <new_tc_id>, "name": "..."}
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk: int):
+        original_card = get_object_or_404(TechnicalCard, pk=pk)
+        original_version = getattr(original_card, "latest_version", None)
+
+        # Формируем имя с таймстемпом и обрезаем при необходимости
+        ts = timezone.localtime().strftime("%Y%m%d-%H%M%S")  # например: 20251107-021530
+        suffix = f" (копия {ts})"
+        max_len = TechnicalCard._meta.get_field("name").max_length or 255
+        base = original_card.name or ""
+        new_name = (base[: max_len - len(suffix)]) + suffix
+
+        with transaction.atomic():
+            # 1) создаём копию "головы" ТК
+            new_card = TechnicalCard.objects.create(
+                name=new_name,
+                unit_ref=original_card.unit_ref,
+                materials_markup_percent=original_card.materials_markup_percent,
+                works_markup_percent=original_card.works_markup_percent,
+                transport_costs_percent=original_card.transport_costs_percent,
+                materials_margin_percent=original_card.materials_margin_percent,
+                works_margin_percent=original_card.works_margin_percent,
+            )
+
+            # 2) копируем последнюю версию и её состав (если версия есть)
+            if original_version:
+                new_version = TechnicalCardVersion.objects.create(
+                    card=new_card,
+                    materials_markup_percent=original_version.materials_markup_percent,
+                    works_markup_percent=original_version.works_markup_percent,
+                    transport_costs_percent=original_version.transport_costs_percent,
+                    materials_margin_percent=original_version.materials_margin_percent,
+                    works_margin_percent=original_version.works_margin_percent,
+                    is_published=True,
+                )
+
+                # --- Материалы версии
+                mat_items = original_version.material_items.select_related(
+                    "material", "unit_ref"
+                ).all()
+                new_mats = []
+                for item in mat_items:
+                    mat_kwargs = dict(
+                        technical_card_version=new_version,
+                        material=item.material,
+                        unit_ref=item.unit_ref,  # ВАЖНО: NOT NULL
+                        qty_per_unit=item.qty_per_unit,
+                        order=item.order,
+                    )
+                    if hasattr(item, "price_per_unit"):
+                        mat_kwargs["price_per_unit"] = item.price_per_unit
+                    new_mats.append(TechnicalCardVersionMaterial(**mat_kwargs))
+                if new_mats:
+                    TechnicalCardVersionMaterial.objects.bulk_create(new_mats)
+
+                # --- Работы версии
+                work_items = original_version.work_items.select_related(
+                    "work", "unit_ref"
+                ).all()
+                new_works = []
+                for item in work_items:
+                    work_kwargs = dict(
+                        technical_card_version=new_version,
+                        work=item.work,
+                        unit_ref=item.unit_ref,  # ВАЖНО: NOT NULL
+                        qty_per_unit=item.qty_per_unit,
+                        order=item.order,
+                    )
+                    if hasattr(item, "price_per_unit"):
+                        work_kwargs["price_per_unit"] = item.price_per_unit
+                    new_works.append(TechnicalCardVersionWork(**work_kwargs))
+                if new_works:
+                    TechnicalCardVersionWork.objects.bulk_create(new_works)
+
+                # 3) пересчёт агрегатов по версии
+                new_version.recalc_totals(save=True)
+
+        return Response(
+            {"id": new_card.id, "name": new_card.name},
+            status=status.HTTP_201_CREATED,
+        )

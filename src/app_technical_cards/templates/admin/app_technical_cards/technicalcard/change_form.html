@@ -7,6 +7,15 @@
   <input type="hidden" name="_tc_initial_composition"  id="tc-initial-composition-input" value="">
 {% endblock %}
 
+{% block object-tools-items %}
+  {{ block.super }}
+  {% if original.pk %}
+  <li>
+    <a href="#" class="historylink" id="tc-duplicate-btn">{% trans "Дублировать ТК" %}</a>
+  </li>
+  {% endif %}
+{% endblock %}
+
 {% block extrastyle %}
   {{ block.super }}
   <style>
@@ -411,6 +420,15 @@
   (function() {
     'use strict';
 
+    // CSRF helper: пытаемся взять токен из скрытого поля формы админки,
+    // иначе — из cookie (если не httpOnly).
+    function getCsrfToken() {
+      const el = document.querySelector('input[name="csrfmiddlewaretoken"]');
+      if (el && el.value) return el.value;
+      const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+
     const tcId = {{ original.pk|default:"null" }};
     const isNew = !tcId;
 
@@ -457,6 +475,7 @@
     const API_LIVE = tcId ? `/api/v1/technical-cards/${tcId}/live-composition/` : null;
     const API_MATERIALS = "/api/v1/technical-cards/search/materials/";
     const API_WORKS     = "/api/v1/technical-cards/search/works/";
+    const API_DUPLICATE = tcId ? `/api/v1/technical-cards/${tcId}/duplicate/` : null;
 
     const toNum = (x)=> {
       if (x == null) return 0;
@@ -755,6 +774,38 @@
       attachSubmitHooks();
       unhideRealPercentFieldsOnError();
       if (isNew){ els.loading.style.display='none'; els.content.style.display=''; }
+
+      const dupBtn = document.getElementById('tc-duplicate-btn');
+      if (dupBtn) {
+        dupBtn.addEventListener('click', async function(e) {
+          e.preventDefault();
+          if (!confirm('Вы создаете копию данной ТК и будете перенаправлены на страницу копии.')) {
+            return;
+          }
+
+          dupBtn.style.opacity = '0.5';
+          dupBtn.style.pointerEvents = 'none';
+
+          try {
+            const response = await fetch(API_DUPLICATE, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+                'X-Requested-With': 'XMLHttpRequest'
+              },
+              body: '{}'
+            })
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            window.location.href = `/ru/admin/app_technical_cards/technicalcard/${data.id}/change/`;
+          } catch(err) {
+            alert('Ошибка при создании копии: ' + err.message);
+            dupBtn.style.opacity = ''; dupBtn.style.pointerEvents = '';
+          }
+        });
+      }
     }
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
   })();

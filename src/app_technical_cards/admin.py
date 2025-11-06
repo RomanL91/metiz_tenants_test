@@ -17,18 +17,18 @@ from .services_versioning import handle_tc_save
 
 class OnlySaveMediaMixin:
     class Media:
-        css = {"all": ("admin/css/only_save.css",)}
+        css = {"all": ("app_technical_cards/admin/css/only_save.css",)}
 
 
 class WithNestedIndentMedia:
     class Media:
         css = {
             "all": (
-                "admin/css/nested_indent.css",
-                "admin/css/entity_highlight.css",
-                "admin/css/entity_version_heading.css",
-                "admin/css/tc_highlights.css",
-                "admin/css/autocomplete.css",
+                "app_technical_cards/admin/css/nested_indent.css",
+                "app_technical_cards/admin/css/entity_highlight.css",
+                "app_technical_cards/admin/css/entity_version_heading.css",
+                "app_technical_cards/admin/css/tc_highlights.css",
+                "app_technical_cards/admin/css/autocomplete.css",
             ),
         }
 
@@ -262,6 +262,7 @@ class TechnicalCardAdmin(
         "works_margin_percent",
     )
     search_fields = ("name",)
+    save_on_top = True
     inlines = [TechnicalCardVersionNestedInline]
 
     fieldsets = (
