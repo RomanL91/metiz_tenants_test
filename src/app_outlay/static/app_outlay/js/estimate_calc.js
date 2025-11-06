@@ -169,14 +169,24 @@
             }
 
             if (boxBase) {
-                // ВСЕГДА показываем ВСЕ метрики (даже если 0)
+                // Базовые метрики (всегда показываем)
                 const cards = [
                     { title: 'Материалы', value: base.baseMat },
                     { title: 'Работы', value: base.baseWorks },
                     { title: 'Итого (без НДС)', value: base.totalWithoutVat },
-                    { title: 'НДС', value: base.vatAmount, extraClass: base.vatAmount > 0 ? 'metric-vat' : '' },
-                    { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: base.totalWithVat > 0 ? 'metric-total' : '' }
                 ];
+
+                // Проверяем состояние toggle НДС
+                const vatToggle = document.getElementById('toggle-vat-active');
+                const isVatActive = vatToggle ? vatToggle.checked : false;
+
+                // Показываем карточки НДС только если НДС активен
+                if (isVatActive) {
+                    cards.push(
+                        { title: 'НДС', value: base.vatAmount, extraClass: 'metric-vat' },
+                        { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: 'metric-total' }
+                    );
+                }
 
                 this.renderMetricCards(boxBase, cards);
             }
