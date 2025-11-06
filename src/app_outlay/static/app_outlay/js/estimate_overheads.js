@@ -117,12 +117,21 @@
 
             this.ohRows.innerHTML = '';
 
+            // URL для редактирования контейнера НР
+            const ohcUrlBase = window.OHC_CHANGE_URL_ZERO || '';
+
             (data?.links || []).forEach((l, idx) => {
                 const tr = document.createElement('tr');
                 tr.dataset.id = String(l.id);
+
+                // Формируем ссылку на контейнер НР
+                const nameHtml = ohcUrlBase && l.container_id
+                    ? `<a href="${ohcUrlBase.replace('/0/', '/' + l.container_id + '/')}" target="_blank" style="color:#0066cc;text-decoration:none">${l.name}</a>`
+                    : l.name;
+
                 tr.innerHTML = `
             <td class="col-slim">${idx + 1}</td>
-            <td class="col-wide">${l.name}${l.has_changes ? ' <span class="muted">(изменён)</span>' : ''}</td>
+            <td class="col-wide">${nameHtml}${l.has_changes ? ' <span class="muted">(изменён)</span>' : ''}</td>
             <td class="col-slim">${(l.snapshot_total || 0).toLocaleString()}</td>
             <td class="col-slim">${(l.current_total || 0).toLocaleString()}</td>
             <td class="col-slim">${(l.materials_pct || 0).toFixed(1)}%</td>

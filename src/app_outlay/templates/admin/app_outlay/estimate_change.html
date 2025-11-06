@@ -207,6 +207,7 @@
     window.ESTIMATE_EXISTING_MAPPINGS = JSON.parse('{{ existing_mappings_json|escapejs }}' || '{}');
     window.ESTIMATE_ID = {{ original.pk|default:'null' }};
     window.TC_CHANGE_URL_ZERO = '{{ tc_change_url_zero|escapejs }}';
+    window.OHC_CHANGE_URL_ZERO = '{{ ohc_change_url_zero|escapejs }}';
   </script>
 
   <!-- Подключение модулей -->

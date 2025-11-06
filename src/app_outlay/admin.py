@@ -21,12 +21,12 @@ from app_outlay.models import (
     EstimateOverheadCostLink,
 )
 from app_technical_cards.models import TechnicalCard as _TC
+from app_overhead_costs.models import OverheadCostContainer as _OHC
 from app_estimate_imports.services.schema_service import SchemaService as _SS
 
 from app_outlay.utils import ExcelSheetReader
 from app_outlay.estimate_mapping_utils import (
     TechnicalCardDetector,
-    GroupTreeBuilder,
     UnitNormalizer,
 )
 
@@ -431,6 +431,11 @@ class EstimateAdmin(admin.ModelAdmin):
             f"admin:{_TC._meta.app_label}_{_TC._meta.model_name}_change",
             args=[0],
         )
+        # URL для изменения контейнера НР
+        ohc_change_url_zero = reverse(
+            f"admin:{_OHC._meta.app_label}_{_OHC._meta.model_name}_change",
+            args=[0],
+        )
 
         # Финальный контекст
         extra.update(
@@ -446,6 +451,7 @@ class EstimateAdmin(admin.ModelAdmin):
                     existing_mappings, ensure_ascii=False
                 ),
                 "tc_change_url_zero": tc_change_url_zero,
+                "ohc_change_url_zero": ohc_change_url_zero,
             }
         )
 
