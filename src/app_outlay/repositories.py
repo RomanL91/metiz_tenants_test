@@ -247,17 +247,11 @@ class TechnicalCardRepository:
         Если передан ID карточки - возвращает последнюю опубликованную версию.
 
         Args:
-            tc_or_ver_id: ID версии или ID карточки
+            tc_or_ver_id: ID карточки
 
         Returns:
             TechnicalCardVersion или None
         """
-        # Сначала пробуем найти версию напрямую
-        version = TechnicalCardVersion.objects.filter(pk=tc_or_ver_id).first()
-        if version:
-            return version
-
-        # Если не найдено, ищем опубликованную версию по ID карточки
         return (
             TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
             .order_by("-created_at")
