@@ -171,7 +171,7 @@ class TechnicalCardCalculationService:
         Рассчитать показатели ТК с учётом НР и НДС.
 
         Args:
-            tc_id: ID технической карты или версии
+            tc_id: ID технической карты (card_id или legacy version_id)
             quantity: Количество
             overhead_context: Контекст НР+НДС (опционально)
 
@@ -183,13 +183,16 @@ class TechnicalCardCalculationService:
         Raises:
             TechnicalCardNotFoundError: Если ТК не найдена
         """
-        # Валидация существования ТК
-        if not self.tc_repo.version_exists(tc_id):
+        card_id = self.tc_repo.resolve_card_id(tc_id=tc_id)
+        if card_id is None:
+            raise TechnicalCardNotFoundError(tc_id)
+
+        if not self.tc_repo.get_latest_published_version(card_id):
             raise TechnicalCardNotFoundError(tc_id)
 
         # Делегируем расчёт в утилиту
         calc, order = calc_tc_util(
-            tc_or_ver_id=tc_id,
+            card_id=card_id,
             qty=quantity,
             overhead_context=overhead_context,
         )

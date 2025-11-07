@@ -372,6 +372,13 @@
 
                 if (!tcInput) return;
 
+                const existingMappings = (window.EstimateMappingsSave && window.EstimateMappingsSave.EXISTING_MAPPINGS) || {};
+                const existingMapping = existingMappings[String(result.row_index)];
+                if (existingMapping && existingMapping.tc_id) {
+                    // Сохраняем уже сохранённые сопоставления без изменений
+                    return;
+                }
+
                 if (result.matched_tc_id && result.matched_tc_text) {
                     // Устанавливаем значение
                     tcInput.value = result.matched_tc_text;

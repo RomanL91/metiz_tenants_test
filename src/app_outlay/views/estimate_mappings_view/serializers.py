@@ -9,10 +9,22 @@ class MappingItemSerializer(serializers.Serializer):
     """Элемент сопоставления."""
 
     section = serializers.CharField(default="Без группы")
-    tc_id = serializers.IntegerField(min_value=1)
+    tc_id = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    tc_version_id = serializers.IntegerField(
+        min_value=1, required=False, allow_null=True
+    )
     quantity = serializers.DecimalField(max_digits=18, decimal_places=6, min_value=0)
     row_index = serializers.IntegerField(min_value=1)
     tc_name = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        tc_id = attrs.get("tc_id")
+        tc_version_id = attrs.get("tc_version_id")
+        if not tc_id and not tc_version_id:
+            raise serializers.ValidationError(
+                "Не указан идентификатор технической карты"
+            )
+        return attrs
 
 
 class SaveMappingsRequestSerializer(serializers.Serializer):

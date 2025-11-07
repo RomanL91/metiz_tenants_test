@@ -14,7 +14,7 @@
 """
 
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, Optional
 from django.db.models import QuerySet
 
 from app_outlay.models import (
@@ -24,7 +24,7 @@ from app_outlay.models import (
 )
 from app_outlay.exceptions import EstimateNotFoundError
 from app_outlay.views.estimate_calc_view.utils_calc import _base_costs_live, _dec
-from app_technical_cards.models import TechnicalCardVersion
+from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 from core.base_repository import BaseRepository
 
 
@@ -107,7 +107,7 @@ class EstimateRepository(BaseRepository[Estimate]):
         Рассчитать базовые итоги (МАТ/РАБ) для всех ТК в смете.
 
         ВАЖНО: Этот метод используется для подготовки контекста НР.
-        Расчёт идёт по "живым" ценам из справочников (без надбавок).
+        Расчёт идёт по "живым" ценам из справочников (без надбавк).
 
         Args:
             estimate: Объект сметы
@@ -215,57 +215,55 @@ class OverheadCostRepository:
 
 
 class TechnicalCardRepository:
-    """
-    Репозиторий для работы с техническими картами.
-
-    Примечание:
-    Пока минимальный функционал, т.к. основная логика в utils_calc.py
-    """
+    """Репозиторий доступа к техническим картам и их версиям."""
 
     @staticmethod
-    def version_exists(tc_or_ver_id: int) -> bool:
-        """
-        Проверить существование версии ТК или карточки.
+    def card_exists(card_id: int) -> bool:
+        """Проверить существование карточки ТК."""
 
-        Args:
-            tc_or_ver_id: ID версии или ID карточки
-
-        Returns:
-            True если версия существует
-        """
-        # Проверяем как версию
-        if TechnicalCardVersion.objects.filter(pk=tc_or_ver_id).exists():
-            return True
-
-        # Проверяем как карточку (есть ли у неё версии)
-        return TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id).exists()
+        return TechnicalCard.objects.filter(pk=card_id).exists()
 
     @staticmethod
-    def get_published_version(tc_or_ver_id: int):
+    def resolve_card_id(
+        *, tc_id: Optional[int] = None, tc_version_id: Optional[int] = None
+    ) -> Optional[int]:
         """
-        Получить опубликованную версию ТК.
-        Поддерживает оба формата:
-        1. ID версии (приоритет) - для загрузки из БД
-        2. ID карточки (fallback) - для автосопоставления
+        Определить card_id на основе переданных идентификаторов.
 
-        Args:
-            tc_or_ver_id: ID версии ТК или ID карточки
-
-        Returns:
-            TechnicalCardVersion или None
+        Приоритет:
+        1. tc_id (card_id) — если карточка существует.
+        2. tc_id как legacy version_id — если карточки нет, но найдено совпадение по версии.
+        3. tc_version_id — явный legacy-параметр.
         """
 
-        # Сначала пробуем как ID версии (для загрузки из БД)
-        version = TechnicalCardVersion.objects.filter(
-            pk=tc_or_ver_id, is_published=True
-        ).first()
-        if version:
-            print(f"--- version --- >> {version}")
-            return version
+        if tc_id:
+            if TechnicalCard.objects.filter(pk=tc_id).exists():
+                return tc_id
 
-        # Если не найдено - ищем последнюю версию по ID карточки (для автосопоставления)
+            version = (
+                TechnicalCardVersion.objects.filter(pk=tc_id).only("card_id").first()
+            )
+            if version:
+                return version.card_id
+
+        if tc_version_id:
+            version = (
+                TechnicalCardVersion.objects.filter(pk=tc_version_id)
+                .only("card_id")
+                .first()
+            )
+            if version:
+                return version.card_id
+
+        return None
+
+    @staticmethod
+    def get_latest_published_version(card_id: int) -> Optional[TechnicalCardVersion]:
+        """Получить последнюю опубликованную версию для карточки."""
+
         return (
-            TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
-            .order_by("-created_at")
+            TechnicalCardVersion.objects.filter(card_id=card_id, is_published=True)
+            .select_related("card")
+            .order_by("-created_at", "-id")
             .first()
         )

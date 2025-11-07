@@ -25,7 +25,7 @@ class EstimateCalcQuerySerializer(serializers.Serializer):
     tc = serializers.IntegerField(
         required=True,
         min_value=1,
-        help_text="ID технической карты или версии ТК",
+        help_text="ID технической карты (card_id)",
         error_messages={
             "required": "Параметр 'tc' обязателен",
             "invalid": "Параметр 'tc' должен быть целым числом",

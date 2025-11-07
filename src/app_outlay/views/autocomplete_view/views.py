@@ -162,6 +162,8 @@ class TechnicalCardBatchMatchView(APIView):
                 "name": "Установка окна",
                 "unit": "шт",
                 "matched_tc_id": 123,
+                "matched_tc_card_id": 123,
+                "matched_tc_version_id": 456,
                 "matched_tc_text": "Установка окна ПВХ",
                 "similarity": 0.85
             },

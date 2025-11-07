@@ -178,7 +178,7 @@ def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
 
 
 def calc_for_tc(
-    tc_or_ver_id: int,
+    card_id: int,
     qty,
     overhead_context: Dict[str, object] | None = None,
 ) -> Tuple[Dict[str, Decimal], List[str]]:
@@ -208,7 +208,7 @@ def calc_for_tc(
     order = list(DEFAULT_ORDER)
     qty_dec = _dec(qty)
 
-    ver = _get_version(tc_or_ver_id)
+    ver = _get_version(card_id)
     if not ver:
         # Пустой ответ, если ТК/версия не найдены
         zero = _round2(Decimal("0"))

@@ -143,7 +143,9 @@ class BatchMatchResultSerializer(serializers.Serializer):
     - row_index: индекс строки
     - name: исходное название
     - unit: исходная единица
-    - matched_tc_id: ID найденной ТК (или null)
+    - matched_tc_id: ID найденной ТК (card_id, или null)
+    - matched_tc_card_id: явное поле card_id (для читаемости, или null)
+    - matched_tc_version_id: ID версии (опционально, или null)
     - matched_tc_text: название найденной ТК (или пустая строка)
     - similarity: коэффициент схожести (0.0 - 1.0)
     """
@@ -152,5 +154,7 @@ class BatchMatchResultSerializer(serializers.Serializer):
     name = serializers.CharField()
     unit = serializers.CharField()
     matched_tc_id = serializers.IntegerField(allow_null=True)
+    matched_tc_card_id = serializers.IntegerField(allow_null=True)
+    matched_tc_version_id = serializers.IntegerField(allow_null=True)
     matched_tc_text = serializers.CharField()
     similarity = serializers.FloatField()

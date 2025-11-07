@@ -231,10 +231,14 @@ class TCMatcher:
             result = item.copy()
             if tc_version:
                 result["matched_tc_id"] = tc_version.card_id
+                result["matched_tc_card_id"] = tc_version.card_id
+                result["matched_tc_version_id"] = tc_version.id
                 result["matched_tc_text"] = str(tc_version.card.name)
                 result["similarity"] = round(similarity, 2)
             else:
                 result["matched_tc_id"] = None
+                result["matched_tc_card_id"] = None
+                result["matched_tc_version_id"] = None
                 result["matched_tc_text"] = ""
                 result["similarity"] = 0.0
 
@@ -312,6 +316,8 @@ class TCMatcher:
 
         # Базовые значения
         result["matched_tc_id"] = None
+        result["matched_tc_card_id"] = None
+        result["matched_tc_version_id"] = None
         result["matched_tc_text"] = ""
         result["similarity"] = 0.0
 
@@ -330,6 +336,8 @@ class TCMatcher:
                     version = versions_map.get(card.id)
                     if version:
                         result["matched_tc_id"] = card.id
+                        result["matched_tc_card_id"] = card.id
+                        result["matched_tc_version_id"] = version.id
                         result["matched_tc_text"] = card.name
                         result["similarity"] = 1.0
                         return result
@@ -376,6 +384,8 @@ class TCMatcher:
             version = versions_map.get(best_card_id)
             if version:
                 result["matched_tc_id"] = best_card_id
+                result["matched_tc_card_id"] = best_card_id
+                result["matched_tc_version_id"] = version.id
                 result["matched_tc_text"] = version.card.name
                 result["similarity"] = round(best_score, 2)
 

@@ -41,7 +41,7 @@ class EstimateCalcAPIView(APIView):
     **Endpoint:** GET /api/estimate/{estimate_id}/calc/
 
     **Query Parameters:**
-    - tc (required): ID технической карты или версии
+    - tc (required): ID технической карты (card_id)
     - qty (required): Количество (поддерживает запятую и точку)
 
     **Response Format:**
@@ -102,7 +102,7 @@ class EstimateCalcAPIView(APIView):
                 type=OpenApiTypes.INT,
                 location=OpenApiParameter.QUERY,
                 required=True,
-                description="ID технической карты или версии ТК",
+                description="ID технической карты (card_id)",
             ),
             OpenApiParameter(
                 name="qty",
