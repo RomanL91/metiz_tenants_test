@@ -86,11 +86,17 @@ class MappingSaveService:
             "deleted": 0,
         }
 
-        # Удаление
-        if deletions:
+        # КРИТИЧНО: Удаляем ВСЕ старые линки с указанными row_index из ВСЕЙ сметы
+        # (не только из deletions, но и из mappings для предотвращения дубликатов)
+        all_row_indices = set(deletions)
+        all_row_indices.update(
+            m.get("row_index") for m in mappings if m.get("row_index")
+        )
+
+        if all_row_indices:
             deleted_count, _ = GroupTechnicalCardLink.objects.filter(
                 group__estimate=estimate,
-                source_row_index__in=deletions,
+                source_row_index__in=all_row_indices,
             ).delete()
             stats["deleted"] = deleted_count
 
@@ -139,24 +145,14 @@ class MappingSaveService:
                 if not tc_version:
                     continue
 
-                existing_link = GroupTechnicalCardLink.objects.filter(
-                    group=group, source_row_index=row_index
-                ).first()
-
-                if existing_link:
-                    existing_link.technical_card_version = tc_version
-                    existing_link.quantity = quantity
-                    existing_link.order = idx
-                    existing_link.save()
-                    updated_count += 1
-                else:
-                    GroupTechnicalCardLink.objects.create(
-                        group=group,
-                        technical_card_version=tc_version,
-                        quantity=quantity,
-                        order=idx,
-                        source_row_index=row_index,
-                    )
-                    created_count += 1
+                # Всегда создаём новые линки (старые удалены выше)
+                GroupTechnicalCardLink.objects.create(
+                    group=group,
+                    technical_card_version=tc_version,
+                    quantity=quantity,
+                    order=idx,
+                    source_row_index=row_index,
+                )
+                created_count += 1
 
         return created_count, updated_count
