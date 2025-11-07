@@ -431,6 +431,9 @@ class EstimateAdmin(admin.ModelAdmin):
                 for link in links_qs:
                     if link.source_row_index:
                         existing_mappings[link.source_row_index] = {
+                            # всегда кладём ID карточки
+                            "tc_id": link.technical_card_version.card_id,
+                            # Legacy для совместимости (если где-то ещё используется)
                             "tc_version_id": link.technical_card_version_id,
                             "tc_name": link.technical_card_version.card.name,
                             "quantity": float(link.quantity),
