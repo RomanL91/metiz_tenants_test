@@ -214,15 +214,17 @@
                 const tcInput = tr.querySelector('.js-tc-autocomplete');
                 const qtyInput = tr.querySelector('.qty-input');
 
-                if (tcInput && mapping.tc_id && mapping.tc_name) {
+                // КРИТИЧНО: Используем tc_version_id (ID версии), а не tc_id (ID карточки)
+                const tcId = mapping.tc_version_id || mapping.tc_id;
+                if (tcInput && tcId && mapping.tc_name) {
                     tcInput.value = mapping.tc_name;
-                    tcInput.dataset.id = mapping.tc_id;
+                    tcInput.dataset.id = tcId;
                     tcInput.dataset.text = mapping.tc_name;
                     tcInput.style.background = '#e7f3ff';
 
                     const openLink = tcInput.parentElement?.querySelector('.tc-open-link');
                     if (openLink) {
-                        const id = parseInt(mapping.tc_id || '0', 10) || 0;
+                        const id = parseInt(tcId || '0', 10) || 0;
                         if (id > 0) {
                             openLink.href = window.tcChangeUrl ? window.tcChangeUrl(id) : '#';
                             openLink.style.display = 'block';
@@ -240,7 +242,7 @@
                     qtyInput.value = mapping.quantity;
                 }
 
-                if (mapping.tc_id && mapping.quantity > 0) {
+                if (tcId && mapping.quantity > 0) {
                     calcPromises.push(this.triggerRowCalc(tr));
                 }
             });

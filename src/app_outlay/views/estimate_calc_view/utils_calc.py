@@ -65,38 +65,27 @@ class UnitCosts:
 
 def _get_version(tc_or_ver_id: int) -> Optional[TechnicalCardVersion]:
     """
-    Возвращает ПОСЛЕДНЮЮ ОПУБЛИКОВАННУЮ версию ТК.
-
-    Логика:
-    1. Если tc_or_ver_id - это ID TechnicalCard → берём последнюю опубликованную версию
-    2. Если tc_or_ver_id - это ID конкретной TechnicalCardVersion → берём её карточку, затем последнюю версию
-
-    ВАЖНО: Цены берутся из живых справочников, архитектура (qty) - из последней версии.
+    Возвращает опубликованную версию ТК по следующему правилу:
+    1) Если tc_or_ver_id — это ID конкретной TechnicalCardVersion и она опубликована → вернуть её.
+    2) Иначе трактуем tc_or_ver_id как ID TechnicalCard и берём её последнюю опубликованную версию.
     """
 
-    # Сначала пробуем найти версию по ID
-    existing_version = (
-        TechnicalCardVersion.objects.filter(pk=tc_or_ver_id)
+    # 1) Прямая отгрузка по ID версии (только опубликованные)
+    v = (
+        TechnicalCardVersion.objects.filter(pk=tc_or_ver_id, is_published=True)
         .select_related("card")
         .first()
     )
+    if v:
+        return v
 
-    if existing_version:
-        # Нашли версию → берём её карточку и ищем последнюю опубликованную версию этой карточки
-        card_id = existing_version.card_id
-    else:
-        # Не нашли версию → считаем что передали ID карточки
-        card_id = tc_or_ver_id
-
-    # Возвращаем ПОСЛЕДНЮЮ опубликованную версию карточки
-    latest_version = (
-        TechnicalCardVersion.objects.filter(card_id=card_id, is_published=True)
+    # 2) Иначе — это ID карточки: берём её latest published
+    return (
+        TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
         .order_by("-created_at", "-id")
         .select_related("card")
         .first()
     )
-
-    return latest_version
 
 
 # --- БАЗА: «ЖИВЫЕ» ЦЕНЫ ИЗ СПРАВОЧНИКОВ ---------------------------------------

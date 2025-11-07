@@ -244,14 +244,26 @@ class TechnicalCardRepository:
     def get_published_version(tc_or_ver_id: int):
         """
         Получить опубликованную версию ТК.
-        Если передан ID карточки - возвращает последнюю опубликованную версию.
+        Поддерживает оба формата:
+        1. ID версии (приоритет) - для загрузки из БД
+        2. ID карточки (fallback) - для автосопоставления
 
         Args:
-            tc_or_ver_id: ID карточки
+            tc_or_ver_id: ID версии ТК или ID карточки
 
         Returns:
             TechnicalCardVersion или None
         """
+
+        # Сначала пробуем как ID версии (для загрузки из БД)
+        version = TechnicalCardVersion.objects.filter(
+            pk=tc_or_ver_id, is_published=True
+        ).first()
+        if version:
+            print(f"--- version --- >> {version}")
+            return version
+
+        # Если не найдено - ищем последнюю версию по ID карточки (для автосопоставления)
         return (
             TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
             .order_by("-created_at")

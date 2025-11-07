@@ -431,7 +431,7 @@ class EstimateAdmin(admin.ModelAdmin):
                 for link in links_qs:
                     if link.source_row_index:
                         existing_mappings[link.source_row_index] = {
-                            "tc_id": link.technical_card_version.card_id,
+                            "tc_version_id": link.technical_card_version_id,
                             "tc_name": link.technical_card_version.card.name,
                             "quantity": float(link.quantity),
                         }
