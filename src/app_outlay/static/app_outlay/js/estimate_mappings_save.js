@@ -87,14 +87,14 @@
 
                 if (!tcInput || !qtyInput || !rowIndex) return;
 
-                const verId = parseInt(tcInput.dataset.id || '0', 10) || 0;  // dataset.id = ID ВЕРСИИ
+                const cardId = parseInt(tcInput.dataset.id || '0', 10) || 0;  // dataset.id = ID КАРТОЧКИ
                 const quantity = parseFloat((qtyInput.value || '0').replace(',', '.')) || 0;
                 const hadMapping = (this.EXISTING_MAPPINGS[String(rowIndex)] != null);
 
-                if (verId > 0 && quantity > 0) {
+                if (cardId > 0 && quantity > 0) {
                     mappings.push({
                         section: currentSection,
-                        tc_version_id: verId,
+                        tc_id: cardId,
                         quantity,
                         row_index: rowIndex,
                         tc_name: tcInput.value
