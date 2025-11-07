@@ -136,23 +136,30 @@ class MappingSaveService:
             for idx, item in enumerate(items):
                 row_index = item.get("row_index")
 
-                ver_id = item.get("tc_version_id")
-                tc_id = item.get("tc_id")  # backward-compat
+                tc_id = item.get("tc_id")  # НОВОЕ: card_id — теперь основной
+                ver_id = item.get(
+                    "tc_version_id"
+                )  # legacy (поддерживаем ради совместимости)
                 quantity = Decimal(str(item.get("quantity", 0)))
-                if (not ver_id and not tc_id) or quantity <= 0:
+                if (not tc_id and not ver_id) or quantity <= 0:
                     continue
 
+                # НОВОЕ ПРАВИЛО:
+                # 1) Если есть tc_id (card_id) — всегда берём latest published по карточке
+                # 2) Если прилетел legacy tc_version_id — сводим к card_id и тоже берём latest published
                 tc_version = None
-                if ver_id:
-                    # жёстко по версии
+                if tc_id:
+                    tc_version = self.tc_repo.get_published_version(tc_id)
+                elif ver_id:
                     from app_technical_cards.models import TechnicalCardVersion
 
-                    tc_version = TechnicalCardVersion.objects.filter(
-                        pk=ver_id, is_published=True
-                    ).first()
-                elif tc_id:
-                    # бэкап — как раньше (по карточке -> latest опубликованная)
-                    tc_version = self.tc_repo.get_published_version(tc_id)
+                    v = (
+                        TechnicalCardVersion.objects.filter(pk=ver_id)
+                        .only("card_id")
+                        .first()
+                    )
+                    if v:
+                        tc_version = self.tc_repo.get_published_version(v.card_id)
 
                 if not tc_version:
                     continue

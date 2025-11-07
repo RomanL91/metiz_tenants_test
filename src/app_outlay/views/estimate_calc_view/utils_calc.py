@@ -63,30 +63,20 @@ class UnitCosts:
 # --- ДОСТАВАНИЕ ВЕРСИИ ТК ------------------------------------------------------
 
 
-def _get_version(tc_or_ver_id: int) -> Optional[TechnicalCardVersion]:
+def _get_version(card_id: int) -> TechnicalCardVersion | None:
     """
-    Если передан ID ВЕРСИИ — вернуть ИМЕННО ЕЁ.
-    Если передан ID КАРТОЧКИ — вернуть ПОСЛЕДНЮЮ опубликованную её версию.
+    Всегда трактуем входной tc как ID КАРТОЧКИ.
+    Возвращаем её последнюю опубликованную версию.
     """
-    # 1) Пытаемся как ID версии
-    v = (
-        TechnicalCardVersion.objects.filter(pk=tc_or_ver_id, is_published=True)
+    card_exists = TechnicalCard.objects.filter(pk=card_id).exists()
+    if not card_exists:
+        return None
+    return (
+        TechnicalCardVersion.objects.filter(card_id=card_id, is_published=True)
         .select_related("card")
+        .order_by("-created_at", "-id")
         .first()
     )
-    if v:
-        print(f"--- [_get_version] mode=version id={v.id} card_id={v.card_id}")
-        return v
-
-    # 2) Иначе — как ID карточки
-    v = (
-        TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
-        .select_related("card")
-        .order_by("-created_at")
-        .first()
-    )
-    print(f"--- [_get_version] mode=card card_id={tc_or_ver_id} -> version={v}")
-    return v
 
 
 # --- БАЗА: «ЖИВЫЕ» ЦЕНЫ ИЗ СПРАВОЧНИКОВ ---------------------------------------

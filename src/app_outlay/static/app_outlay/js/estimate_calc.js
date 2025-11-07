@@ -214,8 +214,11 @@
                 const tcInput = tr.querySelector('.js-tc-autocomplete');
                 const qtyInput = tr.querySelector('.qty-input');
 
-                // КРИТИЧНО: Используем tc_version_id (ID версии), а не tc_id (ID карточки)
-                const tcId = mapping.tc_version_id || mapping.tc_id;
+                // НОВОЕ: всегда используем ID КАРТОЧКИ (tc_id).
+                // Legacy-путь: если пришёл tc_version_id — его нужно конвертировать в card_id на бэке,
+                // но на фронте dataset.id мы заполняем ТОЛЬКО card_id (mapping.tc_id).
+                const tcId = mapping.tc_id || 0;
+
                 if (tcInput && tcId && mapping.tc_name) {
                     tcInput.value = mapping.tc_name;
                     tcInput.dataset.id = tcId;
