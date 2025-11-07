@@ -134,14 +134,26 @@ class MappingSaveService:
             )
 
             for idx, item in enumerate(items):
-                tc_id = item.get("tc_id")
-                quantity = Decimal(str(item.get("quantity", 0)))
                 row_index = item.get("row_index")
 
-                if not tc_id or quantity <= 0:
+                ver_id = item.get("tc_version_id")
+                tc_id = item.get("tc_id")  # backward-compat
+                quantity = Decimal(str(item.get("quantity", 0)))
+                if (not ver_id and not tc_id) or quantity <= 0:
                     continue
 
-                tc_version = self.tc_repo.get_published_version(tc_id)
+                tc_version = None
+                if ver_id:
+                    # жёстко по версии
+                    from app_technical_cards.models import TechnicalCardVersion
+
+                    tc_version = TechnicalCardVersion.objects.filter(
+                        pk=ver_id, is_published=True
+                    ).first()
+                elif tc_id:
+                    # бэкап — как раньше (по карточке -> latest опубликованная)
+                    tc_version = self.tc_repo.get_published_version(tc_id)
+
                 if not tc_version:
                     continue
 

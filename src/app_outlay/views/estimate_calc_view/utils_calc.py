@@ -65,27 +65,28 @@ class UnitCosts:
 
 def _get_version(tc_or_ver_id: int) -> Optional[TechnicalCardVersion]:
     """
-    Возвращает опубликованную версию ТК по следующему правилу:
-    1) Если tc_or_ver_id — это ID конкретной TechnicalCardVersion и она опубликована → вернуть её.
-    2) Иначе трактуем tc_or_ver_id как ID TechnicalCard и берём её последнюю опубликованную версию.
+    Если передан ID ВЕРСИИ — вернуть ИМЕННО ЕЁ.
+    Если передан ID КАРТОЧКИ — вернуть ПОСЛЕДНЮЮ опубликованную её версию.
     """
-
-    # 1) Прямая отгрузка по ID версии (только опубликованные)
+    # 1) Пытаемся как ID версии
     v = (
         TechnicalCardVersion.objects.filter(pk=tc_or_ver_id, is_published=True)
         .select_related("card")
         .first()
     )
     if v:
+        print(f"--- [_get_version] mode=version id={v.id} card_id={v.card_id}")
         return v
 
-    # 2) Иначе — это ID карточки: берём её latest published
-    return (
+    # 2) Иначе — как ID карточки
+    v = (
         TechnicalCardVersion.objects.filter(card_id=tc_or_ver_id, is_published=True)
-        .order_by("-created_at", "-id")
         .select_related("card")
+        .order_by("-created_at")
         .first()
     )
+    print(f"--- [_get_version] mode=card card_id={tc_or_ver_id} -> version={v}")
+    return v
 
 
 # --- БАЗА: «ЖИВЫЕ» ЦЕНЫ ИЗ СПРАВОЧНИКОВ ---------------------------------------
