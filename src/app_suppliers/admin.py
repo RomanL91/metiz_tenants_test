@@ -9,7 +9,6 @@ class SupplierAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "supplier_type",
-        "tax_id_formatted",
         "vat_registered",
         "phone",
         "email",
@@ -18,7 +17,7 @@ class SupplierAdmin(admin.ModelAdmin):
     list_display_links = ("name",)
     list_editable = ("vat_registered", "is_active")
     list_filter = ("supplier_type", "vat_registered", "is_active")
-    search_fields = ("name", "legal_name", "tax_id", "phone", "email", "website")
+    search_fields = ("name", "legal_name", "phone", "email", "website")
     ordering = ("name", "id")
     list_per_page = 50
     empty_value_display = "—"
@@ -26,8 +25,10 @@ class SupplierAdmin(admin.ModelAdmin):
     # Форма
     readonly_fields = ("created_at", "updated_at")
     fieldsets = (
-        (_("Основное"), {"fields": ("name", "legal_name", "supplier_type")}),
-        (_("Реквизиты"), {"fields": ("tax_id", "vat_registered")}),
+        (
+            _("Основное"),
+            {"fields": ("name", "legal_name", "supplier_type", "vat_registered")},
+        ),
         (_("Контакты"), {"fields": ("phone", "email", "website")}),
         (_("Прочее"), {"fields": ("notes", "is_active")}),
         (
@@ -42,14 +43,6 @@ class SupplierAdmin(admin.ModelAdmin):
     # Удобства
     save_on_top = True
     save_as = True
-
-    # Красивый вывод БИН/ИИН
-    @admin.display(description=_("БИН/ИИН"))
-    def tax_id_formatted(self, obj: Supplier) -> str:
-        tid = (obj.tax_id or "").strip()
-        if len(tid) == 12 and tid.isdigit():
-            return f"{tid[0:3]} {tid[3:6]} {tid[6:9]} {tid[9:12]}"
-        return tid or "—"
 
     # Действия
     actions = [

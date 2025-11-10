@@ -1,5 +1,4 @@
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.db.models import Q, UniqueConstraint
 from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
@@ -35,16 +34,6 @@ class Supplier(models.Model):
         default=SupplierType.LEGAL,
         verbose_name=_("Тип поставщика"),
         help_text=_("Юрлицо / ИП / Физлицо."),
-    )
-    tax_id = models.CharField(
-        max_length=10,
-        blank=True,
-        default="",
-        verbose_name=_("ИНН"),
-        help_text=_("10 цифр, если известен."),
-        validators=[
-            RegexValidator(regex=r"^\d{10}$", message=_("Должно быть 10 цифр."))
-        ],
     )
 
     # НДС: статус и дефолтная ставка для материалов этого поставщика
@@ -107,16 +96,10 @@ class Supplier(models.Model):
                 Lower("name"),
                 name="uniq_supplier_name_ci",
             ),
-            # уникальность БИН/ИИН, если заполнен
-            UniqueConstraint(
-                fields=["tax_id"],
-                name="uniq_supplier_tax_id_nonempty",
-                condition=~Q(tax_id=""),
-            ),
         ]
 
     def __str__(self) -> str:
         base = self.name
-        if self.tax_id:
-            return f"{base} ({self.tax_id})"
+        if self.legal_name:
+            return f"{base} ({self.legal_name})"
         return base
