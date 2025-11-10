@@ -21,6 +21,15 @@ RID_TOTAL_PRICE = "TOTAL_PRICE"  # Итого сумма (× qty)
 RID_TOTAL_PRICE_WITHOUT_VAT = "TOTAL_PRICE_WITHOUT_VAT"  # Итого без НДС
 RID_VAT_AMOUNT = "VAT_AMOUNT"  # Сумма НДС
 
+# Дополнительные ключи для хранения базовых значений без НДС (для табло/экспорта)
+RID_UNIT_PRICE_OF_MATERIAL_WITHOUT_VAT = "UNIT_PRICE_OF_MATERIAL_WITHOUT_VAT"
+RID_UNIT_PRICE_OF_WORK_WITHOUT_VAT = "UNIT_PRICE_OF_WORK_WITHOUT_VAT"
+RID_UNIT_PRICE_OF_MATERIALS_AND_WORKS_WITHOUT_VAT = (
+    "UNIT_PRICE_OF_MATERIALS_AND_WORKS_WITHOUT_VAT"
+)
+RID_PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT = "PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT"
+RID_PRICE_FOR_ALL_WORK_WITHOUT_VAT = "PRICE_FOR_ALL_WORK_WITHOUT_VAT"
+
 DEFAULT_ORDER: List[str] = [
     RID_UNIT_PRICE_OF_MATERIAL,
     RID_UNIT_PRICE_OF_WORK,
@@ -280,14 +289,14 @@ def calc_for_tc(
     add_mat_per_unit = (oh_mat_line / qty_dec) if qty_dec > 0 else Decimal("0")
     add_work_per_unit = (oh_work_line / qty_dec) if qty_dec > 0 else Decimal("0")
 
-    unit_mat = _round2(sale_mat + add_mat_per_unit)
-    unit_work = _round2(sale_work + add_work_per_unit)
-    unit_both = _round2(unit_mat + unit_work)
+    base_unit_mat = _round2(sale_mat + add_mat_per_unit)
+    base_unit_work = _round2(sale_work + add_work_per_unit)
+    base_unit_both = _round2(base_unit_mat + base_unit_work)
 
     # 5) Итоги по количеству (точное сложение «продажа×qty + НР_строки»)
-    sum_mat = _round2(sale_mat * qty_dec + oh_mat_line)
-    sum_work = _round2(sale_work * qty_dec + oh_work_line)
-    total_without_vat = _round2(sum_mat + sum_work)
+    base_sum_mat = _round2(sale_mat * qty_dec + oh_mat_line)
+    base_sum_work = _round2(sale_work * qty_dec + oh_work_line)
+    total_without_vat = _round2(base_sum_mat + base_sum_work)
 
     # 6) Применяем НДС к TOTAL_PRICE (последний шаг)
     vat_active = (
@@ -298,9 +307,25 @@ def calc_for_tc(
     vat_amount = Decimal("0")
     total_with_vat = total_without_vat
 
+    unit_mat = base_unit_mat
+    unit_work = base_unit_work
+    unit_both = base_unit_both
+    sum_mat = base_sum_mat
+    sum_work = base_sum_work
+
     if vat_active and vat_rate > 0:
-        vat_amount = _round2(total_without_vat * (_dec(vat_rate) / Decimal("100")))
-        total_with_vat = _round2(total_without_vat + vat_amount)
+        rate_fraction = _dec(vat_rate) / Decimal("100")
+        multiplier = Decimal("1") + rate_fraction
+
+        unit_mat = _round2(base_unit_mat * multiplier)
+        unit_work = _round2(base_unit_work * multiplier)
+        unit_both = _round2(base_unit_both * multiplier)
+
+        sum_mat = _round2(base_sum_mat * multiplier)
+        sum_work = _round2(base_sum_work * multiplier)
+
+        total_with_vat = _round2(sum_mat + sum_work)
+        vat_amount = _round2(total_with_vat - total_without_vat)
 
     calc = {
         RID_UNIT_PRICE_OF_MATERIAL: unit_mat,
@@ -311,5 +336,10 @@ def calc_for_tc(
         RID_TOTAL_PRICE_WITHOUT_VAT: total_without_vat,
         RID_VAT_AMOUNT: vat_amount,
         RID_TOTAL_PRICE: total_with_vat,
+        RID_UNIT_PRICE_OF_MATERIAL_WITHOUT_VAT: base_unit_mat,
+        RID_UNIT_PRICE_OF_WORK_WITHOUT_VAT: base_unit_work,
+        RID_UNIT_PRICE_OF_MATERIALS_AND_WORKS_WITHOUT_VAT: base_unit_both,
+        RID_PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT: base_sum_mat,
+        RID_PRICE_FOR_ALL_WORK_WITHOUT_VAT: base_sum_work,
     }
     return calc, order

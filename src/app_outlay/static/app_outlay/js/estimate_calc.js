@@ -98,7 +98,9 @@
                 PRICE_FOR_ALL_WORK: 0,
                 TOTAL_PRICE_WITHOUT_VAT: 0,
                 VAT_AMOUNT: 0,
-                TOTAL_PRICE: 0
+                TOTAL_PRICE: 0,
+                PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT: 0,
+                PRICE_FOR_ALL_WORK_WITHOUT_VAT: 0
             };
 
             let calculatedRows = 0;
@@ -117,6 +119,10 @@
                     // Используем Number() вместо parseFloat() для точности с большими числами
                     const mat = Number(calc.PRICE_FOR_ALL_MATERIAL || 0);
                     const work = Number(calc.PRICE_FOR_ALL_WORK || 0);
+
+                    const matBase = Number(calc.PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT ?? calc.PRICE_FOR_ALL_MATERIAL ?? 0);
+                    const workBase = Number(calc.PRICE_FOR_ALL_WORK_WITHOUT_VAT ?? calc.PRICE_FOR_ALL_WORK ?? 0);
+
                     const withoutVat = Number(calc.TOTAL_PRICE_WITHOUT_VAT || 0);
                     const vat = Number(calc.VAT_AMOUNT || 0);
                     const withVat = Number(calc.TOTAL_PRICE || 0);
@@ -127,6 +133,8 @@
                         totals.TOTAL_PRICE_WITHOUT_VAT += withoutVat;
                         totals.VAT_AMOUNT += vat;
                         totals.TOTAL_PRICE += withVat;
+                        totals.PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT += matBase;
+                        totals.PRICE_FOR_ALL_WORK_WITHOUT_VAT += workBase;
                         calculatedRows++;
                     }
                 } catch (e) {
@@ -137,8 +145,10 @@
             return {
                 rows: rows.length,
                 calculatedRows,
-                baseMat: totals.PRICE_FOR_ALL_MATERIAL,
-                baseWorks: totals.PRICE_FOR_ALL_WORK,
+                materialsWithoutVat: totals.PRICE_FOR_ALL_MATERIAL_WITHOUT_VAT,
+                worksWithoutVat: totals.PRICE_FOR_ALL_WORK_WITHOUT_VAT,
+                materialsWithVat: totals.PRICE_FOR_ALL_MATERIAL,
+                worksWithVat: totals.PRICE_FOR_ALL_WORK,
                 totalWithoutVat: totals.TOTAL_PRICE_WITHOUT_VAT,
                 vatAmount: totals.VAT_AMOUNT,
                 totalWithVat: totals.TOTAL_PRICE
@@ -163,32 +173,54 @@
             const base = this.computeBaseTotals();
             const noteBase = document.getElementById('summary-note-base');
             const boxBase = document.getElementById('metrics-base');
+            const vatSection = document.getElementById('summary-section-with-vat');
+            const vatBox = document.getElementById('metrics-vat');
+            const vatNote = document.getElementById('summary-note-vat');
 
             if (noteBase) {
                 noteBase.textContent = `Рассчитано строк: ${base.calculatedRows} из ${base.rows}`;
             }
 
             if (boxBase) {
-                // Базовые метрики (всегда показываем)
                 const cards = [
-                    { title: 'Материалы', value: base.baseMat },
-                    { title: 'Работы', value: base.baseWorks },
-                    { title: 'Итого (без НДС)', value: base.totalWithoutVat },
+                    { title: 'Материалы', value: base.materialsWithoutVat },
+                    { title: 'Работы', value: base.worksWithoutVat },
+                    { title: 'Итого (без НДС)', value: base.totalWithoutVat, extraClass: 'metric-total' },
                 ];
 
                 // Проверяем состояние toggle НДС
                 const vatToggle = document.getElementById('toggle-vat-active');
                 const isVatActive = vatToggle ? vatToggle.checked : false;
 
-                // Показываем карточки НДС только если НДС активен
-                if (isVatActive) {
-                    cards.push(
-                        { title: 'НДС', value: base.vatAmount, extraClass: 'metric-vat' },
-                        { title: 'ИТОГО с НДС', value: base.totalWithVat, extraClass: 'metric-total' }
-                    );
-                }
-
                 this.renderMetricCards(boxBase, cards);
+
+                if (vatSection && vatBox) {
+                    if (isVatActive) {
+                        vatSection.style.display = '';
+
+                        if (vatNote) {
+                            const rate = window.EstimateVat?.currentRate ?? 0;
+                            vatNote.textContent = rate ? `Ставка НДС: ${rate}%` : '';
+                        }
+
+                        const vatCards = [
+                            { title: 'Материалы', value: base.materialsWithVat },
+                            { title: 'Работы', value: base.worksWithVat },
+                            { title: 'НДС', value: base.vatAmount, extraClass: 'metric-vat' },
+                            { title: 'Итого с НДС', value: base.totalWithVat, extraClass: 'metric-total' }
+                        ];
+
+                        this.renderMetricCards(vatBox, vatCards);
+                    } else {
+                        vatSection.style.display = 'none';
+                        if (vatBox) {
+                            vatBox.innerHTML = '';
+                        }
+                        if (vatNote) {
+                            vatNote.textContent = '';
+                        }
+                    }
+                }
             }
 
             // Триггер для других модулей

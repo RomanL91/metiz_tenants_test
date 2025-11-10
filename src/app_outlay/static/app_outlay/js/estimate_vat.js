@@ -11,6 +11,7 @@
 
         toggleVatActive: null,
         toggleVatLabel: null,
+        currentRate: 0,
 
         init(urls) {
             this.VAT_STATUS_URL = urls.status;
@@ -83,15 +84,23 @@
         },
 
         _updateUI(isActive, rate) {
+            this.currentRate = typeof rate === 'number' ? rate : this.currentRate;
+
             if (this.toggleVatActive) {
                 this.toggleVatActive.checked = isActive;
             }
 
             if (this.toggleVatLabel) {
-                this.toggleVatLabel.textContent = isActive ? 'НДС активен' : 'НДС выключен';
+                const rateText = this.currentRate ? ` · ${this.currentRate}%` : '';
+                this.toggleVatLabel.textContent = isActive
+                    ? `НДС активен${rateText}`
+                    : 'НДС выключен';
             }
 
             console.log(`ℹ️ НДС: ${isActive ? 'включён' : 'выключен'}, ставка: ${rate}%`);
+            if (window.EstimateCalc && typeof window.EstimateCalc.updateSummary === 'function') {
+                window.EstimateCalc.updateSummary();
+            }
         },
 
         _bindToggle() {
@@ -101,7 +110,10 @@
                 const isActive = this.toggleVatActive.checked;
 
                 if (this.toggleVatLabel) {
-                    this.toggleVatLabel.textContent = isActive ? 'НДС активен' : 'НДС выключен';
+                    const rateText = this.currentRate ? ` · ${this.currentRate}%` : '';
+                    this.toggleVatLabel.textContent = !isActive
+                        ? `НДС активен${rateText}`
+                        : 'НДС выключен';
                 }
 
                 const res = await this.postJSON(this.VAT_TOGGLE_URL, {

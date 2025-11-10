@@ -114,7 +114,17 @@
           </label>
         </div>
         <div id="summary-note-base" class="summary-note"></div>
-        <div id="metrics-base" class="metrics"></div>
+        <div class="summary-sections">
+          <div class="summary-section" id="summary-section-base">
+            <div class="summary-section-title">Без НДС</div>
+            <div id="metrics-base" class="metrics"></div>
+          </div>
+          <div class="summary-section" id="summary-section-with-vat" style="display:none">
+            <div class="summary-section-title">С НДС</div>
+            <div id="summary-note-vat" class="summary-note"></div>
+            <div id="metrics-vat" class="metrics"></div>
+          </div>
+        </div>
       </div>
     </div>
 
