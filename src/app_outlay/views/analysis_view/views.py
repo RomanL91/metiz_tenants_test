@@ -10,6 +10,8 @@ Views (контроллеры) для анализа сметы.
 from django.http import JsonResponse
 from django.views import View
 
+from app_outlay.views.export_excel_view.overhead_calculator import OverheadCalculator
+
 from .services import AnalysisService
 from .exceptions import AnalysisError
 
@@ -82,7 +84,10 @@ class EstimateAnalysisDataView(View):
         """
         try:
             # Шаг 1: Создание сервиса
-            service = AnalysisService(estimate_id=estimate_id)
+            service = AnalysisService(
+                estimate_id=estimate_id,
+                overhead_calculator_cls=OverheadCalculator,
+            )
 
             # Шаг 2: Выполнение анализа
             result = service.analyze()

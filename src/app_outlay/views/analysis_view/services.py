@@ -9,14 +9,12 @@
 """
 
 from typing import Dict, List
-from decimal import Decimal
 
 from app_outlay.models import Estimate, GroupTechnicalCardLink
 from app_outlay.views.export_excel_view.overhead_calculator import OverheadCalculator
 
 from .exceptions import EstimateNotFoundError, NoTechnicalCardsError
 from .calculators import (
-    BaseCalculator,
     SalesCalculator,
     MetricsCalculator,
     PositionCalculation,
@@ -40,15 +38,23 @@ class AnalysisService:
     - Формирование итогового результата
     """
 
-    def __init__(self, estimate_id: int):
+    def __init__(
+        self,
+        estimate_id: int,
+        *,
+        overhead_calculator_cls=OverheadCalculator,
+    ):
         """
         Args:
             estimate_id: ID сметы для анализа
+                        overhead_calculator_cls: класс с методом calculate_overhead_context,
+                по умолчанию используем OverheadCalculator из Excel экспорта.
         """
         self.estimate_id = estimate_id
         self.estimate = None
         self.tc_links = []
         self.overhead_context = None
+        self._overhead_calculator_cls = overhead_calculator_cls
         self.positions: List[PositionCalculation] = []
 
     def analyze(self) -> Dict:
@@ -146,9 +152,10 @@ class AnalysisService:
         Переиспользует OverheadCalculator из export_excel_view.
         Это избегает дублирования логики расчёта НР.
         """
-        self.overhead_context = OverheadCalculator.calculate_overhead_context(
-            estimate=self.estimate,
-            tc_links=self.tc_links,
+        self.overhead_context = (
+            self._overhead_calculator_cls.calculate_overhead_context(
+                estimate=self.estimate,
+            )
         )
 
     def _calculate_positions(self):

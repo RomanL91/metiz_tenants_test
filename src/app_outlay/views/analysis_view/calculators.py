@@ -177,7 +177,9 @@ class SalesCalculator:
         qty = _dec(getattr(link, "quantity", 1))
 
         # Продажи без НР
-        calc_no_oh, _ = calc_for_tc(ver.card_id, float(qty), overhead_context=None)
+        calc_no_oh, _ = calc_for_tc(
+            ver.card_id, float(qty), overhead_context=None, version=ver
+        )
         sales_no_oh = SalesCosts(
             materials=_dec(calc_no_oh.get("PRICE_FOR_ALL_MATERIAL", 0)),
             works=_dec(calc_no_oh.get("PRICE_FOR_ALL_WORK", 0)),
@@ -186,7 +188,10 @@ class SalesCalculator:
         # Продажи с НР (если есть контекст)
         if overhead_context:
             calc_with_oh, _ = calc_for_tc(
-                ver.card_id, float(qty), overhead_context=overhead_context
+                ver.card_id,
+                float(qty),
+                overhead_context=overhead_context,
+                version=ver,
             )
             sales_with_oh = SalesCosts(
                 materials=_dec(calc_with_oh.get("PRICE_FOR_ALL_MATERIAL", 0)),

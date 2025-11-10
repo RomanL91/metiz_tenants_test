@@ -223,6 +223,7 @@ class ExcelExportService:
                         tc_version.card_id,
                         quantity,
                         overhead_context=self.overhead_context,
+                        version=tc_version,
                     )
                 except Exception as e:
                     raise CalculationError(

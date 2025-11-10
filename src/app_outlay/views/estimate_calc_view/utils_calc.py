@@ -181,6 +181,8 @@ def calc_for_tc(
     card_id: int,
     qty,
     overhead_context: Dict[str, object] | None = None,
+    *,
+    version: TechnicalCardVersion | None = None,
 ) -> Tuple[Dict[str, Decimal], List[str]]:
     """
     Калькуляция для одной ТК (по её живым ценам) с учётом накладных расходов и НДС.
@@ -204,11 +206,19 @@ def calc_for_tc(
             "vat_active": bool,           # НДС активен
             "vat_rate": int,              # ставка НДС (0-100%)
         }
+        version — опциональный объект TechnicalCardVersion. Если передан, расчёт
+      будет выполнен именно по этой версии (без обращения к _get_version()).
     """
     order = list(DEFAULT_ORDER)
     qty_dec = _dec(qty)
 
-    ver = _get_version(card_id)
+    ver = version or _get_version(card_id)
+    if ver and version and getattr(ver, "card", None) is None:
+        ver = (
+            TechnicalCardVersion.objects.select_related("card")
+            .filter(pk=ver.pk)
+            .first()
+        )
     if not ver:
         # Пустой ответ, если ТК/версия не найдены
         zero = _round2(Decimal("0"))

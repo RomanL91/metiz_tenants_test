@@ -1,4 +1,3 @@
-# path: src/app_outlay/views/analysis_view/aggregators.py
 """
 Агрегаторы для группировки данных анализа.
 
