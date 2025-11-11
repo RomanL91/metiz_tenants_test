@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.translation import gettext as _
 from django.db import transaction
+from django.db.models import Q
 import openpyxl
 
 from app_materials.models import Material
@@ -205,7 +206,7 @@ class MaterialImportProcessor:
     def __init__(self):
         self.units_cache: Dict[str, Unit] = {}
         self.suppliers_cache: Dict[str, Supplier] = {}
-        self.existing_materials: Set[Tuple[str, int]] = set()
+        self.existing_materials: Dict[Tuple[str, int, Optional[int]], Material] = {}
 
         self._load_units()
         self._load_suppliers()
@@ -220,13 +221,43 @@ class MaterialImportProcessor:
         for supplier in Supplier.objects.all():
             self.suppliers_cache[supplier.name.strip().lower()] = supplier
 
-    def _load_existing_materials(self, names: List[str], unit_ids: List[int]) -> None:
+    def _load_existing_materials(
+        self, keys: Set[Tuple[str, int, Optional[int]]]
+    ) -> None:
         """Предзагрузка существующих материалов (избегаем N+1)"""
-        existing = Material.objects.filter(
-            name__in=names, unit_ref_id__in=unit_ids
-        ).values_list("name", "unit_ref_id")
 
-        self.existing_materials = set(existing)
+        if not keys:
+            self.existing_materials = {}
+            return
+
+        names = {name for name, _, _ in keys}
+        unit_ids = {unit_id for _, unit_id, _ in keys}
+        supplier_ids = {
+            supplier_id for _, _, supplier_id in keys if supplier_id is not None
+        }
+        require_null_supplier = any(supplier_id is None for _, _, supplier_id in keys)
+
+        query = Material.objects.filter(name__in=names, unit_ref_id__in=unit_ids)
+
+        supplier_conditions = Q()
+        if supplier_ids:
+            supplier_conditions |= Q(supplier_ref_id__in=supplier_ids)
+        if require_null_supplier:
+            supplier_conditions |= Q(supplier_ref__isnull=True)
+
+        if supplier_conditions:
+            query = query.filter(supplier_conditions)
+
+        existing_materials = query.select_related("supplier_ref")
+
+        self.existing_materials = {
+            (
+                material.name.strip(),
+                material.unit_ref_id,
+                material.supplier_ref_id,
+            ): material
+            for material in existing_materials
+        }
 
     def process_data(
         self, data: List[Dict[str, Any]]
@@ -255,15 +286,17 @@ class MaterialImportProcessor:
         if not valid_rows:
             return 0, 0, 0, errors
 
-        names = [r["name"] for r in valid_rows]
-        unit_ids = list(set([r["unit"].id for r in valid_rows]))
-        self._load_existing_materials(names, unit_ids)
-
         self._ensure_suppliers_exist(valid_rows)
 
-        created, skipped = self._bulk_create_materials(valid_rows)
+        self._attach_suppliers(valid_rows)
 
-        return created, 0, skipped, errors
+        existing_keys = {row["material_key"] for row in valid_rows}
+
+        self._load_existing_materials(existing_keys)
+
+        created, updated, skipped = self._bulk_upsert_materials(valid_rows)
+
+        return created, updated, skipped, errors
 
     def _prepare_row_data(self, row: Dict[str, Any]) -> Dict[str, Any]:
         """Подготовка данных строки"""
@@ -327,26 +360,55 @@ class MaterialImportProcessor:
         for supplier in created_or_existing:
             self.suppliers_cache[supplier.name.strip().lower()] = supplier
 
-    def _bulk_create_materials(
+    def _attach_suppliers(self, valid_rows: List[Dict[str, Any]]) -> None:
+        """Добавляет объекты поставщиков и ключи материалов к строкам"""
+
+        for row in valid_rows:
+            supplier = None
+            supplier_key = row.get("supplier_key")
+            if supplier_key:
+                supplier = self.suppliers_cache.get(supplier_key)
+
+            supplier_id = supplier.id if supplier else None
+
+            row["supplier"] = supplier
+            row["supplier_id"] = supplier_id
+            row["material_key"] = (row["name"], row["unit"].id, supplier_id)
+
+    def _bulk_upsert_materials(
         self, valid_rows: List[Dict[str, Any]]
-    ) -> Tuple[int, int]:
-        """Bulk создание материалов батчами"""
-        materials_to_create = []
+    ) -> Tuple[int, int, int]:
+        """Bulk создание или обновление материалов"""
+        materials_to_create: List[Material] = []
+        materials_to_update: List[Material] = []
+        processed_existing_keys: Set[Tuple[str, int, Optional[int]]] = set()
         created = 0
+        updated = 0
         skipped = 0
 
         for row in valid_rows:
             name = row["name"]
             unit = row["unit"]
 
-            if (name, unit.id) in self.existing_materials:
-                skipped += 1
-                continue
+            supplier = row.get("supplier")
+            key = row["material_key"]
 
-            supplier = None
-            supplier_key = row.get("supplier_key")
-            if supplier_key:
-                supplier = self.suppliers_cache.get(supplier_key)
+            existing_material = self.existing_materials.get(key)
+
+            if existing_material:
+                if key in processed_existing_keys:
+                    skipped += 1
+                    continue
+
+                existing_material.price_per_unit = row["price"]
+                existing_material.vat_percent = row["vat_percent"]
+                existing_material.supplier_ref = supplier
+                existing_material.is_active = True
+
+                materials_to_update.append(existing_material)
+                processed_existing_keys.add(key)
+                updated += 1
+                continue
 
             materials_to_create.append(
                 Material(
@@ -372,7 +434,13 @@ class MaterialImportProcessor:
                 Material.objects.bulk_create(materials_to_create, ignore_conflicts=True)
             )
 
-        return created, skipped
+        if materials_to_update:
+            Material.objects.bulk_update(
+                materials_to_update,
+                ["price_per_unit", "vat_percent", "supplier_ref", "is_active"],
+            )
+
+        return created, updated, skipped
 
     def _get_unit(self, unit_symbol: str, row_number: int) -> Unit:
         """Получение единицы измерения из кэша по symbol"""
