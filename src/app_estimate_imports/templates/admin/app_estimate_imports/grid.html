@@ -606,9 +606,46 @@ document.addEventListener('DOMContentLoaded', function () {
   };
 
   // Создать смету
-  document.getElementById('btn-materialize').onclick = (e) => {
+  document.getElementById('btn-materialize').onclick = async (e) => {
     e.preventDefault();
-    
+
+    if (!requiredRolesPresent()) {
+      alert('Назначьте обязательные роли колонок: \n-- НАИМЕНОВАНИЕ РАБОТ/ТК, \n-- ЕД. ИЗМ., \n-- КОЛ-ВО.');
+      return;
+    }
+
+    const sheetParam = new URLSearchParams(location.search).get('sheet') || '0';
+    const sheetIndex = parseInt(sheetParam, 10);
+    const normalizedSheet = Number.isNaN(sheetIndex) ? 0 : sheetIndex;
+
+    const col_roles = collectRoles();
+    try {
+      const saveResp = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          col_roles,
+          sheet_index: normalizedSheet,
+          unit_allow_raw: getUnitAllowRaw(),
+          require_qty: getRequireQty(),
+        }),
+      });
+
+      if (!saveResp.ok) {
+        throw new Error(`HTTP ${saveResp.status}`);
+      }
+
+      const saveData = await saveResp.json();
+      if (!saveData.ok) {
+        alert('Ошибка сохранения схемы: ' + (saveData.error || 'unknown'));
+        return;
+      }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err || 'unknown error');
+      alert('Не удалось автоматически сохранить схему: ' + message);
+      return;
+    }
+
     if (!HAS_MARKUP) {
       const proceed = confirm(
         'Разметка ещё не создана!\n\n' +
@@ -623,8 +660,11 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
     
-    // Переходим на страницу материализации
-    window.location.href = MATERIALIZE_URL;
+    const materializeUrl = new URL(MATERIALIZE_URL, window.location.origin);
+    materializeUrl.searchParams.set('sheet', String(normalizedSheet));
+
+    window.location.href = materializeUrl.toString();
+
   };
 
   /* =========================

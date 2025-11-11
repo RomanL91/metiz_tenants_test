@@ -11,14 +11,14 @@ from app_works.models import Work
 
 
 @transaction.atomic
-def materialize_estimate_from_markup(markup) -> Estimate:
+def materialize_estimate_from_markup(markup, sheet_index: int = 0) -> Estimate:
 
     pr = markup.parse_result
     estimate_name = pr.estimate_name or markup.file.original_name
     estimate = Estimate.objects.create(name=estimate_name)
 
     estimate.source_file = markup.file  # ImportedEstimateFile
-    # estimate.source_sheet_index = sheet_index   # если есть понимание листа; иначе 0
+    estimate.source_sheet_index = sheet_index  # если есть понимание листа; иначе 0
     estimate.save(update_fields=["source_file", "source_sheet_index"])
 
     # построим кэш групп по пути
