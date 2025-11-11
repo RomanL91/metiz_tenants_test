@@ -88,7 +88,14 @@ class ParseHandler(BaseHandler):
             messages.error(request, "Нет разметки для материализации")
             return self.redirect_back_or_change(request)
 
-        result = self.materialization_service.materialize_estimate(obj)
+        try:
+            sheet_index = int(request.GET.get("sheet", 0))
+        except (TypeError, ValueError):
+            sheet_index = 0
+
+        result = self.materialization_service.materialize_estimate(
+            obj, sheet_index=sheet_index
+        )
 
         # Успех: пришёл объект Estimate → редиректим на его change
         if result is not None and hasattr(result, "pk"):
