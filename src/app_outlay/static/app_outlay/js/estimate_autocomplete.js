@@ -98,6 +98,29 @@
 
     // ========== АВТОКОМПЛИТ (ручной ввод) ==========
 
+    function triggerRowCalc(tr) {
+        if (!tr) return Promise.resolve();
+
+        if (window.EstimateCalc && typeof window.EstimateCalc.triggerRowCalc === 'function') {
+            return window.EstimateCalc.triggerRowCalc(tr);
+        }
+
+        console.warn('EstimateCalc.triggerRowCalc недоступен');
+        return Promise.resolve();
+    }
+
+    function requestSummaryUpdate(delay = 0) {
+        if (window.EstimateCalc && typeof window.EstimateCalc.updateSummary === 'function') {
+            if (delay > 0) {
+                setTimeout(() => window.EstimateCalc.updateSummary(), delay);
+            } else {
+                window.EstimateCalc.updateSummary();
+            }
+        } else {
+            console.warn('EstimateCalc.updateSummary недоступен');
+        }
+    }
+
     /**
      * Инициализация автокомплита для одного input поля
      * @param {HTMLInputElement} input - Поле ввода
@@ -166,9 +189,8 @@
 
                     // Пересчитываем строку
                     const tr = input.closest('tr');
-                    if (tr && typeof window.triggerRowCalc === 'function') {
-                        window.triggerRowCalc(tr);
-                    }
+
+                    triggerRowCalc(tr);
 
                     // Закрываем автокомплит
                     if (autocompleteBox) {
@@ -243,11 +265,7 @@
             }
 
             // Обновляем итоги
-            setTimeout(() => {
-                if (typeof window.updateSummary === 'function') {
-                    window.updateSummary();
-                }
-            }, 100);
+            requestSummaryUpdate(100);
         });
 
         // Отслеживаем изменения
@@ -267,11 +285,8 @@
                     });
                 }
 
-                setTimeout(() => {
-                    if (typeof window.updateSummary === 'function') {
-                        window.updateSummary();
-                    }
-                }, 100);
+                requestSummaryUpdate(100);
+
             }
 
             toggleClearBtn();
@@ -290,11 +305,8 @@
                     });
                 }
 
-                setTimeout(() => {
-                    if (typeof window.updateSummary === 'function') {
-                        window.updateSummary();
-                    }
-                }, 100);
+                requestSummaryUpdate(100);
+
             }
         });
 
@@ -400,9 +412,7 @@
 
                     // Пересчитываем строку если есть количество
                     if (qtyInput && qtyInput.value && parseFloat(qtyInput.value) > 0) {
-                        if (typeof window.triggerRowCalc === 'function') {
-                            calcPromises.push(window.triggerRowCalc(tr));
-                        }
+                        calcPromises.push(triggerRowCalc(tr));
                     }
 
                     matchedCount++;
@@ -415,11 +425,7 @@
             }
 
             // Обновляем итоги
-            setTimeout(() => {
-                if (typeof window.updateSummary === 'function') {
-                    window.updateSummary();
-                }
-            }, 500);
+            requestSummaryUpdate(500);
 
             // Статус
             if (statusSpan) {
