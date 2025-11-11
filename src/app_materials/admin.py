@@ -1,9 +1,13 @@
+from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 
-from django.urls import path
 from django.contrib import admin
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.urls import path
 from django.utils.translation import gettext_lazy as _
+from openpyxl import Workbook
 
 from app_materials.models import Material
 
@@ -26,6 +30,7 @@ class MaterialAdmin(admin.ModelAdmin):
     autocomplete_fields = ("supplier_ref",)
     list_select_related = ("supplier_ref",)
     save_on_top = True
+    actions = ("export_materials_to_excel",)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -48,3 +53,47 @@ class MaterialAdmin(admin.ModelAdmin):
     @admin.display(description=_("Цена с НДС"))
     def price_with_vat_display(self, obj: Material) -> Decimal:
         return obj.price_with_vat()
+
+    @admin.action(description=_("Экспорт в Excel"))
+    def export_materials_to_excel(self, request, queryset):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = str(_("Материалы"))
+
+        headers = (
+            _("Наименование"),
+            _("Единица измерения"),
+            _("Цена"),
+            _("Поставщик"),
+            _("НДС %"),
+        )
+        worksheet.append([str(header) for header in headers])
+
+        queryset = queryset.select_related("unit_ref", "supplier_ref")
+
+        for material in queryset:
+            worksheet.append(
+                (
+                    material.name,
+                    str(material.unit_ref) if material.unit_ref else "",
+                    material.price_per_unit,
+                    material.supplier_ref.name if material.supplier_ref else "",
+                    material.vat_percent if material.vat_percent is not None else "",
+                )
+            )
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"materials_{timestamp}.xlsx"
+
+        response = HttpResponse(
+            output.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
