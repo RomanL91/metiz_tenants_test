@@ -1,9 +1,9 @@
 import re
 from difflib import SequenceMatcher
-from typing import List, Dict
+from typing import Dict, List
 
-from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 from app_outlay.estimate_mapping_utils import UnitNormalizer
+from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 
 
 class TCMatcher:

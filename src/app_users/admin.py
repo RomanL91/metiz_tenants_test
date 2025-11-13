@@ -1,13 +1,13 @@
 from django import forms
 from django.contrib import admin
 from django.contrib.admin.widgets import FilteredSelectMultiple
-from django.contrib.auth.admin import GroupAdmin, UserAdmin as BaseUserAdmin
+from django.contrib.auth.admin import GroupAdmin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, Permission
 from django.utils.translation import gettext_lazy as _
 
 from app_users.models import Role, User
 from core.i18n.permissions import human_permission_name
-
 
 # Безопасно скрыть штатный Group-админ, чтобы показать Role
 try:

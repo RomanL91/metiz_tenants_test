@@ -8,10 +8,10 @@
 - Нормализация единиц измерения
 """
 
-from .tc_detector import TechnicalCardDetector
-from .group_loader import GroupAnnotationLoader
 from .group_assigner import GroupTreeBuilder
-from .unit_normalizer import UnitNormalizer, RussianUnitNormalizer
+from .group_loader import GroupAnnotationLoader
+from .tc_detector import TechnicalCardDetector
+from .unit_normalizer import RussianUnitNormalizer, UnitNormalizer
 
 __all__ = [
     "TechnicalCardDetector",

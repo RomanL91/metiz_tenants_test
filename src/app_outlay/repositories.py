@@ -15,14 +15,11 @@
 
 from decimal import Decimal
 from typing import Dict, Optional
+
 from django.db.models import QuerySet
 
-from app_outlay.models import (
-    Estimate,
-    EstimateOverheadCostLink,
-    GroupTechnicalCardLink,
-)
 from app_outlay.exceptions import EstimateNotFoundError
+from app_outlay.models import Estimate, EstimateOverheadCostLink, GroupTechnicalCardLink
 from app_outlay.views.estimate_calc_view.utils_calc import _base_costs_live, _dec
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 from core.base_repository import BaseRepository

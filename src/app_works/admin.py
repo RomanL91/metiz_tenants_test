@@ -1,8 +1,7 @@
 from django.contrib import admin
-from django.urls import path
 from django.shortcuts import render
+from django.urls import path
 from django.utils.translation import gettext_lazy as _
-
 
 from app_works.models import Work
 
@@ -15,10 +14,12 @@ class WorkAdmin(admin.ModelAdmin):
         "name",
         "unit_ref",
         "price_per_unit",
+        "price_per_labor_hour",
+        "calculate_only_by_labor",
         "is_active",
     )
     search_fields = ("name",)
-    list_filter = ("unit_ref",)
+    list_filter = ("unit_ref", "calculate_only_by_labor")
 
     list_select_related = ("unit_ref",)
 

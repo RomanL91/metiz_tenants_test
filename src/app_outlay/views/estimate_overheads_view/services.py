@@ -7,14 +7,8 @@ from typing import Dict, List
 
 from django.db import transaction
 
-from app_outlay.models import (
-    Estimate,
-    EstimateOverheadCostLink,
-)
-from app_outlay.repositories import (
-    EstimateRepository,
-    OverheadCostRepository,
-)
+from app_outlay.models import Estimate, EstimateOverheadCostLink
+from app_outlay.repositories import EstimateRepository, OverheadCostRepository
 from app_overhead_costs.models import OverheadCostContainer
 
 

@@ -1,7 +1,8 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext_lazy as _
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from app_technical_cards.models import TechnicalCard
 from app_technical_cards.serializers import LiveCompositionSerializer
@@ -45,21 +46,28 @@ class TechnicalCardLiveCompositionView(APIView):
 # ==============================================================
 
 
-from rest_framework import status, serializers
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from rest_framework import serializers, status
+
+from app_materials.models import Material
 from app_technical_cards.models import (
     TechnicalCard,
     TechnicalCardVersion,
     TechnicalCardVersionMaterial,
     TechnicalCardVersionWork,
 )
-from app_materials.models import Material
 from app_works.models import Work
 
 
 class _CompositionItemInSerializer(serializers.Serializer):
     ref_id = serializers.IntegerField()
     qty = serializers.DecimalField(max_digits=12, decimal_places=3, min_value=0)
+    method = serializers.ChoiceField(
+        choices=Work.CostingMethod.choices,
+        required=False,
+        default=Work.CostingMethod.SERVICE,
+    )
 
 
 class _ComposeVersionInSerializer(serializers.Serializer):
@@ -111,10 +119,21 @@ class TechnicalCardSaveNewVersionView(APIView):
                     raise serializers.ValidationError(
                         {"materials": f"Material id={i['ref_id']} not found"}
                     )
+                try:
+                    method = w.resolve_calculation_method(i.get("method"))
+                except ValidationError as exc:
+                    raise serializers.ValidationError({"works": str(exc)}) from exc
+
+                unit = w.get_unit_for_method(method)
+                price = w.get_price_for_method(method)
+
                 tcv_mats.append(
                     TechnicalCardVersionMaterial(
-                        version=new_ver,
+                        technical_card_version=new_ver,
                         material=m,
+                        material_name=m.name,
+                        unit_ref=m.unit_ref,
+                        price_per_unit=m.price_per_unit,
                         qty_per_unit=i["qty"],
                         order=idx,
                     )
@@ -131,10 +150,26 @@ class TechnicalCardSaveNewVersionView(APIView):
                     raise serializers.ValidationError(
                         {"works": f"Work id={i['ref_id']} not found"}
                     )
+                method = i.get("method") or Work.CostingMethod.SERVICE
+                if not w.supports_calculation_method(method):
+                    raise serializers.ValidationError(
+                        {
+                            "works": _(
+                                "Работа id={id} не поддерживает метод расчёта '{method}'"
+                            ).format(id=w.id, method=method)
+                        }
+                    )
+
+                unit = w.get_unit_for_method(method)
+                price = w.get_price_for_method(method)
                 tcv_wrks.append(
                     TechnicalCardVersionWork(
-                        version=new_ver,
+                        technical_card_version=new_ver,
                         work=w,
+                        work_name=w.name,
+                        unit_ref=unit,
+                        price_per_unit=price,
+                        calculation_method=method,
                         qty_per_unit=i["qty"],
                         order=idx,
                     )
@@ -150,9 +185,9 @@ class TechnicalCardSaveNewVersionView(APIView):
 
 # =============================================================
 from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import serializers, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from app_materials.models import Material
 from app_works.models import Work
@@ -227,29 +262,64 @@ class TechnicalCardSearchWorksView(APIView):
                 cond |= Q(id=int(q))
             qs = qs.filter(cond)
 
-        rows = qs.order_by("name").values(
-            "id", "name", "price_per_unit", "unit_ref__symbol"
-        )[:limit]
+        works = list(qs.order_by("name")[:limit])
 
-        data = [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "unit": r.get("unit_ref__symbol") or "",
-                "price": r.get("price_per_unit"),
+        def _method_payload(work: Work, method_code: str) -> dict | None:
+            if not work.supports_calculation_method(method_code):
+                return None
+            unit = work.get_unit_for_method(method_code)
+            price = work.get_price_for_method(method_code)
+            return {
+                "code": method_code,
+                "label": dict(Work.CostingMethod.choices).get(method_code, method_code),
+                "unit": _unit_label(unit),
+                "price": float(price) if price is not None else 0,
             }
-            for r in rows
-        ]
+
+        data = []
+        for work in works:
+            methods = []
+            for method_code in Work.CostingMethod.values:
+                payload = _method_payload(work, method_code)
+                if payload:
+                    methods.append(payload)
+
+            if work.calculate_only_by_labor:
+                default_method = Work.CostingMethod.LABOR
+            else:
+                default_method = Work.CostingMethod.SERVICE
+
+            default_unit = ""
+            default_price = 0
+            for m in methods:
+                if m["code"] == default_method:
+                    default_unit = m["unit"]
+                    default_price = m["price"]
+                    break
+
+            data.append(
+                {
+                    "id": work.id,
+                    "name": work.name,
+                    "unit": default_unit,
+                    "price": default_price,
+                    "default_method": default_method,
+                    "methods": methods,
+                }
+            )
+
         return Response(data)
 
 
-# ===============================================================================================
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from typing import Any, Dict, List
+
+from django.shortcuts import get_object_or_404
+from rest_framework import permissions, status
+from rest_framework.response import Response
+
+# ===============================================================================================
+from rest_framework.views import APIView
 
 from .models import TechnicalCard
 from .services_versioning import create_version_from_payload
@@ -370,8 +440,14 @@ class LiveCompositionApiView(APIView):
         for row in works_qs:
             qty = _to_decimal(row.qty_per_unit)
             ver_price = _to_decimal(row.price_per_unit)
+            method = getattr(row, "calculation_method", Work.CostingMethod.SERVICE)
+            live_raw_price = getattr(row.work, "get_price_for_method", None)
+            if callable(live_raw_price):
+                live_raw_price = row.work.get_price_for_method(method)
+            else:
+                live_raw_price = getattr(row.work, "price_per_unit", ver_price)
             live_price = _to_decimal(
-                getattr(getattr(row, "work", None), "price_per_unit", ver_price)
+                live_raw_price if live_raw_price is not None else ver_price
             )
             line_live = qty * live_price
             line_ver = qty * ver_price
@@ -386,6 +462,8 @@ class LiveCompositionApiView(APIView):
                     "name": getattr(row, "work_name", None)
                     or getattr(row.work, "name", ""),
                     "unit": _unit_label(getattr(row, "unit_ref", None)),
+                    "calculation_method": method,
+                    "calculation_method_label": row.get_calculation_method_display(),
                     "qty_per_unit": float(qty),
                     "version_price": float(ver_price),
                     "live_price": float(live_price),
@@ -489,7 +567,9 @@ class TechnicalCardDuplicateApiView(APIView):
                     work_kwargs = dict(
                         technical_card_version=new_version,
                         work=item.work,
+                        work_name=item.work_name,
                         unit_ref=item.unit_ref,  # ВАЖНО: NOT NULL
+                        calculation_method=item.calculation_method,
                         qty_per_unit=item.qty_per_unit,
                         order=item.order,
                     )

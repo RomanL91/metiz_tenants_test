@@ -2,21 +2,22 @@
 Контроллеры для API НДС (пока моки).
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from app_outlay.exceptions import EstimateNotFoundError
+from app_outlay.repositories import EstimateRepository
 
 from .serializers import (
+    ErrorResponseSerializer,
+    VatSetRateRequestSerializer,
     VatStatusResponseSerializer,
     VatToggleRequestSerializer,
-    VatSetRateRequestSerializer,
-    ErrorResponseSerializer,
 )
 from .services import VatManagementService
-from app_outlay.repositories import EstimateRepository
-from app_outlay.exceptions import EstimateNotFoundError
 
 
 class BaseVatAPIView(APIView):

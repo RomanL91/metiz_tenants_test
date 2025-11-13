@@ -8,10 +8,10 @@
   с указанием её количества выпуска. Итоговые суммы рассчитываются «на лету» на основе агрегатов версии ТК.
 """
 
+from decimal import Decimal
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-
-from decimal import Decimal
 
 
 class Estimate(models.Model):

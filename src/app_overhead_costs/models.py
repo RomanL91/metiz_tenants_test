@@ -5,13 +5,13 @@
 - OverheadCostItem — статья расходов (налоги, зарплата, аренда и т.д.)
 """
 
+from decimal import Decimal
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Sum
 from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
-from django.core.validators import MinValueValidator, MaxValueValidator
-
-from decimal import Decimal
 
 from app_units.models import Unit
 

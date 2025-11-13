@@ -71,7 +71,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ===========================================================================
 import os
 
-
 # DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 DEBUG = True
 

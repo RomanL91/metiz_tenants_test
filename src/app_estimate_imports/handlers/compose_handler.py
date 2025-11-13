@@ -11,9 +11,8 @@
 """
 
 from django.contrib import messages
-from django.utils.safestring import mark_safe
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
-
+from django.utils.safestring import mark_safe
 
 from app_estimate_imports.handlers.base_handler import BaseHandler
 from app_estimate_imports.services.techcard_service import TechCardService

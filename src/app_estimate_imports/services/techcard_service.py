@@ -1,10 +1,11 @@
 """Сервис для работы с техкартами"""
 
-from typing import List, Dict, Set, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
+
+from ..utils.hash_utils import HashUtils
 from .base_service import BaseService
 from .markup_service import MarkupService
 from .schema_service import SchemaService
-from ..utils.hash_utils import HashUtils
 
 
 class TechCardService(BaseService):

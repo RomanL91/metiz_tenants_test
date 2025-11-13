@@ -10,6 +10,7 @@
 import os
 import tempfile
 from typing import Dict, List
+
 from openpyxl import load_workbook
 
 from .exceptions import ExcelWriteError

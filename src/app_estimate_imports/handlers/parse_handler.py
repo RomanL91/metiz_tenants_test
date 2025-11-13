@@ -15,13 +15,13 @@
 - Handler отвечает за получение объекта, сообщения пользователю и HTTP-ответы.
 """
 
-from django.urls import reverse
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.urls import reverse
 
 from app_estimate_imports.handlers.base_handler import BaseHandler
-from app_estimate_imports.services.parse_service import ParseService
 from app_estimate_imports.services.materialization_service import MaterializationService
+from app_estimate_imports.services.parse_service import ParseService
 
 
 class ParseHandler(BaseHandler):
