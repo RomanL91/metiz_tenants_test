@@ -13,7 +13,8 @@
 - Batch-обработка для минимизации запросов к БД
 """
 
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
 from django.db.models import QuerySet
 
 from app_outlay.views.autocomplete_view.tc_matcher import TCMatcher

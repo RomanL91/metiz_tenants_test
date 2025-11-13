@@ -87,7 +87,7 @@ class LiveWorkCompositionSerializer(serializers.Serializer):
 
     def get_price_changed(self, obj):
         return self.get_live_price(obj) != (obj.price_per_unit or Decimal("0"))
-    
+
     def get_live_price(self, obj):
         price = obj.work.get_price_for_method(obj.calculation_method)
         return price or Decimal("0")
@@ -126,9 +126,7 @@ class LiveCompositionSerializer(serializers.Serializer):
             for m in materials
         )
         live_works_total = sum(
-            (
-                w.work.get_price_for_method(w.calculation_method) or Decimal("0")
-            )
+            (w.work.get_price_for_method(w.calculation_method) or Decimal("0"))
             * (w.qty_per_unit or Decimal("0"))
             for w in works
         )

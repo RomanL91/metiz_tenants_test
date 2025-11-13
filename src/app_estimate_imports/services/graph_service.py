@@ -1,11 +1,12 @@
 """Сервис для построения графов из данных разметки"""
 
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
+
+from ..utils.constants import NODE_COLORS, NODE_ROLES
 from .base_service import BaseService
+from .group_service import GroupService
 from .markup_service import MarkupService
 from .schema_service import SchemaService
-from .group_service import GroupService
-from ..utils.constants import NODE_COLORS, NODE_ROLES
 
 
 class GraphService(BaseService):

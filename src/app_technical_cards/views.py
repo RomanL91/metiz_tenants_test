@@ -213,7 +213,7 @@ class TechnicalCardSearchMaterialsView(APIView):
         except ValueError:
             limit = 10
 
-        qs = Work.objects.select_related("unit_ref", "labor_unit_ref")
+        qs = Material.objects.select_related("unit_ref")
         if hasattr(Material, "is_active"):
             qs = qs.filter(is_active=True)
 
@@ -223,42 +223,19 @@ class TechnicalCardSearchMaterialsView(APIView):
                 cond |= Q(id=int(q))
             qs = qs.filter(cond)
 
-        def _method_payload(work: Work, method_code: str) -> dict | None:
-            if not work.supports_calculation_method(method_code):
-                return None
-            unit = work.get_unit_for_method(method_code)
-            price = work.get_price_for_method(method_code)
-            return {
-                "code": method_code,
-                "label": Work.CostingMethod(method_code).label,
-                "unit": _unit_label(unit),
-                "price": price,}
-        
-        works = list(qs.order_by("name")[:limit])
+        rows = qs.order_by("name").values(
+            "id", "name", "price_per_unit", "unit_ref__symbol"
+        )[:limit]
 
-        data = []
-        for work in works:
-            methods = []
-            for method_code in Work.CostingMethod.values:
-                payload = _method_payload(work, method_code)
-                if payload:
-                    methods.append(payload)
-
-            default_unit = methods[0]["unit"] if methods else _unit_label(work.unit_ref)
-            default_price = methods[0]["price"] if methods else work.price_per_unit
-            default_method = methods[0]["code"] if methods else Work.CostingMethod.SERVICE
-
-            data.append(
-                {
-                    "id": work.id,
-                    "name": work.name,
-                    "unit": default_unit,
-                    "price": default_price,
-                    "default_method": default_method,
-                    "methods": methods,
-                }
-            )
-
+        data = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "unit": r.get("unit_ref__symbol") or "",
+                "price": r.get("price_per_unit"),
+            }
+            for r in rows
+        ]
         return Response(data)
 
 
@@ -285,19 +262,52 @@ class TechnicalCardSearchWorksView(APIView):
                 cond |= Q(id=int(q))
             qs = qs.filter(cond)
 
-        rows = qs.order_by("name").values(
-            "id", "name", "price_per_unit", "unit_ref__symbol"
-        )[:limit]
+        works = list(qs.order_by("name")[:limit])
 
-        data = [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "unit": r.get("unit_ref__symbol") or "",
-                "price": r.get("price_per_unit"),
+        def _method_payload(work: Work, method_code: str) -> dict | None:
+            if not work.supports_calculation_method(method_code):
+                return None
+            unit = work.get_unit_for_method(method_code)
+            price = work.get_price_for_method(method_code)
+            return {
+                "code": method_code,
+                "label": dict(Work.CostingMethod.choices).get(method_code, method_code),
+                "unit": _unit_label(unit),
+                "price": float(price) if price is not None else 0,
             }
-            for r in rows
-        ]
+
+        data = []
+        for work in works:
+            methods = []
+            for method_code in Work.CostingMethod.values:
+                payload = _method_payload(work, method_code)
+                if payload:
+                    methods.append(payload)
+
+            if work.calculate_only_by_labor:
+                default_method = Work.CostingMethod.LABOR
+            else:
+                default_method = Work.CostingMethod.SERVICE
+
+            default_unit = ""
+            default_price = 0
+            for m in methods:
+                if m["code"] == default_method:
+                    default_unit = m["unit"]
+                    default_price = m["price"]
+                    break
+
+            data.append(
+                {
+                    "id": work.id,
+                    "name": work.name,
+                    "unit": default_unit,
+                    "price": default_price,
+                    "default_method": default_method,
+                    "methods": methods,
+                }
+            )
+
         return Response(data)
 
 
@@ -436,7 +446,9 @@ class LiveCompositionApiView(APIView):
                 live_raw_price = row.work.get_price_for_method(method)
             else:
                 live_raw_price = getattr(row.work, "price_per_unit", ver_price)
-            live_price = _to_decimal(live_raw_price if live_raw_price is not None else ver_price)
+            live_price = _to_decimal(
+                live_raw_price if live_raw_price is not None else ver_price
+            )
             line_live = qty * live_price
             line_ver = qty * ver_price
 

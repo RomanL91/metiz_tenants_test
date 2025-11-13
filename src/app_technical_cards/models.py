@@ -527,7 +527,9 @@ class TechnicalCardVersionWork(models.Model):
 
             if unit is None or price is None:
                 raise ValidationError(
-                    _("Для метода '{method}' не заполнены обязательные данные работы.").format(
+                    _(
+                        "Для метода '{method}' не заполнены обязательные данные работы."
+                    ).format(
                         method=method_label,
                     )
                 )

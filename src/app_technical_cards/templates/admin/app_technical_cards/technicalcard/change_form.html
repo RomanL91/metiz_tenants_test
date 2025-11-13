@@ -753,9 +753,17 @@
       function pickWorkMethod(workItem){
         const methods = Array.isArray(workItem?.methods) ? workItem.methods.filter(m=>m && m.code) : [];
         if (!methods.length){
-          if (workItem && workItem.default_method){
-            const fallback = methods.find(m=>m.code===workItem.default_method);
-            if (fallback) return fallback;
+          // Если нет methods, пытаемся использовать старый формат (deprecated)
+          if (workItem?.price !== undefined){
+            const defaultCode = workItem.default_method || 'service';
+            return {
+              code: defaultCode,
+              label: defaultCode === 'labor' ? 'Человеко-часы' : 'Услуга',
+              unit: workItem.unit || '',
+              price: workItem.price ?? 0,
+            };
+          }
+          if (workItem?.default_method){
             return {
               code: workItem.default_method,
               label: '',
@@ -766,26 +774,53 @@
           return null;
         }
         if (methods.length === 1) return methods[0];
+        // Если есть оба метода (service и labor), спрашиваем пользователя
         const service = methods.find(m=>m.code==='service');
         const labor = methods.find(m=>m.code==='labor');
         if (service && labor){
-          const question = `Добавить работу «${workItem.name}» как человеко-часы?\n`+
-            `${labor.label}: ${fmt2(labor.price ?? 0)}${labor.unit ? ' / '+labor.unit : ''}\n`+
-            `${service.label}: ${fmt2(service.price ?? 0)}${service.unit ? ' / '+service.unit : ''}`;
-          return window.confirm(question) ? labor : service;
+          // Создаем модальное окно для выбора метода
+          const modal = document.createElement('div');
+          modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999';
+          modal.innerHTML = `
+            <div style="background:#fff;padding:24px;border-radius:12px;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+              <h3 style="margin:0 0 16px 0;font-size:18px;color:#212529">Выберите метод расчёта</h3>
+              <p style="margin:0 0 20px 0;color:#495057">Работа: <strong>${workItem.name}</strong></p>
+              <div style="display:flex;gap:12px;flex-direction:column">
+                <button type="button" class="method-choice" data-method="service" style="padding:16px;border:2px solid #4dabf7;border-radius:8px;background:#fff;cursor:pointer;text-align:left;transition:all 0.2s">
+                  <div style="font-weight:700;color:#1971c2;margin-bottom:4px">${service.label}</div>
+                  <div style="color:#868e96;font-size:13px">${fmt2(service.price ?? 0)} ₽${service.unit ? ' / '+service.unit : ''}</div>
+                </button>
+                <button type="button" class="method-choice" data-method="labor" style="padding:16px;border:2px solid #fab005;border-radius:8px;background:#fff;cursor:pointer;text-align:left;transition:all 0.2s">
+                  <div style="font-weight:700;color:#d9480f;margin-bottom:4px">${labor.label}</div>
+                  <div style="color:#868e96;font-size:13px">${fmt2(labor.price ?? 0)} ₽${labor.unit ? ' / '+labor.unit : ''}</div>
+                </button>
+              </div>
+            </div>`;
+          document.body.appendChild(modal);
+          
+          return new Promise(resolve=>{
+            modal.querySelectorAll('.method-choice').forEach(btn=>{
+              btn.addEventListener('mouseenter',()=>btn.style.transform='scale(1.02)');
+              btn.addEventListener('mouseleave',()=>btn.style.transform='');
+              btn.addEventListener('click',()=>{
+                const choice = btn.dataset.method === 'labor' ? labor : service;
+                document.body.removeChild(modal);
+                resolve(choice);
+              });
+            });
+          });
         }
-        const lines = methods.map((m, idx)=>`${idx+1}. ${m.label} (${fmt2(m.price ?? 0)}${m.unit ? ' / '+m.unit : ''})`).join('\n');
-        const answer = window.prompt(`Выберите метод расчёта для «${workItem.name}»:\n${lines}`, '1');
-        const choice = Number.parseInt(answer || '1', 10) - 1;
-        return methods[choice] || methods[0];
+        // Если методов больше двух (edge case), возвращаем первый
+        return methods[0];
       }
 
-      function apply(chosen){
+      async function apply(chosen){
         if(!chosen) return;
         const q=Number(qtyInput.value||1); const qty=Number.isFinite(q)&&q>=0 ? q:1;
         let methodPayload = null;
         if (kind==='work'){
-          methodPayload = pickWorkMethod(chosen);
+          methodPayload = await pickWorkMethod(chosen);
+          if (!methodPayload) return; // Пользователь отменил выбор
         }
         const unit = methodPayload?.unit ?? chosen.unit ?? '';
         const price = Number(methodPayload?.price ?? chosen.price ?? 0);

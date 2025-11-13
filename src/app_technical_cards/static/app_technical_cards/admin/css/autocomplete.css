@@ -1,0 +1,57 @@
+.tc-ac {
+    position: relative;
+    width: 100%;
+}
+
+.tc-ac-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tc-ac-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% 4px);
+    max-height: 280px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 6px 0;
+    list-style: none;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    z-index: 2000;
+}
+
+.tc-ac-list:empty {
+    display: none;
+}
+
+.tc-ac-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    border-radius: 6px;
+    transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.tc-ac-item:hover,
+.tc-ac-item.active {
+    background: #e7f5ff;
+    transform: translateX(2px);
+}
+
+.tc-ac-item .tc-ac-name {
+    font-weight: 600;
+    color: #212529;
+}
+
+.tc-ac-item .tc-ac-meta {
+    color: #868e96;
+    font-size: 12px;
+    white-space: nowrap;
+}

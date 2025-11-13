@@ -13,22 +13,21 @@
 - Caching: кеширование контекста НР для избежания повторных запросов
 """
 
-from functools import lru_cache
 from decimal import Decimal
-from typing import Dict, Optional, Tuple, List
+from functools import lru_cache
+from typing import Dict, List, Optional, Tuple
 
+from app_outlay.exceptions import (
+    OverheadContextCalculationError,
+    TechnicalCardNotFoundError,
+)
 from app_outlay.models import Estimate
-from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc as calc_tc_util
-
 from app_outlay.repositories import (
     EstimateRepository,
     OverheadCostRepository,
     TechnicalCardRepository,
 )
-from app_outlay.exceptions import (
-    TechnicalCardNotFoundError,
-    OverheadContextCalculationError,
-)
+from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc as calc_tc_util
 
 
 class OverheadContextService:

@@ -7,13 +7,13 @@
 - Clear Flow: явный алгоритм детектирования
 """
 
-from typing import List, Dict, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from .excel_helpers import ExcelRowHelper
-from .unit_normalizer import UnitNormalizer
-from .group_loader import GroupAnnotationLoader
-from .group_assigner import GroupTreeBuilder
 from .exceptions import InvalidSchemaError
+from .group_assigner import GroupTreeBuilder
+from .group_loader import GroupAnnotationLoader
+from .unit_normalizer import UnitNormalizer
 
 
 class TechnicalCardDetector:

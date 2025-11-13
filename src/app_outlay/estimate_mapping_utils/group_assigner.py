@@ -7,7 +7,7 @@
 - Clear Algorithm: явный алгоритм распределения
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 
 class GroupTreeBuilder:

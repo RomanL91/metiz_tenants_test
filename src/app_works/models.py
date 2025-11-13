@@ -20,7 +20,7 @@ class Work(models.Model):
     РАБОТА — базовая сущность с одним главным полем name.
     Детали (категория, трудозатраты, разряды) можно добавить по мере проектирования.
     """
-    
+
     class CostingMethod(models.TextChoices):
         SERVICE = "service", _("Услуга")
         LABOR = "labor", _("Человеко-часы")
@@ -99,9 +99,9 @@ class Work(models.Model):
                 requested_code, requested_code
             )
             raise ValidationError(
-                _(
-                    "Работа \"{name}\" не поддерживает метод расчёта \"{method}\"."
-                ).format(name=self.name, method=method_label)
+                _('Работа "{name}" не поддерживает метод расчёта "{method}".').format(
+                    name=self.name, method=method_label
+                )
             )
 
         for fallback in (self.CostingMethod.SERVICE, self.CostingMethod.LABOR):
@@ -109,7 +109,7 @@ class Work(models.Model):
                 return fallback
 
         raise ValidationError(
-            _("Работа \"{name}\" не имеет доступных методик расчёта.").format(
+            _('Работа "{name}" не имеет доступных методик расчёта.').format(
                 name=self.name
             )
         )

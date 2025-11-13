@@ -136,7 +136,7 @@ def create_version_from_payload(
             if unit is None or price is None:
                 raise ValidationError(
                     _(
-                        "Для работы \"{name}\" не заполнены данные для метода \"{method}\"."
+                        'Для работы "{name}" не заполнены данные для метода "{method}".'
                     ).format(
                         name=w.name,
                         method=dict(Work.CostingMethod.choices).get(method, method),

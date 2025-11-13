@@ -7,7 +7,7 @@
 - Clear Data Structure: явная нормализация структур
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 class GroupAnnotationLoader:

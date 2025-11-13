@@ -8,9 +8,9 @@
 """
 
 from .views import (
+    EstimateVatSetRateAPIView,
     EstimateVatStatusAPIView,
     EstimateVatToggleAPIView,
-    EstimateVatSetRateAPIView,
 )
 
 __all__ = [

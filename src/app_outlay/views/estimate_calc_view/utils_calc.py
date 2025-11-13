@@ -1,12 +1,11 @@
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, Tuple, Dict, List
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Dict, List, Optional, Tuple
 
-from django.db.models import F, Sum, DecimalField, Value, ExpressionWrapper
+from django.db.models import Case, DecimalField, ExpressionWrapper, F, Sum, Value, When
 from django.db.models.functions import Coalesce
 
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
-
 
 # --- КЛЮЧИ В РЕЗУЛЬТАТЕ -------------------------------------------------------
 
@@ -117,9 +116,17 @@ def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
         "0"
     )
 
-    # Работы: сумма (qty_per_unit из версии × price_per_unit из ЖИВОГО справочника)
+    # Работы: сумма (qty_per_unit из версии × цена из ЖИВОГО справочника)
+    # Цена зависит от calculation_method: "labor" -> price_per_labor_hour, иначе -> price_per_unit
     w_q = Coalesce(F("qty_per_unit"), Value(0))
-    w_p = Coalesce(F("work__price_per_unit"), Value(0))
+    w_p = Coalesce(
+        Case(
+            When(calculation_method="labor", then=F("work__price_per_labor_hour")),
+            default=F("work__price_per_unit"),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        ),
+        Value(0),
+    )
     w_line = ExpressionWrapper(
         w_q * w_p, output_field=DecimalField(max_digits=18, decimal_places=6)
     )

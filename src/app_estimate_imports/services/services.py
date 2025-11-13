@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-
 from typing import BinaryIO, Optional
 
+from django.core.files.uploadedfile import UploadedFile
+from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.styles import Color
-
-from django.db import transaction
-from django.core.files.uploadedfile import UploadedFile
 
 from app_estimate_imports.models import ImportedEstimateFile, ParseResult
 
