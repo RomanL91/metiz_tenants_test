@@ -10,9 +10,9 @@
 - Reusability: общие методы для всех репозиториев
 """
 
-from typing import Generic, TypeVar, Type, Optional, List, Dict, Any
-from django.db.models import Model, QuerySet
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
+from django.db.models import Model, QuerySet
 
 ModelType = TypeVar("ModelType", bound=Model)
 

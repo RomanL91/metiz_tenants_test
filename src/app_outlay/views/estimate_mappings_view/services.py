@@ -2,8 +2,8 @@
 Сервисный слой для сохранения маппингов.
 """
 
-from typing import Dict, List, Tuple
 from decimal import Decimal
+from typing import Dict, List, Tuple
 
 from django.db import transaction
 

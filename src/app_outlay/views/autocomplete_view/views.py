@@ -12,17 +12,17 @@ Views (контроллеры) для автокомплита и batch-сопо
 - SOLID: зависимости через DI (сервисы передаются явно)
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from drf_spectacular.types import OpenApiTypes
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .serializers import (
     AutocompleteQuerySerializer,
-    BatchMatchRequestSerializer,
     AutocompleteResultSerializer,
+    BatchMatchRequestSerializer,
     BatchMatchResultSerializer,
 )
 from .services import AutocompleteService, TCMatchingService

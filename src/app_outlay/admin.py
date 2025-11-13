@@ -2,36 +2,29 @@
 Админ-панель для модуля «Сметы» (app_outlay).
 """
 
-import os
 import json
+import os
 
+from django.contrib import admin, messages
 from django.db import transaction
 from django.db.models import Count
-from django.urls import reverse, path
-from django.contrib import admin, messages
-from django.utils.translation import gettext_lazy as _
 from django.http import HttpResponseRedirect
+from django.urls import path, reverse
+from django.utils.translation import gettext_lazy as _
 
-
+from app_estimate_imports.services.schema_service import SchemaService as _SS
+from app_outlay.estimate_mapping_utils import TechnicalCardDetector, UnitNormalizer
 from app_outlay.forms import GroupFormSet, LinkFormSet
 from app_outlay.models import (
     Estimate,
+    EstimateOverheadCostLink,
     Group,
     GroupTechnicalCardLink,
-    EstimateOverheadCostLink,
 )
-from app_technical_cards.models import TechnicalCard as _TC
-from app_overhead_costs.models import OverheadCostContainer as _OHC
-from app_estimate_imports.services.schema_service import SchemaService as _SS
-
-from app_outlay.views.estimate_calc_view.utils_calc import DEFAULT_ORDER
-
 from app_outlay.utils import ExcelSheetReader
-from app_outlay.estimate_mapping_utils import (
-    TechnicalCardDetector,
-    UnitNormalizer,
-)
-
+from app_outlay.views.estimate_calc_view.utils_calc import DEFAULT_ORDER
+from app_overhead_costs.models import OverheadCostContainer as _OHC
+from app_technical_cards.models import TechnicalCard as _TC
 
 # ---------- АДМИНКИ ----------
 

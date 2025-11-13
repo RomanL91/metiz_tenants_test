@@ -7,8 +7,8 @@
 - Clear API: явные методы и типы
 """
 
-from typing import List, Dict
 from decimal import Decimal
+from typing import Dict, List
 
 from .calculators import PositionCalculation
 

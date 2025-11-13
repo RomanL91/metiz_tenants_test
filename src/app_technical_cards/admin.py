@@ -1,8 +1,8 @@
 import nested_admin
 from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
-from django.http import HttpResponseRedirect
 from django.utils.translation import gettext_lazy as _
 
 from app_technical_cards.models import (
@@ -75,7 +75,12 @@ class TCVWorkNestedInline(WithNestedIndentMedia, nested_admin.NestedTabularInlin
     ordering = ("order", "id")
     autocomplete_fields = ("work",)
     classes = ["collapse", "entity-work"]
-    fields = ("work", "qty_per_unit", "line_cost_per_unit_display")
+    fields = (
+        "work",
+        "calculation_method",
+        "qty_per_unit",
+        "line_cost_per_unit_display",
+    )
     readonly_fields = ("line_cost_per_unit_display",)
 
     def line_cost_per_unit_display(self, obj):

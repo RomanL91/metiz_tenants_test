@@ -3,18 +3,19 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, List
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
+from app_materials.models import Material
 from app_technical_cards.models import (
     TechnicalCard,
     TechnicalCardVersion,
     TechnicalCardVersionMaterial,
     TechnicalCardVersionWork,
 )
-from app_materials.models import Material
 from app_works.models import Work
-
 
 TRIGGER_FIELDS = {
     "materials_markup_percent",
@@ -29,6 +30,7 @@ TRIGGER_FIELDS = {
 class ItemSpec:
     ref_id: int
     qty: Decimal
+    method: str = Work.CostingMethod.SERVICE
 
 
 @dataclass
@@ -60,8 +62,11 @@ def parse_payload_from_hidden(raw: str | None) -> CompositionPayload:
         for it in data.get(key) or []:
             rid = it.get("ref_id") or it.get("id")
             qty = _to_decimal(it.get("qty"))
+            method = it.get("method") or Work.CostingMethod.SERVICE
+            if method not in Work.CostingMethod.values:
+                method = Work.CostingMethod.SERVICE
             if isinstance(rid, int) and qty >= 0:
-                collector.append(ItemSpec(ref_id=rid, qty=qty))
+                collector.append(ItemSpec(ref_id=rid, qty=qty, method=method))
     return CompositionPayload(mats, wrks)
 
 
@@ -125,13 +130,26 @@ def create_version_from_payload(
             w = wrks.get(i.ref_id)
             if not w:
                 continue
+            method = w.resolve_calculation_method(i.method)
+            unit = w.get_unit_for_method(method)
+            price = w.get_price_for_method(method)
+            if unit is None or price is None:
+                raise ValidationError(
+                    _(
+                        'Для работы "{name}" не заполнены данные для метода "{method}".'
+                    ).format(
+                        name=w.name,
+                        method=dict(Work.CostingMethod.choices).get(method, method),
+                    )
+                )
             bulk.append(
                 TechnicalCardVersionWork(
                     technical_card_version=ver,
                     work=w,
                     work_name=w.name,
-                    unit_ref=w.unit_ref,
-                    price_per_unit=w.price_per_unit,
+                    unit_ref=unit,
+                    price_per_unit=price,
+                    calculation_method=method,
                     qty_per_unit=i.qty,
                     order=idx,
                 )
@@ -178,12 +196,13 @@ def create_version_from_latest(tc: TechnicalCard) -> TechnicalCardVersion:
         row = TechnicalCardVersionWork.objects.create(
             technical_card_version=ver,
             work=r.work,
+            work_name=r.work_name,
+            unit_ref=r.unit_ref,
+            price_per_unit=r.price_per_unit,
+            calculation_method=r.calculation_method,
             qty_per_unit=r.qty_per_unit,
             order=r.order,
         )
-        if r.price_per_unit is not None:
-            row.price_per_unit = r.price_per_unit
-            row.save(update_fields=["price_per_unit"])
 
     ver.recalc_totals(save=True)
     return ver
@@ -198,8 +217,15 @@ def composition_differs_from_latest(
 
     def norm(items):
         return sorted(
-            [(i.ref_id, str(Decimal(i.qty).normalize())) for i in items],
-            key=lambda t: (t[0], t[1]),
+            [
+                (
+                    i.ref_id,
+                    str(Decimal(i.qty).normalize()),
+                    i.method or Work.CostingMethod.SERVICE,
+                )
+                for i in items
+            ],
+            key=lambda t: (t[0], t[1], t[2]),
         )
 
     cur_m = norm(payload.materials)
@@ -212,8 +238,14 @@ def composition_differs_from_latest(
 
     last_w = []
     for r in last.work_items.all():
-        last_w.append((r.work_id, str(Decimal(r.qty_per_unit).normalize())))
-    last_w.sort(key=lambda t: (t[0], t[1]))
+        last_w.append(
+            (
+                r.work_id,
+                str(Decimal(r.qty_per_unit).normalize()),
+                r.calculation_method,
+            )
+        )
+    last_w.sort(key=lambda t: (t[0], t[1], t[2]))
 
     return cur_m != last_m or cur_w != last_w
 

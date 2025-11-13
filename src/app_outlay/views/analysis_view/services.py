@@ -13,17 +13,9 @@ from typing import Dict, List
 from app_outlay.models import Estimate, GroupTechnicalCardLink
 from app_outlay.views.export_excel_view.overhead_calculator import OverheadCalculator
 
+from .aggregators import ChartDataBuilder, GroupAggregator, PositionAggregator
+from .calculators import MetricsCalculator, PositionCalculation, SalesCalculator
 from .exceptions import EstimateNotFoundError, NoTechnicalCardsError
-from .calculators import (
-    SalesCalculator,
-    MetricsCalculator,
-    PositionCalculation,
-)
-from .aggregators import (
-    GroupAggregator,
-    PositionAggregator,
-    ChartDataBuilder,
-)
 
 
 class AnalysisService:

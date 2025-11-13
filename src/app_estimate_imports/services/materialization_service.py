@@ -5,10 +5,10 @@ from typing import Iterable
 from app_outlay.estimate_mapping_utils.exceptions import InvalidSchemaError
 from app_outlay.services_materialize import materialize_estimate_from_markup
 
+from ..utils.constants import REQUIRED_ROLE_IDS, ROLE_DEFS
 from .base_service import BaseService
 from .markup_service import MarkupService
 from .schema_service import SchemaService
-from ..utils.constants import ROLE_DEFS, REQUIRED_ROLE_IDS
 
 
 class MaterializationService(BaseService):

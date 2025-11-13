@@ -2,18 +2,16 @@
 Контроллер для API сохранения маппингов.
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .serializers import (
-    SaveMappingsRequestSerializer,
-    SaveMappingsResponseSerializer,
-)
-from .services import MappingSaveService
 from app_outlay.exceptions import EstimateNotFoundError
+
+from .serializers import SaveMappingsRequestSerializer, SaveMappingsResponseSerializer
+from .services import MappingSaveService
 
 
 class EstimateMappingsSaveAPIView(APIView):
