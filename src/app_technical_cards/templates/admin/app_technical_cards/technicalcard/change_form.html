@@ -41,6 +41,11 @@
     .tc-inline-add-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 8px;background:#f8f9fa;border-radius:6px}
     .tc-inline-label{color:#495057;font-weight:600;font-size:13px}
     .tc-hint{color:#868e96;font-size:12px;font-style:italic}
+    .tc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#edf2ff;color:#364fc7}
+    .tc-tag-service{background:#edf2ff;color:#364fc7}
+    .tc-tag-labor{background:#fff4e6;color:#d9480f}
+    .tc-name{display:flex;align-items:center;gap:8px;justify-content:space-between}
+    .tc-label-wrap{display:flex;align-items:center;gap:6px}
     .tc-name{display:flex;align-items:center;gap:8px;justify-content:space-between}
     .tc-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
     .tc-del{border:none;background:transparent;cursor:pointer;padding:4px 8px;line-height:1;border-radius:6px;color:#adb5bd;font-size:18px;transition:all 0.2s}
@@ -587,8 +592,21 @@
       const priceChanged = !!item.price_changed;
       const priceClass = priceChanged ? 'tc-price-changed' : '';
       const badge = priceChanged ? '<span class="tc-price-badge">изм</span> ' : '';
+
+      let methodBadge = '';
+      if (kind === 'work'){
+        const methodCode = item.calculation_method || item.method || '';
+        const methodLabel = item.calculation_method_label || item.method_label || '';
+        tr.dataset.method = methodCode || '';
+        tr.dataset.methodLabel = methodLabel || '';
+        if (methodLabel){
+          const cls = methodCode === 'labor' ? 'tc-tag tc-tag-labor' : 'tc-tag tc-tag-service';
+          methodBadge = `<span class="${cls}" data-method="${methodCode}">${methodLabel}</span>`;
+        }
+      }
+
       tr.innerHTML = `
-        <td><div class="tc-name"><span class="tc-label">${item.name}</span>
+        <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${item.name}</span>${methodBadge}</span>
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${item.qty_per_unit}"></td>
         <td style="text-align:right;">${item.unit || "—"}</td>
@@ -598,9 +616,15 @@
       return tr;
     }
 
-    function addOrMergeRow(kind, refId, name, unit, qty, price){
+    function addOrMergeRow(kind, refId, name, unit, qty, price, method){
       const tbody = kind==='material'? els.matBody : els.workBody;
-      const exist = Array.from(tbody.querySelectorAll('tr')).find(tr => parseInt(tr.dataset.refId,10) === refId);
+      const methodCode = kind==='work' && method ? (method.code || method) : '';
+      const methodLabel = kind==='work' && method ? (method.label || method.method_label || '') : '';
+      const exist = Array.from(tbody.querySelectorAll('tr')).find(tr => {
+        if (parseInt(tr.dataset.refId,10) !== refId) return false;
+        if (kind !== 'work') return true;
+        return (tr.dataset.method || '') === (methodCode || '');
+      });
       if (exist){
         const inp = exist.querySelector('.tc-qty-input');
         inp.value = (toNum(inp.value) + toNum(qty)).toString();
@@ -611,8 +635,15 @@
       const p = Number(price ?? 0);
       tr.dataset.livePrice = isFinite(p) ? String(p) : "0";
       tr.dataset.versionPrice = isFinite(p) ? String(p) : "0";
+      if (kind==='work'){
+        tr.dataset.method = methodCode || '';
+        tr.dataset.methodLabel = methodLabel || '';
+      }
+      const badge = kind==='work' && methodLabel
+        ? `<span class="${(methodCode==='labor'?'tc-tag tc-tag-labor':'tc-tag tc-tag-service')}" data-method="${methodCode}">${methodLabel}</span>`
+        : '';
       tr.innerHTML = `
-        <td><div class="tc-name"><span class="tc-label">${name}</span>
+        <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${name}</span>${badge}</span>
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${qty}"></td>
         <td style="text-align:right;">${unit || '—'}</td>
@@ -624,11 +655,18 @@
     }
 
     function snapshotFromDOM(){
-      const grab=(tbody)=>$$('tr',tbody).map(tr=>({
-        ref_id: parseInt(tr.dataset.refId,10),
-        qty: toNum(tr.querySelector('.tc-qty-input')?.value)
-      })).filter(x=>Number.isFinite(x.ref_id));
-      return { materials: grab(els.matBody), works: grab(els.workBody) };
+      const grab=(tbody, kind)=>$$('tr',tbody).map(tr=>{
+        const payload = {
+          ref_id: parseInt(tr.dataset.refId,10),
+          qty: toNum(tr.querySelector('.tc-qty-input')?.value)
+        };
+        if (kind === 'work'){
+          const method = tr.dataset.method || '';
+          if (method) payload.method = method;
+        }
+        return payload;
+      }).filter(x=>Number.isFinite(x.ref_id));
+      return { materials: grab(els.matBody,'material'), works: grab(els.workBody,'work') };
     }
 
     async function loadComposition(){
@@ -667,11 +705,26 @@
     }
     function renderSuggestions(listEl, items, activeIdx){
       listEl.innerHTML='';
+      const kind = listEl.closest('.tc-ac')?.dataset.kind || '';
       items.forEach((it,idx)=>{
         const li=document.createElement('li');
         li.className='tc-ac-item'+(idx===activeIdx?' active':'');
-        li.dataset.id=it.id; li.dataset.name=it.name; li.dataset.unit=(it.unit||''); li.dataset.price = it.price ?? '';
-        li.innerHTML=`<span class="tc-ac-name">${it.name}</span><span class="tc-ac-meta">#${it.id}${it.unit?' · '+it.unit:''}${it.price?' · '+it.price:''}</span>`;
+        li.dataset.idx = String(idx);
+        li.dataset.id=it.id; li.dataset.name=it.name;
+        li.dataset.unit=(it.unit||''); li.dataset.price = it.price ?? '';
+        const metaParts = [`#${it.id}`];
+        if (kind==='work'){
+          const methods = Array.isArray(it.methods) ? it.methods : [];
+          if (methods.length){
+            metaParts.push(methods.map(m=>`${m.label}: ${fmt2(m.price ?? 0)}`).join(' / '));
+          } else if (it.price){
+            metaParts.push(fmt2(it.price));
+          }
+        } else {
+          if (it.unit) metaParts.push(it.unit);
+          if (it.price) metaParts.push(fmt2(it.price));
+        }
+        li.innerHTML=`<span class="tc-ac-name">${it.name}</span><span class="tc-ac-meta">${metaParts.filter(Boolean).join(' · ')}</span>`;
         listEl.appendChild(li);
       });
       listEl.style.display = items.length ? 'block' : 'none';
@@ -693,12 +746,50 @@
       });
       list.addEventListener('click',(e)=>{
         const li=e.target.closest('.tc-ac-item'); if(!li) return;
-        apply({ id: parseInt(li.dataset.id,10), name: li.dataset.name, unit: (li.dataset.unit || ''), price: li.dataset.price ? Number(li.dataset.price) : undefined });
+        const idx = Number.parseInt(li.dataset.idx || '-1', 10);
+        apply(items[idx] || items.find(it=>it.id===parseInt(li.dataset.id,10)));
       });
+
+      function pickWorkMethod(workItem){
+        const methods = Array.isArray(workItem?.methods) ? workItem.methods.filter(m=>m && m.code) : [];
+        if (!methods.length){
+          if (workItem && workItem.default_method){
+            const fallback = methods.find(m=>m.code===workItem.default_method);
+            if (fallback) return fallback;
+            return {
+              code: workItem.default_method,
+              label: '',
+              unit: workItem.unit || '',
+              price: workItem.price ?? 0,
+            };
+          }
+          return null;
+        }
+        if (methods.length === 1) return methods[0];
+        const service = methods.find(m=>m.code==='service');
+        const labor = methods.find(m=>m.code==='labor');
+        if (service && labor){
+          const question = `Добавить работу «${workItem.name}» как человеко-часы?\n`+
+            `${labor.label}: ${fmt2(labor.price ?? 0)}${labor.unit ? ' / '+labor.unit : ''}\n`+
+            `${service.label}: ${fmt2(service.price ?? 0)}${service.unit ? ' / '+service.unit : ''}`;
+          return window.confirm(question) ? labor : service;
+        }
+        const lines = methods.map((m, idx)=>`${idx+1}. ${m.label} (${fmt2(m.price ?? 0)}${m.unit ? ' / '+m.unit : ''})`).join('\n');
+        const answer = window.prompt(`Выберите метод расчёта для «${workItem.name}»:\n${lines}`, '1');
+        const choice = Number.parseInt(answer || '1', 10) - 1;
+        return methods[choice] || methods[0];
+      }
+
       function apply(chosen){
         if(!chosen) return;
         const q=Number(qtyInput.value||1); const qty=Number.isFinite(q)&&q>=0 ? q:1;
-        addOrMergeRow(kind, chosen.id, chosen.name, chosen.unit, qty, chosen.price);
+        let methodPayload = null;
+        if (kind==='work'){
+          methodPayload = pickWorkMethod(chosen);
+        }
+        const unit = methodPayload?.unit ?? chosen.unit ?? '';
+        const price = Number(methodPayload?.price ?? chosen.price ?? 0);
+        addOrMergeRow(kind, chosen.id, chosen.name, unit, qty, price, methodPayload);
         input.value=''; qtyInput.value=''; items=[]; active=-1; list.style.display='none'; input.focus();
       }
     }
@@ -726,7 +817,13 @@
       return Array.from(tbody.querySelectorAll('tr')).map(tr=>{
         const ref = parseInt(tr.dataset.refId,10);
         const qty = Number(toNum(tr.querySelector('.tc-qty-input')?.value));
-        return Number.isFinite(ref)&&Number.isFinite(qty)&&qty>=0 ? {ref_id:ref, qty:qty} : null;
+        if (!Number.isFinite(ref) || !Number.isFinite(qty) || qty < 0) return null;
+        const payload = {ref_id:ref, qty:qty};
+        if (kind==='work'){
+          const method = tr.dataset.method || '';
+          if (method) payload.method = method;
+        }
+        return payload;
       }).filter(Boolean);
     }
 

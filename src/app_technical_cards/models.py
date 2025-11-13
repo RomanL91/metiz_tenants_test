@@ -1,10 +1,12 @@
-from django.db import models
+from decimal import ROUND_HALF_UP, Decimal
 
-from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ValidationError
+from django.db import models
 from django.utils import timezone
-from decimal import Decimal, ROUND_HALF_UP
+from django.utils.translation import gettext_lazy as _
 
 from app_units.models import Unit
+from app_works.models import Work
 
 
 class TechnicalCard(models.Model):
@@ -462,6 +464,13 @@ class TechnicalCardVersionWork(models.Model):
         verbose_name=_("Работа"),
         help_text=_("Выберите работу из справочника"),
     )
+    calculation_method = models.CharField(
+        max_length=16,
+        choices=Work.CostingMethod.choices,
+        default=Work.CostingMethod.SERVICE,
+        verbose_name=_("Метод расчёта"),
+        help_text=_("По какому методу фиксируем стоимость этой работы."),
+    )
 
     # СНАПШОТЫ
     work_name = models.CharField(
@@ -510,9 +519,25 @@ class TechnicalCardVersionWork(models.Model):
     def save(self, *args, **kwargs):
         """Автоматически копируем данные из справочника Work."""
         if self.work:
+            method = self.work.resolve_calculation_method(self.calculation_method)
+            self.calculation_method = method
+            method_label = dict(Work.CostingMethod.choices).get(method, method)
+            unit = self.work.get_unit_for_method(method)
+            price = self.work.get_price_for_method(method)
+
+            if unit is None or price is None:
+                raise ValidationError(
+                    _("Для метода '{method}' не заполнены обязательные данные работы.").format(
+                        method=method_label,
+                    )
+                )
+
             self.work_name = self.work.name
             self.unit_ref = self.work.unit_ref
             self.price_per_unit = self.work.price_per_unit
+            self.unit_ref = unit
+            self.price_per_unit = price
+
         super().save(*args, **kwargs)
 
     @property
@@ -524,7 +549,7 @@ class TechnicalCardVersionWork(models.Model):
 
 
 # СИГНАЛЫ
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 
