@@ -1,432 +1,9 @@
-{% extends "admin/change_form.html" %}
-{% load i18n static l10n %}
-
-{% block form_top %}
-  {{ block.super }}
-  <input type="hidden" name="_tc_version_created_by_js" id="tc-version-created-flag" value="">
-  <input type="hidden" name="_tc_initial_composition"  id="tc-initial-composition-input" value="">
-{% endblock %}
-
-{% block object-tools-items %}
-  {{ block.super }}
-  {% if original.pk %}
-  <li>
-    <a href="#" class="historylink" id="tc-duplicate-btn">{% trans "Дублировать ТК" %}</a>
-  </li>
-  {% endif %}
-{% endblock %}
-
-{% block extrastyle %}
-  {{ block.super }}
-  <style>
-    .tc-hide-percents { display: none !important; }
-
-    @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
-    @keyframes pulse { 0%, 100%{opacity:1} 50%{opacity:0.6} }
-    @keyframes slideIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
-    
-    #tc-composition-block .spinner{width:20px;height:20px;border:3px solid #f3f3f3;border-top:3px solid #3498db;border-radius:50%;animation:spin 1s linear infinite}
-
-    .tc-composition-table{width:100%;border-collapse:collapse;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
-    .tc-composition-table thead{position:sticky;top:0;z-index:10;background:#fff}
-    .tc-composition-table th{background:linear-gradient(to bottom, #f8f9fa 0%, #f1f3f5 100%);padding:10px 8px;border-bottom:2px solid #dee2e6;font-weight:600;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;color:#495057}
-    .tc-composition-table td{padding:10px 8px;border-bottom:1px solid #e9ecef;transition:background 0.15s}
-    .tc-composition-table tbody tr:hover{background:#f8f9fa}
-    .tc-total-row td{background:linear-gradient(to bottom, #e7f5ff 0%, #d0ebff 100%)!important;border-top:3px solid #339af0;border-bottom:3px solid #339af0;padding:12px 8px!important;font-weight:700;font-size:14px}
-    .tc-price-changed{color:#fa5252;font-weight:600;animation:pulse 2s ease-in-out infinite}
-    .tc-price-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;font-size:10px;font-weight:700;background:#fff3bf;color:#e8590c;text-transform:uppercase;letter-spacing:0.5px;box-shadow:0 1px 2px rgba(0,0,0,0.1)}
-    .tc-price-badge::before{content:"⚠";font-size:11px}
-    .tc-qty-input{width:110px;text-align:right;padding:6px 8px;border:1.5px solid #ced4da;border-radius:6px;transition:all 0.2s}
-    .tc-qty-input:focus{border-color:#339af0;box-shadow:0 0 0 3px rgba(51,154,240,0.1);outline:none}
-    .tc-inline-add-wrap{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 8px;background:#f8f9fa;border-radius:6px}
-    .tc-inline-label{color:#495057;font-weight:600;font-size:13px}
-    .tc-hint{color:#868e96;font-size:12px;font-style:italic}
-    .tc-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#edf2ff;color:#364fc7}
-    .tc-tag-service{background:#edf2ff;color:#364fc7}
-    .tc-tag-labor{background:#fff4e6;color:#d9480f}
-    .tc-name{display:flex;align-items:center;gap:8px;justify-content:space-between}
-    .tc-label-wrap{display:flex;align-items:center;gap:6px}
-    .tc-name{display:flex;align-items:center;gap:8px;justify-content:space-between}
-    .tc-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
-    .tc-del{border:none;background:transparent;cursor:pointer;padding:4px 8px;line-height:1;border-radius:6px;color:#adb5bd;font-size:18px;transition:all 0.2s}
-    .tc-del:hover{color:#fa5252;background:#ffe0e0;transform:scale(1.1)}
-    .tc-del:focus-visible{outline:2px solid #fa5252;outline-offset:2px}
-    .tc-table-wrapper{border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
-    .tc-table-wrapper,.tc-composition-table,.tc-composition-table tfoot td{position:relative;overflow:visible}
-    .tc-ac{position:relative;min-width:300px;z-index:20000}
-    .tc-ac-input{padding:8px 10px;width:100%;border:1.5px solid #ced4da;border-radius:6px;transition:all 0.2s}
-    .tc-ac-input:focus{border-color:#339af0;box-shadow:0 0 0 3px rgba(51,154,240,0.1);outline:none}
-    .tc-ac-list{position:absolute;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1px solid #dee2e6;border-radius:8px;max-height:280px;overflow:auto;list-style:none;margin:0;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,0.12);display:none;z-index:20001}
-    .tc-ac-item{padding:10px 12px;cursor:pointer;display:flex;gap:8px;justify-content:space-between;border-radius:6px;transition:all 0.15s;margin-bottom:2px}
-    .tc-ac-item:hover,.tc-ac-item.active{background:#e7f5ff;transform:translateX(2px)}
-    .tc-ac-item .tc-ac-name{font-weight:600;color:#212529}
-    .tc-ac-item .tc-ac-meta{color:#868e96;font-size:12px;white-space:nowrap}
-
-    :root { --tc-card-min: 300px; }
-    
-    .tc-section-header{
-            display:block;
-            width:100%;
-            padding:16px 20px;
-            background:linear-gradient(to right, #f8f9fa 0%, #fff 100%);
-            color:#495057;
-            font-weight:600;
-            font-size:14px;
-             text-transform:uppercase;
-            letter-spacing:1.2px;
-            border-left:4px solid #667eea;
-            border-bottom:2px solid #e9ecef;
-            margin:0;
-    }
-    
-    .tc-dashboard{
-      margin-top:24px;
-      display:grid;
-      gap:16px;
-      grid-template-columns: repeat(auto-fit, minmax(var(--tc-card-min), 1fr));
-      align-items: stretch;
-      width:100%;
-    }
-    
-    .tc-card{
-      border:1px solid #e9ecef;
-      border-radius:12px;
-      background:#fff;
-      display:flex;
-      flex-direction:column;
-      min-width:0;
-      transition:all 0.3s;
-      animation:slideIn 0.4s ease-out;
-      overflow:hidden;
-    }
-    
-    .tc-card:hover{
-      box-shadow:0 8px 24px rgba(0,0,0,0.08);
-      transform:translateY(-2px);
-    }
-    
-    /* Карточки с инпутами - интерактивные */
-    .tc-card.tc-card-interactive{
-      border:2px solid #74c0fc;
-      background:linear-gradient(to bottom, #fff 0%, #e7f5ff 100%);
-    }
-    
-    /* Карточки с результатами - акцент */
-    .tc-card.tc-card-result{
-      border:2px solid #51cf66;
-      background:linear-gradient(to bottom, #fff 0%, #d3f9d8 100%);
-    }
-    
-    .tc-card > .tc-card-h{
-      padding:14px 16px;
-      border-bottom:1px solid #e9ecef;
-      font-weight:700;
-      font-size:14px;
-      display:flex;
-      align-items:center;
-      gap:8px;
-      background:linear-gradient(to right, #f8f9fa 0%, #fff 100%);
-    }
-    
-    .tc-card-interactive > .tc-card-h{
-      background:linear-gradient(135deg, #4dabf7 0%, #339af0 100%);
-      color:#fff;
-      border:none;
-    }
-    
-    .tc-card-result > .tc-card-h{
-      background:linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
-      color:#fff;
-      border:none;
-    }
-    
-    .tc-card-icon{
-      font-size:18px;
-      opacity:0.9;
-    }
-    
-    .tc-card > .tc-card-b{
-      padding:16px;
-      display:flex;
-      flex-direction:column;
-      gap:12px;
-    }
-    
-    .tc-kv{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      padding:10px 12px;
-      border-radius:8px;
-      background:#f8f9fa;
-      transition:all 0.2s;
-    }
-    
-    .tc-kv:hover{
-      background:#e9ecef;
-      transform:scale(1.01);
-    }
-    
-    .tc-kv strong{
-      font-size:16px;
-      font-weight:700;
-      color:#212529;
-    }
-    
-    .tc-card-result .tc-kv strong{
-      font-size:18px;
-      color:#2b8a3e;
-    }
-    
-    .tc-fig{
-      font-variant-numeric:tabular-nums;
-      font-family:'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
-    }
-    
-    .tc-field{
-      display:flex;
-      flex-direction:column;
-      gap:8px;
-    }
-    
-    .tc-input{
-      width:100%;
-      padding:10px 12px;
-      border:2px solid #4dabf7;
-      border-radius:8px;
-      text-align:right;
-      font-size:16px;
-      font-weight:600;
-      color:#1971c2;
-      transition:all 0.2s;
-      background:#fff;
-    }
-    
-    .tc-input:focus{
-      border-color:#1971c2;
-      box-shadow:0 0 0 4px rgba(25,113,194,0.15);
-      outline:none;
-      transform:scale(1.02);
-    }
-    
-    .tc-sub{
-      font-size:12px;
-      color:#495057;
-      font-weight:600;
-      text-transform:uppercase;
-      letter-spacing:0.5px;
-    }
-
-    @media (max-width: 480px){
-      :root { --tc-card-min: 260px; }
-      .tc-qty-input{ width:90px; }
-    }
-  </style>
-{% endblock %}
-
-{% block after_field_sets %}
-  {{ block.super }}
-
-  <div class="module" id="tc-composition-block" style="margin-top:20px;">
-    <h2 style="margin:0; padding:16px 20px; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff; border-radius:12px; box-shadow:0 4px 16px rgba(102,126,234,0.2);">
-      <span style="font-size:20px;margin-right:8px">📋</span>
-      {% trans "Состав техкарты" %}
-      <span id="tc-version-label" style="opacity:0.9; font-size:.9em; font-weight:400;">
-        {% if not original.pk %}({% trans "черновик" %}){% endif %}
-      </span>
-    </h2>
-
-    <div style="padding:20px;">
-      <div id="tc-composition-loading" style="text-align:center; padding:60px; color:#868e96;">
-        <div class="spinner" style="display:inline-block;"></div>
-        <p style="margin-top:16px;font-weight:500;">{% trans "Загрузка состава..." %}</p>
-      </div>
-
-      <div id="tc-composition-content" style="display:none;">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:32px;">
-          <div class="tc-section tc-materials">
-            <h3 style="margin:0 0 14px 0; padding:10px 14px; background:linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%); color:#fff; border-radius:10px; font-size:15px; display:flex; align-items:center; gap:10px; box-shadow:0 3px 10px rgba(255,107,107,0.3);">
-              <span style="font-size:20px">🧱</span>
-              {% trans "Материалы" %}
-            </h3>
-            <div class="tc-table-wrapper">
-              <table class="tc-composition-table" id="materials-table">
-                <thead>
-                  <tr>
-                    <th>{% trans "Наименование" %}</th>
-                    <th style="text-align:right;">{% trans "Кол-во" %}</th>
-                    <th style="text-align:right;">{% trans "Ед." %}</th>
-                    <th style="text-align:right;">{% trans "Цена (версия)" %}</th>
-                    <th style="text-align:right;">{% trans "Цена (текущая)" %}</th>
-                    <th style="text-align:right;">{% trans "Сумма" %}</th>
-                  </tr>
-                </thead>
-                <tbody id="materials-tbody"></tbody>
-                <tfoot>
-                  <tr class="tc-total-row">
-                    <td colspan="5" style="text-align:right;">{% trans "Итого материалы:" %}</td>
-                    <td id="materials-total" style="text-align:right;">—</td>
-                  </tr>
-                  <tr class="tc-inline-add">
-                    <td colspan="6" style="background:#fafafa;padding:12px;">
-                      <div class="tc-inline-add-wrap">
-                        <span class="tc-inline-label">➕ {% trans "Добавить материал:" %}</span>
-                        <div class="tc-ac" data-kind="material">
-                          <input type="text" class="tc-ac-input tc-ac-input-material" placeholder="{% trans 'Название материала или ID' %}">
-                          <ul class="tc-ac-list"></ul>
-                        </div>
-                        <input type="number" min="0" step="0.001" class="tc-new-qty tc-new-qty-material" placeholder="{% trans 'Кол-во' %}">
-                        <small class="tc-hint">{% trans "Введите 1+ символ для поиска. Выберите элемент и укажите количество — строка добавится автоматически." %}</small>
-                      </div>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          <div class="tc-section tc-works">
-            <h3 style="margin:0 0 14px 0; padding:10px 14px; background:linear-gradient(135deg, #20c997 0%, #12b886 100%); color:#fff; border-radius:10px; font-size:15px; display:flex; align-items:center; gap:10px; box-shadow:0 3px 10px rgba(18,184,134,0.3);">
-              <span style="font-size:20px">🔧</span>
-              {% trans "Работы" %}
-            </h3>
-            <div class="tc-table-wrapper">
-              <table class="tc-composition-table" id="works-table">
-                <thead>
-                  <tr>
-                    <th>{% trans "Наименование" %}</th>
-                    <th style="text-align:right;">{% trans "Кол-во" %}</th>
-                    <th style="text-align:right;">{% trans "Ед." %}</th>
-                    <th style="text-align:right;">{% trans "Цена (версия)" %}</th>
-                    <th style="text-align:right;">{% trans "Цена (текущая)" %}</th>
-                    <th style="text-align:right;">{% trans "Сумма" %}</th>
-                  </tr>
-                </thead>
-                <tbody id="works-tbody"></tbody>
-                <tfoot>
-                  <tr class="tc-total-row">
-                    <td colspan="5" style="text-align:right;">{% trans "Итого работы:" %}</td>
-                    <td id="works-total" style="text-align:right;">—</td>
-                  </tr>
-                  <tr class="tc-inline-add">
-                    <td colspan="6" style="background:#fafafa;padding:12px;">
-                      <div class="tc-inline-add-wrap">
-                        <span class="tc-inline-label">➕ {% trans "Добавить работу:" %}</span>
-                        <div class="tc-ac" data-kind="work">
-                          <input type="text" class="tc-ac-input tc-ac-input-work" placeholder="{% trans 'Название работы или ID' %}">
-                          <ul class="tc-ac-list"></ul>
-                        </div>
-                        <input type="number" min="0" step="0.001" class="tc-new-qty tc-new-qty-work" placeholder="{% trans 'Кол-во' %}">
-                        <small class="tc-hint">{% trans "Введите 1+ символ для поиска. Выберите элемент и укажите количество — строка добавится автоматически." %}</small>
-                      </div>
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="tc-section-header" style="margin:40px 0 24px 0">
-          <span>💰</span> Расчет стоимости
-        </div>
-
-        <div class="tc-dashboard">
-          <!-- 1. Себестоимость (данные) -->
-          <div class="tc-card">
-            <div class="tc-card-h">
-              <span class="tc-card-icon">📊</span>
-              {% trans "Себестоимость (по текущим ценам), за ед. выпуска" %}
-            </div>
-            <div class="tc-card-b">
-              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-cost-mats">—</strong></div>
-              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-cost-works">—</strong></div>
-              <div class="tc-kv" style="background:#e7f5ff;border:2px solid #74c0fc"><span style="font-weight:700">{% trans "Итого" %}</span> <strong class="tc-fig" id="d-cost-total" style="color:#1971c2;font-size:18px">—</strong></div>
-            </div>
-          </div>
-
-          <!-- 2. Надбавки (интерактивные) -->
-          <div class="tc-card tc-card-interactive">
-            <div class="tc-card-h">
-              <span class="tc-card-icon">⚙️</span>
-              {% trans "Надбавки и транспорт (%)" %}
-            </div>
-            <div class="tc-card-b">
-              <div class="tc-field">
-                <label class="tc-sub" for="p-mat-markup">{% trans "Надбавка на материалы, %" %}</label>
-                <input id="p-mat-markup" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
-              </div>
-              <div class="tc-field">
-                <label class="tc-sub" for="p-work-markup">{% trans "Надбавка на работы, %" %}</label>
-                <input id="p-work-markup" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
-              </div>
-              <div class="tc-field">
-                <label class="tc-sub" for="p-transport">{% trans "Транспортные расходы, %" %}</label>
-                <input id="p-transport" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
-              </div>
-            </div>
-          </div>
-
-          <!-- 3. Общая стоимость (данные) -->
-          <div class="tc-card">
-            <div class="tc-card-h">
-              <span class="tc-card-icon">📈</span>
-              {% trans "Общая стоимость (с надбавками и транспортом), за ед." %}
-            </div>
-            <div class="tc-card-b">
-              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-marked-mats">—</strong></div>
-              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-marked-works">—</strong></div>
-              <div class="tc-kv" style="background:#e7f5ff;border:2px solid #74c0fc"><span style="font-weight:700">{% trans "Итого" %}</span> <strong class="tc-fig" id="d-marked-total" style="color:#1971c2;font-size:18px">—</strong></div>
-            </div>
-          </div>
-
-          <!-- 4. Маржинальность (интерактивные) -->
-          <div class="tc-card tc-card-interactive">
-            <div class="tc-card-h">
-              <span class="tc-card-icon">💹</span>
-              {% trans "Маржинальность (%)" %}
-            </div>
-            <div class="tc-card-b">
-              <div class="tc-field">
-                <label class="tc-sub" for="p-mat-margin">{% trans "Маржа на материалы, %" %}</label>
-                <input id="p-mat-margin" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
-              </div>
-              <div class="tc-field">
-                <label class="tc-sub" for="p-work-margin">{% trans "Маржа на работы, %" %}</label>
-                <input id="p-work-margin" class="tc-input" type="number" inputmode="decimal" step="0.01" min="0" value="">
-              </div>
-            </div>
-          </div>
-
-          <!-- 5. Цена продажи (результат) -->
-          <div class="tc-card tc-card-result">
-            <div class="tc-card-h">
-              <span class="tc-card-icon">✅</span>
-              {% trans "Цена продажи, за ед." %}
-            </div>
-            <div class="tc-card-b">
-              <div class="tc-kv"><span>{% trans "Материалы" %}</span> <strong class="tc-fig" id="d-sale-mats">—</strong></div>
-              <div class="tc-kv"><span>{% trans "Работы" %}</span>     <strong class="tc-fig" id="d-sale-works">—</strong></div>
-              <div class="tc-kv" style="background:#d3f9d8;border:3px solid #51cf66;padding:14px"><span style="font-weight:700;font-size:15px">{% trans "Итого" %}</span> <strong class="tc-fig" id="d-sale-total" style="color:#2b8a3e;font-size:22px">—</strong></div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <div id="tc-composition-error" style="display:none; padding:20px; background:#ffe0e0; border-left:4px solid #fa5252; border-radius:10px; color:#c92a2a;font-weight:500;box-shadow:0 3px 10px rgba(250,82,82,0.2)"></div>
-    </div>
-  </div>
-{% endblock %}
-
 {% block admin_change_form_document_ready %}
   {{ block.super }}
   <script>
   (function() {
     'use strict';
 
-    // CSRF helper: пытаемся взять токен из скрытого поля формы админки,
-    // иначе — из cookie (если не httpOnly).
     function getCsrfToken() {
       const el = document.querySelector('input[name="csrfmiddlewaretoken"]');
       if (el && el.value) return el.value;
@@ -489,6 +66,11 @@
       return Number.isFinite(n) ? n : 0;
     };
     const fmt2 = (n)=> Number(n).toFixed(2);
+
+    // Утилита: определение единицы измерения для отображения
+    const getDisplayUnit = (kind, methodCode, unit) => {
+      return (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
+    };
 
     function clearError(){ els.err.textContent=''; els.err.style.display='none'; }
     function showError(msg){ els.loading.style.display='none'; els.err.textContent=msg; els.err.style.display='block'; }
@@ -598,7 +180,7 @@
 
       let methodBadge = '';
       if (kind === 'work'){
-        const methodCode = item.calculation_method || item.method || '';
+        methodCode = item.calculation_method || item.method || '';
         const methodLabel = item.calculation_method_label || item.method_label || '';
         tr.dataset.method = methodCode || '';
         tr.dataset.methodLabel = methodLabel || '';
@@ -607,6 +189,8 @@
           methodBadge = `<span class="${cls}" data-method="${methodCode}">${methodLabel}</span>`;
         }
       }
+
+      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
 
       tr.innerHTML = `
         <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${item.name}</span>${methodBadge}</span>
@@ -643,9 +227,7 @@
         tr.dataset.methodLabel = methodLabel || '';
       }
       
-      // Для работ с методом "labor" показываем "Ч/Ч" вместо единицы из справочника
-      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
-    
+      const displayUnit = getDisplayUnit(kind, methodCode, unit);
       const badge = kind==='work' && methodLabel
         ? `<span class="${(methodCode==='labor'?'tc-tag tc-tag-labor':'tc-tag tc-tag-service')}" data-method="${methodCode}">${methodLabel}</span>`
         : '';
@@ -760,7 +342,6 @@
       function pickWorkMethod(workItem){
         const methods = Array.isArray(workItem?.methods) ? workItem.methods.filter(m=>m && m.code) : [];
         if (!methods.length){
-          // Если нет methods, пытаемся использовать старый формат (deprecated)
           if (workItem?.price !== undefined){
             const defaultCode = workItem.default_method || 'service';
             return {
@@ -781,11 +362,9 @@
           return null;
         }
         if (methods.length === 1) return methods[0];
-        // Если есть оба метода (service и labor), спрашиваем пользователя
         const service = methods.find(m=>m.code==='service');
         const labor = methods.find(m=>m.code==='labor');
         if (service && labor){
-          // Создаем модальное окно для выбора метода
           const modal = document.createElement('div');
           modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999';
           modal.innerHTML = `
@@ -817,7 +396,6 @@
             });
           });
         }
-        // Если методов больше двух (edge case), возвращаем первый
         return methods[0];
       }
 
@@ -827,7 +405,7 @@
         let methodPayload = null;
         if (kind==='work'){
           methodPayload = await pickWorkMethod(chosen);
-          if (!methodPayload) return; // Пользователь отменил выбор
+          if (!methodPayload) return;
         }
         const unit = methodPayload?.unit ?? chosen.unit ?? '';
         const price = Number(methodPayload?.price ?? chosen.price ?? 0);

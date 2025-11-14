@@ -128,17 +128,40 @@ def _base_costs_live(
         .get("s")
     ) or Decimal("0")
 
-    # Работы: сумма (qty_per_unit из версии × цена из ЖИВОГО справочника)
-    # Цена зависит от calculation_method: "labor" -> price_per_labor_hour, иначе -> price_per_unit
+    # Работы: сумма (qty_per_unit из версии × цена из ЖИВОГО справочника ИЛИ переопределенная ЧЧ)
+    # Логика:
+    # - Если calculation_method="labor" И есть override_labor_rate → используем override
+    # - Если calculation_method="labor" И НЕТ override → берем price_per_labor_hour из справочника
+    # - Иначе берем price_per_unit из справочника
     w_q = Coalesce(F("qty_per_unit"), Value(0))
-    w_p = Coalesce(
-        Case(
-            When(calculation_method="labor", then=F("work__price_per_labor_hour")),
-            default=F("work__price_per_unit"),
-            output_field=DecimalField(max_digits=12, decimal_places=2),
-        ),
-        Value(0),
-    )
+
+    if override_labor_rate is not None:
+        # Есть переопределение ЧЧ: для "labor" используем override, для остальных — price_per_unit
+        w_p = Coalesce(
+            Case(
+                When(
+                    calculation_method="labor",
+                    then=Value(
+                        override_labor_rate,
+                        output_field=DecimalField(max_digits=12, decimal_places=2),
+                    ),
+                ),
+                default=F("work__price_per_unit"),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            Value(0),
+        )
+    else:
+        # Нет переопределения: стандартная логика (labor → price_per_labor_hour, иначе price_per_unit)
+        w_p = Coalesce(
+            Case(
+                When(calculation_method="labor", then=F("work__price_per_labor_hour")),
+                default=F("work__price_per_unit"),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            Value(0),
+        )
+
     w_line = ExpressionWrapper(
         w_q * w_p, output_field=DecimalField(max_digits=18, decimal_places=6)
     )
