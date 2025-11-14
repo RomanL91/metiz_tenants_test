@@ -593,6 +593,9 @@
       const priceClass = priceChanged ? 'tc-price-changed' : '';
       const badge = priceChanged ? '<span class="tc-price-badge">изм</span> ' : '';
 
+      // Для работ с методом "labor" показываем "Ч/Ч" вместо единицы из справочника
+      const displayUnit = (kind === 'work' && (item.calculation_method || item.method) === 'labor') ? 'Ч/Ч' : (item.unit || '—');
+
       let methodBadge = '';
       if (kind === 'work'){
         const methodCode = item.calculation_method || item.method || '';
@@ -609,7 +612,7 @@
         <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${item.name}</span>${methodBadge}</span>
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${item.qty_per_unit}"></td>
-        <td style="text-align:right;">${item.unit || "—"}</td>
+        <td style="text-align:right;">${displayUnit}</td>
         <td style="text-align:right;">${fmt2(versionPrice)}</td>
         <td style="text-align:right;" class="${priceClass}">${badge}${fmt2(livePrice)}</td>
         <td style="text-align:right; font-weight:600;">—</td>`;
@@ -639,6 +642,10 @@
         tr.dataset.method = methodCode || '';
         tr.dataset.methodLabel = methodLabel || '';
       }
+      
+      // Для работ с методом "labor" показываем "Ч/Ч" вместо единицы из справочника
+      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
+    
       const badge = kind==='work' && methodLabel
         ? `<span class="${(methodCode==='labor'?'tc-tag tc-tag-labor':'tc-tag tc-tag-service')}" data-method="${methodCode}">${methodLabel}</span>`
         : '';
@@ -646,7 +653,7 @@
         <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${name}</span>${badge}</span>
         <button type="button" class="tc-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">×</button></div></td>
         <td style="text-align:right;"><input class="tc-qty-input" type="number" step="0.001" min="0" value="${qty}"></td>
-        <td style="text-align:right;">${unit || '—'}</td>
+        <td style="text-align:right;">${displayUnit}</td>
         <td style="text-align:right;">${fmt2(p)}</td>
         <td style="text-align:right;">${fmt2(p)}</td>
         <td style="text-align:right; font-weight:600;">—</td>`;
