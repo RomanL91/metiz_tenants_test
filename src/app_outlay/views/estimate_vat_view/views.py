@@ -11,12 +11,9 @@ from rest_framework.views import APIView
 from app_outlay.exceptions import EstimateNotFoundError
 from app_outlay.repositories import EstimateRepository
 
-from .serializers import (
-    ErrorResponseSerializer,
-    VatSetRateRequestSerializer,
-    VatStatusResponseSerializer,
-    VatToggleRequestSerializer,
-)
+from .serializers import (ErrorResponseSerializer, VatSetRateRequestSerializer,
+                          VatStatusResponseSerializer,
+                          VatToggleRequestSerializer)
 from .services import VatManagementService
 
 

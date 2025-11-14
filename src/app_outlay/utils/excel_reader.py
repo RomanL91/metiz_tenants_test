@@ -18,7 +18,8 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from .excel_cache import ExcelCacheManager
 from .excel_normalizer import CellNormalizerStrategy, RowNormalizer
-from .exceptions import ExcelFileNotFoundError, ExcelReadError, ExcelSheetNotFoundError
+from .exceptions import (ExcelFileNotFoundError, ExcelReadError,
+                         ExcelSheetNotFoundError)
 
 
 class ExcelSheetReader:

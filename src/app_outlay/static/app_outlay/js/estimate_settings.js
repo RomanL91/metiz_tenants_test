@@ -8,11 +8,8 @@
 
     // ====== КОНФИГУРАЦИЯ ======
     const CONFIG = {
-        // Попробуйте изменить на нужный путь:
-        // Вариант 1: apiUrl: '/api/estimates/{estimate_id}/settings/',
-        // Вариант 2: apiUrl: '/api/v1/estimates/{estimate_id}/settings/',
         apiUrl: '/api/v1/estimates/{estimate_id}/settings/',
-        estimateId: null, // будет установлен при инициализации
+        estimateId: null,
     };
 
     // ====== DOM ЭЛЕМЕНТЫ ======
@@ -29,6 +26,7 @@
         // Поля формы
         objectName: document.getElementById('estimate-object-name'),
         vatRate: document.getElementById('estimate-vat-rate'),
+        laborHourRate: document.getElementById('estimate-labor-hour-rate'),
     };
 
     // ====== УТИЛИТЫ ======
@@ -62,7 +60,6 @@
         elements.modal.classList.add('active');
         document.body.style.overflow = 'hidden';
 
-        // Загружаем текущие настройки при каждом открытии
         loadSettings();
     }
 
@@ -115,6 +112,10 @@
                 if (elements.vatRate && data.settings_data.vat_rate !== undefined) {
                     elements.vatRate.value = data.settings_data.vat_rate || '';
                 }
+
+                if (elements.laborHourRate && data.settings_data.labor_hour_rate !== undefined) {
+                    elements.laborHourRate.value = data.settings_data.labor_hour_rate || '';
+                }
             }
 
         } catch (error) {
@@ -127,14 +128,12 @@
      * Сохранение настроек сметы
      */
     async function saveSettings() {
-        // Отключаем кнопку на время запроса
         if (elements.modalApply) {
             elements.modalApply.disabled = true;
             elements.modalApply.textContent = 'Сохранение...';
         }
 
         try {
-            // Собираем данные из формы
             const settings = {};
 
             if (elements.objectName) {
@@ -154,13 +153,22 @@
                 }
             }
 
+            if (elements.laborHourRate) {
+                const laborHourRate = elements.laborHourRate.value.trim();
+                if (laborHourRate) {
+                    const laborHourRateNum = parseFloat(laborHourRate);
+                    if (!isNaN(laborHourRateNum) && laborHourRateNum > 0) {
+                        settings.labor_hour_rate = laborHourRateNum;
+                    }
+                }
+            }
+
             const payload = { settings_data: settings };
             const url = getApiUrl();
 
             console.log('📡 POST запрос:', url);
             console.log('📦 Данные:', payload);
 
-            // Отправляем запрос
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -182,23 +190,20 @@
             const data = await response.json();
             console.log('✅ Настройки сохранены:', data);
 
-            // Успешно сохранено
             alert('✅ Настройки сметы успешно сохранены!');
             closeModal();
 
-            // Можно вызвать событие для обновления других частей интерфейса
             document.dispatchEvent(new CustomEvent('estimate-settings-updated', {
                 detail: { settings: data.settings_data }
             }));
 
-            // Перезагружаем страницу для отображения изменений
+            // Перезагружаем для применения изменений к расчетам
             window.location.reload();
 
         } catch (error) {
             console.error('❌ Ошибка сохранения настроек:', error);
             alert('❌ Ошибка сохранения настроек. Проверьте консоль для деталей.');
         } finally {
-            // Возвращаем кнопку в исходное состояние
             if (elements.modalApply) {
                 elements.modalApply.disabled = false;
                 elements.modalApply.textContent = 'Применить';
@@ -212,12 +217,10 @@
      * Инициализация обработчиков событий
      */
     function initEventHandlers() {
-        // Открытие модального окна
         if (elements.openBtn) {
             elements.openBtn.addEventListener('click', openModal);
         }
 
-        // Закрытие модального окна
         if (elements.modalClose) {
             elements.modalClose.addEventListener('click', closeModal);
         }
@@ -226,7 +229,6 @@
             elements.modalCancel.addEventListener('click', closeModal);
         }
 
-        // Клик вне модального окна
         if (elements.modal) {
             elements.modal.addEventListener('click', (e) => {
                 if (e.target === elements.modal) {
@@ -235,20 +237,17 @@
             });
         }
 
-        // Сохранение настроек
         if (elements.modalApply) {
             elements.modalApply.addEventListener('click', saveSettings);
         }
 
-        // Закрытие по Escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && elements.modal?.classList.contains('active')) {
                 closeModal();
             }
         });
 
-        // Enter в полях формы - сохранение
-        [elements.objectName, elements.vatRate].forEach(input => {
+        [elements.objectName, elements.vatRate, elements.laborHourRate].forEach(input => {
             if (input) {
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' && elements.modal?.classList.contains('active')) {
@@ -281,14 +280,13 @@
 
     // ====== ПУБЛИЧНЫЙ API ======
 
-    // Экспортируем функцию инициализации в глобальную область
     window.EstimateSettings = {
         init: init,
         open: openModal,
         close: closeModal,
         load: loadSettings,
         save: saveSettings,
-        getApiUrl: getApiUrl, // для отладки
+        getApiUrl: getApiUrl,
     };
 
 })();

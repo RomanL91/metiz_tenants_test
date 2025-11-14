@@ -13,14 +13,11 @@ from django.urls import path, reverse
 from django.utils.translation import gettext_lazy as _
 
 from app_estimate_imports.services.schema_service import SchemaService as _SS
-from app_outlay.estimate_mapping_utils import TechnicalCardDetector, UnitNormalizer
+from app_outlay.estimate_mapping_utils import (TechnicalCardDetector,
+                                               UnitNormalizer)
 from app_outlay.forms import GroupFormSet, LinkFormSet
-from app_outlay.models import (
-    Estimate,
-    EstimateOverheadCostLink,
-    Group,
-    GroupTechnicalCardLink,
-)
+from app_outlay.models import (Estimate, EstimateOverheadCostLink, Group,
+                               GroupTechnicalCardLink)
 from app_outlay.utils import ExcelSheetReader
 from app_outlay.views.estimate_calc_view.utils_calc import DEFAULT_ORDER
 from app_overhead_costs.models import OverheadCostContainer as _OHC

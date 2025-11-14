@@ -281,7 +281,8 @@ class OverheadManagementService:
             EstimateOverheadCostLink.objects.bulk_create(bulk)
 
             # bulk_create не вызывает сигналы, дёргаем вручную
-            from app_outlay.signals import invalidate_overhead_cache_on_link_change
+            from app_outlay.signals import \
+                invalidate_overhead_cache_on_link_change
 
             if bulk:
                 invalidate_overhead_cache_on_link_change(

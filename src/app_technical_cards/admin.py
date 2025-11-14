@@ -5,12 +5,9 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from app_technical_cards.models import (
-    TechnicalCard,
-    TechnicalCardVersion,
-    TechnicalCardVersionMaterial,
-    TechnicalCardVersionWork,
-)
+from app_technical_cards.models import (TechnicalCard, TechnicalCardVersion,
+                                        TechnicalCardVersionMaterial,
+                                        TechnicalCardVersionWork)
 
 from .services_versioning import handle_tc_save
 

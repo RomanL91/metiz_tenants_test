@@ -51,12 +51,9 @@ from django.db import transaction
 from rest_framework import serializers, status
 
 from app_materials.models import Material
-from app_technical_cards.models import (
-    TechnicalCard,
-    TechnicalCardVersion,
-    TechnicalCardVersionMaterial,
-    TechnicalCardVersionWork,
-)
+from app_technical_cards.models import (TechnicalCard, TechnicalCardVersion,
+                                        TechnicalCardVersionMaterial,
+                                        TechnicalCardVersionWork)
 from app_works.models import Work
 
 
@@ -317,7 +314,6 @@ from typing import Any, Dict, List
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.response import Response
-
 # ===============================================================================================
 from rest_framework.views import APIView
 

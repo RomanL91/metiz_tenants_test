@@ -9,10 +9,8 @@ from django.utils.translation import gettext as _
 from app_units.models import Unit
 from app_works.models import Work
 from app_works.views.import_view.exceptions import (
-    FileProcessingException,
-    InvalidFileFormatException,
-    InvalidFileStructureException,
-)
+    FileProcessingException, InvalidFileFormatException,
+    InvalidFileStructureException)
 
 
 class WorkImportResult:

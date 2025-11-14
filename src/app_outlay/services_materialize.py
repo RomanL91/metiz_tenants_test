@@ -2,12 +2,9 @@ from django.db import transaction
 
 from app_materials.models import Material
 from app_outlay.models import Estimate, Group, GroupTechnicalCardLink
-from app_technical_cards.models import (
-    TechnicalCard,
-    TechnicalCardVersion,
-    TechnicalCardVersionMaterial,
-    TechnicalCardVersionWork,
-)
+from app_technical_cards.models import (TechnicalCard, TechnicalCardVersion,
+                                        TechnicalCardVersionMaterial,
+                                        TechnicalCardVersionWork)
 from app_works.models import Work
 
 

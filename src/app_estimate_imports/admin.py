@@ -7,8 +7,10 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from app_estimate_imports.handlers import HandlerFactory
-from app_estimate_imports.models import ImportedEstimateFile, ParseMarkup, ParseResult
-from app_estimate_imports.services.materialization_service import MaterializationService
+from app_estimate_imports.models import (ImportedEstimateFile, ParseMarkup,
+                                         ParseResult)
+from app_estimate_imports.services.materialization_service import \
+    MaterializationService
 from app_estimate_imports.services.parse_service import ParseService
 from app_estimate_imports.utils.file_utils import FileUtils
 

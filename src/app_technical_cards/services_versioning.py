@@ -9,12 +9,9 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from app_materials.models import Material
-from app_technical_cards.models import (
-    TechnicalCard,
-    TechnicalCardVersion,
-    TechnicalCardVersionMaterial,
-    TechnicalCardVersionWork,
-)
+from app_technical_cards.models import (TechnicalCard, TechnicalCardVersion,
+                                        TechnicalCardVersionMaterial,
+                                        TechnicalCardVersionWork)
 from app_works.models import Work
 
 TRIGGER_FIELDS = {

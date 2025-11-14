@@ -5,13 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .exceptions import (
-    FileProcessingException,
-    InvalidFileFormatException,
-    InvalidFileStructureException,
-    MaterialImportException,
-)
-from .serializers import MaterialImportFileSerializer, MaterialImportResultSerializer
+from .exceptions import (FileProcessingException, InvalidFileFormatException,
+                         InvalidFileStructureException,
+                         MaterialImportException)
+from .serializers import (MaterialImportFileSerializer,
+                          MaterialImportResultSerializer)
 from .services import MaterialImportService
 
 

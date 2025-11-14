@@ -11,11 +11,8 @@ from app_materials.models import Material
 from app_suppliers.models import Supplier
 from app_units.models import Unit
 
-from .exceptions import (
-    FileProcessingException,
-    InvalidFileFormatException,
-    InvalidFileStructureException,
-)
+from .exceptions import (FileProcessingException, InvalidFileFormatException,
+                         InvalidFileStructureException)
 
 
 class MaterialImportResult:

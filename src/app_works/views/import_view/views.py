@@ -5,12 +5,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .exceptions import (
-    FileProcessingException,
-    InvalidFileFormatException,
-    InvalidFileStructureException,
-    WorkImportException,
-)
+from .exceptions import (FileProcessingException, InvalidFileFormatException,
+                         InvalidFileStructureException, WorkImportException)
 from .serializers import WorkImportFileSerializer, WorkImportResultSerializer
 from .services import WorkImportService
 
