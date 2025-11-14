@@ -10,8 +10,7 @@ from rest_framework.views import APIView
 
 from app_outlay.exceptions import EstimateNotFoundError
 
-from .serializers import (SaveMappingsRequestSerializer,
-                          SaveMappingsResponseSerializer)
+from .serializers import SaveMappingsRequestSerializer, SaveMappingsResponseSerializer
 from .services import MappingSaveService
 
 

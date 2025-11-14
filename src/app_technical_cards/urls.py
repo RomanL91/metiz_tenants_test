@@ -1,12 +1,14 @@
 from django.urls import path
 
-from app_technical_cards.views import (LiveCompositionApiView,
-                                       SaveNewVersionApiView,
-                                       TechnicalCardDuplicateApiView,
-                                       TechnicalCardLiveCompositionView,
-                                       TechnicalCardSaveNewVersionView,
-                                       TechnicalCardSearchMaterialsView,
-                                       TechnicalCardSearchWorksView)
+from app_technical_cards.views import (
+    LiveCompositionApiView,
+    SaveNewVersionApiView,
+    TechnicalCardDuplicateApiView,
+    TechnicalCardLiveCompositionView,
+    TechnicalCardSaveNewVersionView,
+    TechnicalCardSearchMaterialsView,
+    TechnicalCardSearchWorksView,
+)
 
 app_name = "app_technical_cards"
 

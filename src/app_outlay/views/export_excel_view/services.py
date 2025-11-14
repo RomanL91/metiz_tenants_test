@@ -16,10 +16,15 @@ from app_outlay.models import Estimate, GroupTechnicalCardLink
 from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc
 
 from .excel_writer import ExcelWriter
-from .exceptions import (CalculationError, EstimateNotFoundError,
-                         MarkupNotFoundError, NoMappingsFoundError,
-                         NoWritableColumnsError, SchemaNotFoundError,
-                         SourceFileNotFoundError)
+from .exceptions import (
+    CalculationError,
+    EstimateNotFoundError,
+    MarkupNotFoundError,
+    NoMappingsFoundError,
+    NoWritableColumnsError,
+    SchemaNotFoundError,
+    SourceFileNotFoundError,
+)
 from .overhead_calculator import OverheadCalculator
 
 

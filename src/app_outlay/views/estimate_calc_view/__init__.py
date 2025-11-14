@@ -27,8 +27,11 @@
 - Query Optimization (только нужные поля через .only())
 """
 
-from .services import (EstimateCalculationFacade, OverheadContextService,
-                       TechnicalCardCalculationService)
+from .services import (
+    EstimateCalculationFacade,
+    OverheadContextService,
+    TechnicalCardCalculationService,
+)
 from .views import EstimateCalcAPIView
 
 __all__ = [

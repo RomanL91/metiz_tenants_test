@@ -20,8 +20,7 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 
 from app_estimate_imports.handlers.base_handler import BaseHandler
-from app_estimate_imports.services.materialization_service import \
-    MaterializationService
+from app_estimate_imports.services.materialization_service import MaterializationService
 from app_estimate_imports.services.parse_service import ParseService
 
 

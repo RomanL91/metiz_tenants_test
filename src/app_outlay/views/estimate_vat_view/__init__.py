@@ -7,8 +7,11 @@
 - EstimateVatSetRateAPIView - установить ставку НДС
 """
 
-from .views import (EstimateVatSetRateAPIView, EstimateVatStatusAPIView,
-                    EstimateVatToggleAPIView)
+from .views import (
+    EstimateVatSetRateAPIView,
+    EstimateVatStatusAPIView,
+    EstimateVatToggleAPIView,
+)
 
 __all__ = [
     "EstimateVatStatusAPIView",

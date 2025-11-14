@@ -19,10 +19,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import (AutocompleteQuerySerializer,
-                          AutocompleteResultSerializer,
-                          BatchMatchRequestSerializer,
-                          BatchMatchResultSerializer)
+from .serializers import (
+    AutocompleteQuerySerializer,
+    AutocompleteResultSerializer,
+    BatchMatchRequestSerializer,
+    BatchMatchResultSerializer,
+)
 from .services import AutocompleteService, TCMatchingService
 
 

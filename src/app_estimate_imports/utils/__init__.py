@@ -1,7 +1,6 @@
 """Инициализация утилит"""
 
-from .constants import (NODE_COLORS, NODE_TYPES, REQUIRED_ROLE_IDS, ROLE_DEFS,
-                        ROLE_IDS)
+from .constants import NODE_COLORS, NODE_TYPES, REQUIRED_ROLE_IDS, ROLE_DEFS, ROLE_IDS
 from .file_utils import FileUtils
 from .hash_utils import HashUtils
 from .normalization import TextNormalizer, UnitNormalizer

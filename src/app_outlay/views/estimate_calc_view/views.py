@@ -20,15 +20,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from app_outlay.exceptions import (EstimateCalcException,
-                                   EstimateNotFoundError,
-                                   InvalidCalculationParamsError,
-                                   TechnicalCardNotFoundError)
+from app_outlay.exceptions import (
+    EstimateCalcException,
+    EstimateNotFoundError,
+    InvalidCalculationParamsError,
+    TechnicalCardNotFoundError,
+)
 from app_outlay.views.estimate_calc_view.serializers import (
-    ErrorResponseSerializer, EstimateCalcQuerySerializer,
-    EstimateCalcResponseSerializer)
-from app_outlay.views.estimate_calc_view.services import \
-    EstimateCalculationFacade
+    ErrorResponseSerializer,
+    EstimateCalcQuerySerializer,
+    EstimateCalcResponseSerializer,
+)
+from app_outlay.views.estimate_calc_view.services import EstimateCalculationFacade
 
 
 class EstimateCalcAPIView(APIView):

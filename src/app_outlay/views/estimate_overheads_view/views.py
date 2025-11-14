@@ -10,11 +10,13 @@ from rest_framework.views import APIView
 
 from app_outlay.exceptions import EstimateNotFoundError
 
-from .serializers import (OverheadApplyRequestSerializer,
-                          OverheadDeleteRequestSerializer,
-                          OverheadListResponseSerializer,
-                          OverheadQuantityRequestSerializer,
-                          OverheadToggleRequestSerializer)
+from .serializers import (
+    OverheadApplyRequestSerializer,
+    OverheadDeleteRequestSerializer,
+    OverheadListResponseSerializer,
+    OverheadQuantityRequestSerializer,
+    OverheadToggleRequestSerializer,
+)
 from .services import OverheadManagementService
 
 

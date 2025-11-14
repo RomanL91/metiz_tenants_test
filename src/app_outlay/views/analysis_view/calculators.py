@@ -12,8 +12,11 @@ from decimal import Decimal
 from typing import Dict, List, NamedTuple
 
 from app_outlay.models import GroupTechnicalCardLink
-from app_outlay.views.estimate_calc_view.utils_calc import (_base_costs_live,
-                                                            _dec, calc_for_tc)
+from app_outlay.views.estimate_calc_view.utils_calc import (
+    _base_costs_live,
+    _dec,
+    calc_for_tc,
+)
 
 
 class BaseCosts(NamedTuple):

@@ -17,14 +17,17 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
-from app_outlay.exceptions import (OverheadContextCalculationError,
-                                   TechnicalCardNotFoundError)
+from app_outlay.exceptions import (
+    OverheadContextCalculationError,
+    TechnicalCardNotFoundError,
+)
 from app_outlay.models import Estimate
-from app_outlay.repositories import (EstimateRepository,
-                                     OverheadCostRepository,
-                                     TechnicalCardRepository)
-from app_outlay.views.estimate_calc_view.utils_calc import \
-    calc_for_tc as calc_tc_util
+from app_outlay.repositories import (
+    EstimateRepository,
+    OverheadCostRepository,
+    TechnicalCardRepository,
+)
+from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc as calc_tc_util
 
 
 class OverheadContextService:
