@@ -7,11 +7,8 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django_tenants.utils import (
-    get_public_schema_name,
-    get_tenant_model,
-    schema_context,
-)
+from django_tenants.utils import (get_public_schema_name, get_tenant_model,
+                                  schema_context)
 
 # Опциональный proxy Role (если есть, можно назначать роли владельцу/тест-пользователям)
 try:

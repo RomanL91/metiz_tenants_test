@@ -10,7 +10,8 @@ Views (контроллеры) для анализа сметы.
 from django.http import JsonResponse
 from django.views import View
 
-from app_outlay.views.export_excel_view.overhead_calculator import OverheadCalculator
+from app_outlay.views.export_excel_view.overhead_calculator import \
+    OverheadCalculator
 
 from .exceptions import AnalysisError
 from .services import AnalysisService

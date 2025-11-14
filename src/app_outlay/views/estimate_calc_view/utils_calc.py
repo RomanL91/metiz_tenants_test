@@ -90,12 +90,25 @@ def _get_version(card_id: int) -> TechnicalCardVersion | None:
 # --- БАЗА: «ЖИВЫЕ» ЦЕНЫ ИЗ СПРАВОЧНИКОВ ---------------------------------------
 
 
-def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
+def _base_costs_live(
+    v: TechnicalCardVersion, overhead_context: Dict[str, object] | None = None
+) -> UnitCosts:
     """
     Базовая стоимость на 1 ед. выпуска ТК по ЖИВЫМ ценам (БЕЗ надбавок/маржи/НР).
     Архитектура (qty) из последней версии, цены из живых справочников.
     Используется как база для распределения НР.
+
+    ВАЖНО: Если в overhead_context передан 'labor_hour_rate', он переопределяет
+    цену из справочника для всех работ с calculation_method="labor".
     """
+
+    # Извлекаем переопределенную стоимость ЧЧ из контекста (если есть)
+    override_labor_rate = None
+    if overhead_context and "labor_hour_rate" in overhead_context:
+        try:
+            override_labor_rate = _dec(overhead_context["labor_hour_rate"])
+        except (ValueError, TypeError):
+            pass
 
     # Материалы: сумма (qty_per_unit из версии × price_per_unit из ЖИВОГО справочника)
     m_q = Coalesce(F("qty_per_unit"), Value(0))
@@ -103,18 +116,17 @@ def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     m_line = ExpressionWrapper(
         m_q * m_p, output_field=DecimalField(max_digits=18, decimal_places=6)
     )
-    m_base = v.material_items.select_related("material").annotate(
-        line=m_line
-    ).aggregate(
-        s=Coalesce(
-            Sum("line"),
-            Value(0, output_field=DecimalField(max_digits=18, decimal_places=6)),
+    m_base = (
+        v.material_items.select_related("material")
+        .annotate(line=m_line)
+        .aggregate(
+            s=Coalesce(
+                Sum("line"),
+                Value(0, output_field=DecimalField(max_digits=18, decimal_places=6)),
+            )
         )
-    ).get(
-        "s"
-    ) or Decimal(
-        "0"
-    )
+        .get("s")
+    ) or Decimal("0")
 
     # Работы: сумма (qty_per_unit из версии × цена из ЖИВОГО справочника)
     # Цена зависит от calculation_method: "labor" -> price_per_labor_hour, иначе -> price_per_unit
@@ -130,26 +142,33 @@ def _base_costs_live(v: TechnicalCardVersion) -> UnitCosts:
     w_line = ExpressionWrapper(
         w_q * w_p, output_field=DecimalField(max_digits=18, decimal_places=6)
     )
-    w_base = v.work_items.select_related("work").annotate(line=w_line).aggregate(
-        s=Coalesce(
-            Sum("line"),
-            Value(0, output_field=DecimalField(max_digits=18, decimal_places=6)),
+    w_base = (
+        v.work_items.select_related("work")
+        .annotate(line=w_line)
+        .aggregate(
+            s=Coalesce(
+                Sum("line"),
+                Value(0, output_field=DecimalField(max_digits=18, decimal_places=6)),
+            )
         )
-    ).get("s") or Decimal("0")
+        .get("s")
+    ) or Decimal("0")
 
     return UnitCosts(mat=_dec(m_base), work=_dec(w_base))
 
 
-def _unit_costs_live(v: TechnicalCardVersion) -> UnitCosts:
+def _unit_costs_live(
+    v: TechnicalCardVersion, overhead_context: Dict[str, object] | None = None
+) -> UnitCosts:
     """
     Стоимость на 1 ед. выпуска ТК с применением НАДБАВОК/ТРАНСПОРТА/МАРЖИ:
-    - База: из _base_costs_live() (живые цены × qty из версии)
+    - База: из _base_costs_live() (живые цены × qty из версии, с учетом переопределения ЧЧ)
     - Проценты: из ЖИВОЙ карточки TechnicalCard (чтобы можно было менять без новой версии)
     """
     tc: Optional[TechnicalCard] = getattr(v, "card", None) or getattr(
         v, "technical_card", None
     )
-    base = _base_costs_live(v)
+    base = _base_costs_live(v, overhead_context)
     m_base, w_base = base.mat, base.work
 
     # Надбавки/транспорт/маржинальность из ЖИВОЙ карточки (в процентах → доли)
@@ -201,10 +220,12 @@ def calc_for_tc(
     version: TechnicalCardVersion | None = None,
 ) -> Tuple[Dict[str, Decimal], List[str]]:
     """
-    Калькуляция для одной ТК (по её живым ценам) с учётом накладных расходов и НДС.
+    Калькуляция для одной ТК (по её живым ценам) с учётом накладных расходов, НДС и ЧЧ.
 
     ПОРЯДОК:
       1) База по живым ценам (мат/раб) — используется для распределения НР.
+         ВАЖНО: Если в overhead_context есть 'labor_hour_rate', он переопределяет
+         цену из справочника для работ с calculation_method="labor".
       2) Применяем надбавки/транспорт к базе, затем маржу → получаем «продажные» цены МАТ и РАБ.
       3) Накладные расходы ДОБАВЛЯЕМ ПОСЛЕ маржи.
          Распределение НР по ТК идёт по доле «база × количество» в своей категории:
@@ -221,6 +242,7 @@ def calc_for_tc(
             "include_self": bool,         # включить ли текущую строку в знаменатель Σ
             "vat_active": bool,           # НДС активен
             "vat_rate": int,              # ставка НДС (0-100%)
+            "labor_hour_rate": Decimal,   # переопределенная стоимость ЧЧ (опционально)
         }
         version — опциональный объект TechnicalCardVersion. Если передан, расчёт
       будет выполнен именно по этой версии (без обращения к _get_version()).
@@ -248,12 +270,12 @@ def calc_for_tc(
         }
         return calc, order
 
-    # 1) База по живым ценам — на 1 ед.
-    base = _base_costs_live(ver)
+    # 1) База по живым ценам — на 1 ед. (с учетом переопределения ЧЧ)
+    base = _base_costs_live(ver, overhead_context)
     base_mat, base_work = base.mat, base.work
 
-    # 2) «Продажные» цены без НР (на 1 ед.)
-    sale = _unit_costs_live(ver)
+    # 2) «Продажные» цены без НР (на 1 ед., с учетом переопределения ЧЧ)
+    sale = _unit_costs_live(ver, overhead_context)
     sale_mat, sale_work = sale.mat, sale.work
 
     # 3) Распределяем НР — СНАЧАЛА считаем добавку на ВСЮ строку (line OH),
