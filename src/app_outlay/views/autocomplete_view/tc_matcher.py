@@ -1,8 +1,8 @@
 import re
-from difflib import SequenceMatcher
 
 from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import Prefetch, Value
+from rapidfuzz import fuzz
 
 from app_outlay.estimate_mapping_utils import UnitNormalizer
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
@@ -327,7 +327,7 @@ class TCMatcher:
     ) -> float:
         """Расчёт итоговой схожести для карточки."""
 
-        char_similarity = SequenceMatcher(None, search_name, card_name_lower).ratio()
+        char_similarity = self._char_similarity(search_name, card_name_lower)
         word_similarity = self.calculate_word_similarity(search_name, card_name_lower)
 
         combined_similarity = (
@@ -343,6 +343,12 @@ class TCMatcher:
                 combined_similarity = combined_similarity * self.penalty_for_units
 
         return combined_similarity
+
+    @staticmethod
+    def _char_similarity(search_name: str, card_name_lower: str) -> float:
+        """Быстрая оценка похожести строк на основе rapidfuzz."""
+
+        return fuzz.QRatio(search_name, card_name_lower, processor=None) / 100
 
     @staticmethod
     def _get_published_version(card: TechnicalCard) -> TechnicalCardVersion | None:
