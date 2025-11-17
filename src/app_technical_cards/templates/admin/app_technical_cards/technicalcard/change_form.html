@@ -597,9 +597,7 @@
       const priceClass = priceChanged ? 'tc-price-changed' : '';
       const badge = priceChanged ? '<span class="tc-price-badge">изм</span> ' : '';
 
-      // Для работ с методом "labor" показываем "Ч/Ч" вместо единицы из справочника
-      const displayUnit = (kind === 'work' && (item.calculation_method || item.method) === 'labor') ? 'Ч/Ч' : (item.unit || '—');
-
+      let methodCode = '';
       let methodBadge = '';
       if (kind === 'work'){
         methodCode = item.calculation_method || item.method || '';
@@ -612,7 +610,7 @@
         }
       }
 
-      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
+      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (item.unit || '—');
 
       tr.innerHTML = `
         <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${item.name}</span>${methodBadge}</span>
