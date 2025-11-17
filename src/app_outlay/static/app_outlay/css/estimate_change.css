@@ -74,37 +74,224 @@
     min-width: 220px;
 }
 
-/* ========== СЕКЦИИ И ГРУППИРОВКА ========== */
-.tc-map .sec-hdr td {
-    background: #fafafa;
-    padding-top: 10px;
+/* ========== АККОРДЕОН / ДРЕВОВИДНАЯ СТРУКТУРА ========== */
+
+/* Строка узла дерева */
+.tree-node-row {
     cursor: pointer;
     user-select: none;
+    transition: background 0.15s ease;
 }
 
-.tc-map .sec-hdr .collapse-icon {
+.tree-node-row:hover {
+    background: #f8f9fa !important;
+}
+
+.tree-node-row.is-collapsed+.tree-node-children {
+    display: none;
+}
+
+/* Ячейка с содержимым узла - НЕ используем flex напрямую на td */
+.tree-node-cell {
+    padding: 0 !important;
+    border-left: 3px solid transparent !important;
+}
+
+/* Внутренний контейнер с flex */
+.tree-node-cell-inner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    width: 100%;
+}
+
+/* Отступы для уровней вложенности */
+.tree-indent {
     display: inline-block;
-    margin-right: 8px;
-    transition: transform 0.2s;
+    flex-shrink: 0;
 }
 
-.tc-map .sec-hdr.collapsed .collapse-icon {
+.tree-node-cell[data-level="0"] .tree-indent {
+    width: 0;
+}
+
+.tree-node-cell[data-level="1"] .tree-indent {
+    width: 24px;
+}
+
+.tree-node-cell[data-level="2"] .tree-indent {
+    width: 48px;
+}
+
+.tree-node-cell[data-level="3"] .tree-indent {
+    width: 72px;
+}
+
+.tree-node-cell[data-level="4"] .tree-indent {
+    width: 96px;
+}
+
+/* Иконка коллапса */
+.tree-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    color: #495057;
+    transition: transform 0.2s ease;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.tree-toggle:hover {
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.tree-node-row.is-collapsed .tree-toggle {
     transform: rotate(-90deg);
 }
 
-.tc-map .sec-subtotal td {
-    background: #fff3cd;
-    font-weight: 600;
-    border-top: 2px solid #ffc107;
-    text-align: right;
-    padding-right: 16px;
+.tree-toggle.is-leaf {
+    opacity: 0;
+    pointer-events: none;
 }
 
-.badge {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 10px;
+/* Контент узла */
+.tree-node-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Название узла */
+.tree-node-name {
     font-weight: 600;
+    font-size: 13px;
+    color: #212529;
+    flex: 1;
+    min-width: 0;
+}
+
+.tree-node-cell[data-level="0"] .tree-node-name {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.tree-node-cell[data-level="1"] .tree-node-name {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Цветовая метка - теперь как border-left */
+.tree-node-badge {
+    display: none;
+}
+
+/* Применяем цвет как border-left */
+.tree-node-row[data-level="0"] .tree-node-cell {
+    border-left-width: 4px !important;
+}
+
+.tree-node-row[data-level="1"] .tree-node-cell {
+    border-left-width: 3px !important;
+}
+
+.tree-node-row[data-level="2"] .tree-node-cell {
+    border-left-width: 3px !important;
+}
+
+/* Итоги узла */
+.tree-node-totals {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    padding: 6px 14px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #856404;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.tree-node-totals .total-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tree-node-totals .total-label {
+    opacity: 0.8;
+}
+
+.tree-node-totals .total-value {
+    font-variant-numeric: tabular-nums;
+}
+
+.tree-node-totals .divider {
+    width: 1px;
+    height: 12px;
+    background: #ffc107;
+    opacity: 0.4;
+}
+
+/* Строка данных (листья дерева) */
+.tree-data-row {
+    background: #ffffff;
+}
+
+.tree-data-row[data-level="0"] {
+    background: #fafafa;
+}
+
+.tree-data-row[data-level="1"] {
+    background: #fcfcfc;
+}
+
+.tree-data-row td:first-child {
+    padding-left: 8px !important;
+}
+
+.tree-data-row[data-level="1"] td:first-child {
+    padding-left: 32px !important;
+}
+
+.tree-data-row[data-level="2"] td:first-child {
+    padding-left: 56px !important;
+}
+
+.tree-data-row[data-level="3"] td:first-child {
+    padding-left: 80px !important;
+}
+
+.tree-data-row[data-level="4"] td:first-child {
+    padding-left: 104px !important;
+}
+
+/* Фон узлов по уровням - как в Excel */
+.tree-node-row[data-level="0"] {
+    background: linear-gradient(to right, #dae3f3 0%, #dae3f3 100%);
+}
+
+.tree-node-row[data-level="1"] {
+    background: linear-gradient(to right, #e9eff7 0%, #e9eff7 100%);
+}
+
+.tree-node-row[data-level="2"] {
+    background: linear-gradient(to right, #f2f5f9 0%, #f2f5f9 100%);
+}
+
+.tree-node-row[data-level="3"] {
+    background: linear-gradient(to right, #f8fafb 0%, #f8fafb 100%);
 }
 
 /* ========== ОБЁРТКА ПОЛЯ ТК + ЭЛЕМЕНТЫ УПРАВЛЕНИЯ ========== */

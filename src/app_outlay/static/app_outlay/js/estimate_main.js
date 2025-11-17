@@ -43,16 +43,23 @@
             setRate: `/api/v1/estimates/${ESTIMATE_ID}/vat/set-rate/`
         };
 
-        // Инициализация модулей
-        if (window.EstimateCalc) {
-            window.EstimateCalc.init(CALC_ORDER, CALC_URL, BATCH_CALC_URL);
-            window.EstimateCalc.prefillExistingMappings(EXISTING_MAPPINGS);
-        }
+        // Инициализация модулей в правильном порядке
 
+        // 1. Сначала инициализируем EstimateSections (строит дерево)
         if (window.EstimateSections) {
+            console.log('🔧 Инициализация EstimateSections...');
             window.EstimateSections.init(CALC_ORDER);
         }
 
+        // 2. Затем EstimateCalc (использует дерево для расчётов)
+        if (window.EstimateCalc) {
+            console.log('🔧 Инициализация EstimateCalc...');
+            window.EstimateCalc.init(CALC_ORDER, CALC_URL, BATCH_CALC_URL);
+            // Заполняем существующие маппинги (вызовет updateSectionTotals)
+            window.EstimateCalc.prefillExistingMappings(EXISTING_MAPPINGS);
+        }
+
+        // 3. Остальные модули
         if (window.EstimateMappingsSave) {
             window.EstimateMappingsSave.init(SAVE_MAPPINGS_URL, EXISTING_MAPPINGS);
         }

@@ -445,7 +445,9 @@ class EstimateAdmin(admin.ModelAdmin):
         extra.update(
             {
                 "table_sections": table_sections,
+                "table_sections_json": json.dumps(table_sections, ensure_ascii=False),
                 "optional_cols": optional_cols,
+                "optional_cols_json": json.dumps(optional_cols, ensure_ascii=False),
                 # Передаём ПОЛНЫЙ порядок для корректной работы итогового табло
                 "calc_order_json": json.dumps(full_calc_order, ensure_ascii=False),
                 # Для UI таблицы — только размеченные колонки

@@ -171,12 +171,12 @@
           ▲ Свернуть всё
         </button>
         <button type="button" id="btn-expand-all" class="action-btn default" style="height: 32px; font-size: 13px; padding: 0 12px;">
-          ▼ Показать всё
+          ▼ Развернуть всё
         </button>
       </div>
     </div>
 
-    <!-- ТАБЛИЦА СОПОСТАВЛЕНИЯ ТК -->
+    <!-- ТАБЛИЦА СОПОСТАВЛЕНИЯ ТК (АККОРДЕОН) -->
     <table class="tc-map" id="tc-map">
       <thead>
         <tr>
@@ -189,34 +189,15 @@
           {% endfor %}
         </tr>
       </thead>
-      <tbody>
-        {% for sec in table_sections %}
-          <tr class="sec-hdr" data-section-id="{{ forloop.counter }}">
-            <td colspan="{{ table_colspan }}">
-              <span class="collapse-icon">▼</span>
-              <span class="badge" style="background: {{ sec.color|default:'#eef' }}">{{ sec.path }}</span>
-              <span class="sec-totals" style="margin-left:16px; font-weight:600; color:#856404;"></span>
-            </td>
-          </tr>
-          {% for it in sec.items %}
-            <tr data-row="{{ it.row_index }}" data-section-id="{{ forloop.parentloop.counter }}">
-              <td>{{ it.name }}</td>
-              <td>{{ it.unit }}</td>
-              <td><input type="number" step="0.0001" class="qty-input" value="{{ it.qty|default_if_none:'' }}" placeholder="0"></td>
-              <td>
-                <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…" data-id="" data-text="">
-                <div class="muted">строка Excel: {{ it.row_index }}</div>
-              </td>
-              {% for col_data in it.opt_values %}
-                <td class="cell-2lines opt-cell" data-rid="{{ col_data.rid }}">
-                  <div class="sys">—</div>
-                  <div class="muted">xls: {{ col_data.value|default:"—" }}</div>
-              {% endfor %}
-            </tr>
-          {% endfor %}
-        {% endfor %}
+      <tbody id="tc-map-body">
+        <!-- Заполняется через JS -->
       </tbody>
     </table>
+
+    <!-- Скрытый шаблон для данных -->
+    <script type="application/json" id="table-sections-data">
+      {{ table_sections_json|safe }}
+    </script>
   {% endif %}
 
   <script>
@@ -226,6 +207,12 @@
     window.ESTIMATE_ID = {{ original.pk|default:'null' }};
     window.TC_CHANGE_URL_ZERO = '{{ tc_change_url_zero|escapejs }}';
     window.OHC_CHANGE_URL_ZERO = '{{ ohc_change_url_zero|escapejs }}';
+    window.ROLE_TITLES = {
+      NAME_OF_WORK: '{{ role_titles.NAME_OF_WORK|escapejs }}',
+      UNIT: '{{ role_titles.UNIT|escapejs }}',
+      QTY: '{{ role_titles.QTY|escapejs }}'
+    };
+    window.OPTIONAL_COLS = JSON.parse('{{ optional_cols_json|escapejs }}' || '[]');
   </script>
 
   <!-- Подключение модулей -->
