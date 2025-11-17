@@ -1,4 +1,3 @@
-// path: src/app_outlay/static/app_outlay/js/estimate_calc.js
 /**
  * Модуль расчётов технических карт
  */
@@ -8,10 +7,12 @@
     const EstimateCalc = {
         CALC_ORDER: [],
         CALC_URL: '',
+        BATCH_CALC_URL: '',
 
-        init(calcOrder, calcUrl) {
+        init(calcOrder, calcUrl, batchCalcUrl) {
             this.CALC_ORDER = calcOrder;
             this.CALC_URL = calcUrl;
+            this.BATCH_CALC_URL = batchCalcUrl;
             this._bindQtyInputs();
         },
 
@@ -155,6 +156,88 @@
             };
         },
 
+        /**
+         * Batch расчёт множества строк за один запрос.
+         * Оптимизирован для загрузки больших смет.
+         */
+        async batchCalc(items) {
+            if (!items || items.length === 0) return [];
+
+            try {
+                const response = await fetch(this.BATCH_CALC_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this._getCsrfToken()
+                    },
+                    body: JSON.stringify({ items })
+                });
+
+                if (!response.ok) {
+                    console.error('Batch calc HTTP error:', response.status);
+                    return [];
+                }
+
+                const data = await response.json();
+
+                if (!data.ok) {
+                    console.error('Batch calc error:', data.error);
+                    return [];
+                }
+
+                return data.results || [];
+            } catch (e) {
+                console.error('Batch calc fetch error:', e);
+                return [];
+            }
+        },
+
+        _getCsrfToken() {
+            const input = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (input && input.value) return input.value;
+
+            const m = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+            return m ? decodeURIComponent(m[1]) : '';
+        },
+
+        /**
+         * Применить результаты batch расчёта к строкам таблицы.
+         */
+        applyBatchResults(results) {
+            results.forEach(result => {
+                if (result.error) {
+                    console.warn(`Ошибка расчёта tc_id=${result.tc_id}:`, result.error);
+                    return;
+                }
+
+                const rowIndex = result.row_index;
+                if (rowIndex == null) return;
+
+                const tr = document.querySelector(`tr[data-row="${rowIndex}"]`);
+                if (!tr) return;
+
+                const calc = result.calc || {};
+
+                // Сохраняем полные данные в data-атрибут
+                tr.dataset.calcData = JSON.stringify(calc);
+
+                // Заполняем ячейки по ключам
+                tr.querySelectorAll('.opt-cell[data-rid]').forEach(td => {
+                    const rid = td.dataset.rid;
+                    if (!rid || !(rid in calc)) return;
+
+                    const val = (calc[rid] != null && calc[rid] !== undefined)
+                        ? this._formatNumber(calc[rid])
+                        : '—';
+
+                    td.querySelector('.sys').textContent = val;
+                });
+            });
+
+            // Обновляем итоговое табло
+            setTimeout(() => this.updateSummary(), 100);
+        },
+
         renderMetricCards(container, cards) {
             const card = (title, main, extraClass = '') => `
           <div class="metric-card ${extraClass}">
@@ -237,7 +320,8 @@
                 return;
             }
 
-            const calcPromises = [];
+            // Собираем элементы для batch расчёта
+            const batchItems = [];
 
             mappingEntries.forEach(([rowIndex, mapping]) => {
                 const tr = document.querySelector(`tr[data-row="${rowIndex}"]`);
@@ -246,9 +330,6 @@
                 const tcInput = tr.querySelector('.js-tc-autocomplete');
                 const qtyInput = tr.querySelector('.qty-input');
 
-                // НОВОЕ: всегда используем ID КАРТОЧКИ (tc_id).
-                // Legacy-путь: если пришёл tc_version_id — его нужно конвертировать в card_id на бэке,
-                // но на фронте dataset.id мы заполняем ТОЛЬКО card_id (mapping.tc_id).
                 const tcId = mapping.tc_id || 0;
 
                 if (tcInput && tcId && mapping.tc_name) {
@@ -278,12 +359,20 @@
                 }
 
                 if (tcId && mapping.quantity > 0) {
-                    calcPromises.push(this.triggerRowCalc(tr));
+                    batchItems.push({
+                        tc_id: tcId,
+                        quantity: parseFloat(mapping.quantity),
+                        row_index: parseInt(rowIndex, 10)
+                    });
                 }
             });
 
-            if (calcPromises.length > 0) {
-                await Promise.all(calcPromises);
+            // Batch расчёт вместо множества одиночных запросов
+            if (batchItems.length > 0) {
+                console.log(`🚀 Запуск batch расчёта для ${batchItems.length} строк...`);
+                const results = await this.batchCalc(batchItems);
+                this.applyBatchResults(results);
+                console.log(`✅ Batch расчёт завершён: ${results.length} результатов`);
             }
 
             this.updateSummary();
@@ -291,7 +380,7 @@
 
         async recalcAllRows() {
             const rows = document.querySelectorAll('#tc-map tbody tr:not(.sec-hdr)');
-            const promises = [];
+            const batchItems = [];
 
             rows.forEach(tr => {
                 const qtyInput = tr.querySelector('.qty-input');
@@ -300,11 +389,21 @@
                 const qty = parseFloat((qtyInput?.value || '').replace(',', '.')) || 0;
 
                 if (tcId > 0 && qty > 0) {
-                    promises.push(this.triggerRowCalc(tr));
+                    const rowIndex = tr.dataset.row;
+                    batchItems.push({
+                        tc_id: tcId,
+                        quantity: qty,
+                        row_index: parseInt(rowIndex, 10)
+                    });
                 }
             });
 
-            await Promise.all(promises);
+            if (batchItems.length > 0) {
+                console.log(`🔄 Пересчёт ${batchItems.length} строк...`);
+                const results = await this.batchCalc(batchItems);
+                this.applyBatchResults(results);
+                console.log(`✅ Пересчёт завершён`);
+            }
             this.updateSummary();
         }
     };

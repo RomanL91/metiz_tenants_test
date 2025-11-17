@@ -75,6 +75,72 @@ class EstimateCalcQuerySerializer(serializers.Serializer):
         return qty
 
 
+class BatchCalcItemSerializer(serializers.Serializer):
+    """
+    Сериализатор для одного элемента batch расчёта.
+    """
+
+    tc_id = serializers.IntegerField(
+        required=True,
+        min_value=1,
+        help_text="ID технической карты (card_id)",
+    )
+
+    quantity = serializers.FloatField(
+        required=True,
+        min_value=0,
+        help_text="Количество",
+    )
+
+    row_index = serializers.IntegerField(
+        required=False,
+        help_text="Индекс строки (опционально, для сопоставления в ответе)",
+    )
+
+
+class EstimateBatchCalcRequestSerializer(serializers.Serializer):
+    """
+    Сериализатор для batch запроса расчётов.
+
+    POST /api/estimate/{id}/calc-batch/
+    {
+        "items": [
+            {"tc_id": 123, "quantity": 10.5, "row_index": 0},
+            {"tc_id": 456, "quantity": 20.0, "row_index": 1}
+        ]
+    }
+    """
+
+    items = serializers.ListField(
+        child=BatchCalcItemSerializer(),
+        min_length=1,
+        max_length=1000,
+        help_text="Список элементов для расчёта (макс. 1000)",
+    )
+
+
+class BatchCalcResultSerializer(serializers.Serializer):
+    """
+    Сериализатор для результата одного расчёта в batch.
+    """
+
+    tc_id = serializers.IntegerField()
+    quantity = serializers.FloatField()
+    row_index = serializers.IntegerField(required=False, allow_null=True)
+    calc = serializers.DictField(child=serializers.FloatField())
+    error = serializers.CharField(required=False, allow_null=True)
+
+
+class EstimateBatchCalcResponseSerializer(serializers.Serializer):
+    """
+    Сериализатор для ответа batch расчётов.
+    """
+
+    ok = serializers.BooleanField(default=True)
+    results = serializers.ListField(child=BatchCalcResultSerializer())
+    order = serializers.ListField(child=serializers.CharField())
+
+
 class EstimateCalcResponseSerializer(serializers.Serializer):
     """
     Сериализатор для ответа API расчёта ТК.

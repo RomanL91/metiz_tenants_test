@@ -4,10 +4,8 @@ from app_outlay.views import views as view_estimate_settings
 from app_outlay.views.analysis_view import views as analysis_view
 from app_outlay.views.autocomplete_view import views as autocomplete_view
 from app_outlay.views.estimate_calc_view import views as estimate_calc_view
-from app_outlay.views.estimate_mappings_view import \
-    views as estimate_mappings_view
-from app_outlay.views.estimate_overheads_view import \
-    views as estimate_overheads_view
+from app_outlay.views.estimate_mappings_view import views as estimate_mappings_view
+from app_outlay.views.estimate_overheads_view import views as estimate_overheads_view
 from app_outlay.views.estimate_vat_view import views as estimate_vat_view
 from app_outlay.views.export_excel_view import views as export_excel_view
 
@@ -25,6 +23,12 @@ urlpatterns = [
         "estimates/<int:estimate_id>/calc/",
         estimate_calc_view.EstimateCalcAPIView.as_view(),
         name="calculate",
+    ),
+    # Batch расчёт ТК
+    path(
+        "estimates/<int:estimate_id>/calc-batch/",
+        estimate_calc_view.EstimateBatchCalcAPIView.as_view(),
+        name="calculate-batch",
     ),
     # Сохранение сопоставлений
     path(

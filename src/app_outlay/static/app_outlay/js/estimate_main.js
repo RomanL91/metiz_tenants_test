@@ -25,6 +25,7 @@
 
         // Формируем URLs (все на /api/v1/)
         const CALC_URL = `/api/v1/estimates/${ESTIMATE_ID}/calc/`;
+        const BATCH_CALC_URL = `/api/v1/estimates/${ESTIMATE_ID}/calc-batch/`;
         const SAVE_MAPPINGS_URL = `/api/v1/estimates/${ESTIMATE_ID}/save-mappings/`;
         const EXPORT_EXCEL_URL = `/api/v1/estimates/${ESTIMATE_ID}/export-excel/`;
 
@@ -44,7 +45,7 @@
 
         // Инициализация модулей
         if (window.EstimateCalc) {
-            window.EstimateCalc.init(CALC_ORDER, CALC_URL);
+            window.EstimateCalc.init(CALC_ORDER, CALC_URL, BATCH_CALC_URL);
             window.EstimateCalc.prefillExistingMappings(EXISTING_MAPPINGS);
         }
 

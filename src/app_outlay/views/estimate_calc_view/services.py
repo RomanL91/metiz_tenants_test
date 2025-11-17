@@ -28,6 +28,7 @@ from app_outlay.repositories import (
     TechnicalCardRepository,
 )
 from app_outlay.views.estimate_calc_view.utils_calc import calc_for_tc as calc_tc_util
+from app_technical_cards.models import TechnicalCardVersion
 
 
 class OverheadContextService:
@@ -174,14 +175,18 @@ class TechnicalCardCalculationService:
         tc_id: int,
         quantity: float,
         overhead_context: Optional[Dict] = None,
+        version: Optional[TechnicalCardVersion] = None,
     ) -> Tuple[Dict[str, Decimal], List[str]]:
         """
         Рассчитать показатели ТК с учётом НР, НДС и ЧЧ.
 
+        ОПТИМИЗАЦИЯ: Если version передан, пропускаем запрос к БД.
+
         Args:
-            tc_id: ID технической карты (card_id или legacy version_id)
+            tc_id: ID карточки ТК (card_id)
             quantity: Количество
             overhead_context: Контекст НР+НДС+ЧЧ (опционально)
+            version: Предзагруженная версия ТК (опционально)
 
         Returns:
             Tuple:
@@ -191,18 +196,24 @@ class TechnicalCardCalculationService:
         Raises:
             TechnicalCardNotFoundError: Если ТК не найдена
         """
-        card_id = self.tc_repo.resolve_card_id(tc_id=tc_id)
-        if card_id is None:
-            raise TechnicalCardNotFoundError(tc_id)
+        # Если версия не передана, получаем её из БД
+        if version is None:
+            if not self.tc_repo.card_exists(tc_id):
+                raise TechnicalCardNotFoundError(tc_id)
 
-        if not self.tc_repo.get_latest_published_version(card_id):
-            raise TechnicalCardNotFoundError(tc_id)
+            version = self.tc_repo.get_latest_published_version(tc_id)
+            if not version:
+                raise TechnicalCardNotFoundError(tc_id)
+        else:
+            # Версия передана → используем её card_id
+            tc_id = version.card_id
 
         # Делегируем расчёт в утилиту
         calc, order = calc_tc_util(
-            card_id=card_id,
+            card_id=tc_id,
             qty=quantity,
             overhead_context=overhead_context,
+            version=version,
         )
 
         return calc, order
@@ -253,7 +264,7 @@ class EstimateCalculationFacade:
 
         Args:
             estimate_id: ID сметы
-            tc_id: ID технической карты
+            tc_id: ID карточки ТК (card_id)
             quantity: Количество
 
         Returns:

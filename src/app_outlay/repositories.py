@@ -14,14 +14,19 @@
 """
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
-from django.db.models import QuerySet
+from django.db.models import Prefetch, QuerySet
 
 from app_outlay.exceptions import EstimateNotFoundError
 from app_outlay.models import Estimate, EstimateOverheadCostLink, GroupTechnicalCardLink
 from app_outlay.views.estimate_calc_view.utils_calc import _base_costs_live, _dec
-from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
+from app_technical_cards.models import (
+    TechnicalCard,
+    TechnicalCardVersion,
+    TechnicalCardVersionMaterial,
+    TechnicalCardVersionWork,
+)
 from core.base_repository import BaseRepository
 
 
@@ -217,50 +222,77 @@ class TechnicalCardRepository:
     @staticmethod
     def card_exists(card_id: int) -> bool:
         """Проверить существование карточки ТК."""
-
         return TechnicalCard.objects.filter(pk=card_id).exists()
 
     @staticmethod
-    def resolve_card_id(
-        *, tc_id: Optional[int] = None, tc_version_id: Optional[int] = None
-    ) -> Optional[int]:
-        """
-        Определить card_id на основе переданных идентификаторов.
-
-        Приоритет:
-        1. tc_id (card_id) — если карточка существует.
-        2. tc_id как legacy version_id — если карточки нет, но найдено совпадение по версии.
-        3. tc_version_id — явный legacy-параметр.
-        """
-
-        if tc_id:
-            if TechnicalCard.objects.filter(pk=tc_id).exists():
-                return tc_id
-
-            version = (
-                TechnicalCardVersion.objects.filter(pk=tc_id).only("card_id").first()
-            )
-            if version:
-                return version.card_id
-
-        if tc_version_id:
-            version = (
-                TechnicalCardVersion.objects.filter(pk=tc_version_id)
-                .only("card_id")
-                .first()
-            )
-            if version:
-                return version.card_id
-
-        return None
-
-    @staticmethod
     def get_latest_published_version(card_id: int) -> Optional[TechnicalCardVersion]:
-        """Получить последнюю опубликованную версию для карточки."""
+        """
+        Получить последнюю опубликованную версию для карточки.
 
+        Args:
+            card_id: ID карточки ТК
+
+        Returns:
+            TechnicalCardVersion или None
+        """
         return (
             TechnicalCardVersion.objects.filter(card_id=card_id, is_published=True)
             .select_related("card")
             .order_by("-created_at", "-id")
             .first()
         )
+
+    @staticmethod
+    def bulk_get_latest_published_versions(
+        card_ids: List[int],
+    ) -> Dict[int, TechnicalCardVersion]:
+        """
+        Bulk получение последних опубликованных версий для множества карточек.
+
+        ОПТИМИЗАЦИЯ:
+        - Один запрос для всех версий
+        - Prefetch materials и works
+        - Prefetch связанных справочников (material, work)
+
+        Args:
+            card_ids: Список ID карточек
+
+        Returns:
+            Dict[card_id -> TechnicalCardVersion] с предзагруженными связями
+        """
+        if not card_ids:
+            return {}
+
+        # Prefetch материалов с живыми ценами из справочников
+        materials_prefetch = Prefetch(
+            "material_items",
+            queryset=TechnicalCardVersionMaterial.objects.select_related(
+                "material", "unit_ref"
+            ).order_by("order", "id"),
+        )
+
+        # Prefetch работ с живыми ценами из справочников
+        works_prefetch = Prefetch(
+            "work_items",
+            queryset=TechnicalCardVersionWork.objects.select_related(
+                "work", "unit_ref"
+            ).order_by("order", "id"),
+        )
+
+        # Получаем все последние опубликованные версии одним запросом
+        versions = (
+            TechnicalCardVersion.objects.filter(
+                card_id__in=card_ids, is_published=True
+            )
+            .select_related("card", "card__unit_ref")
+            .prefetch_related(materials_prefetch, works_prefetch)
+            .order_by("card_id", "-created_at", "-id")
+        )
+
+        # Группируем по card_id (берём первую = последнюю по дате)
+        result = {}
+        for version in versions:
+            if version.card_id not in result:
+                result[version.card_id] = version
+
+        return result

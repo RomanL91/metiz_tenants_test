@@ -135,21 +135,19 @@ class MappingSaveService:
 
             for idx, item in enumerate(items):
                 row_index = item.get("row_index")
-
-                tc_id = item.get("tc_id")
-                ver_id = item.get("tc_version_id")
+                card_id = item.get("tc_id")
                 quantity = Decimal(str(item.get("quantity", 0)))
-                if (not tc_id and not ver_id) or quantity <= 0:
+
+                # Валидация: нужен card_id и положительное количество
+                if not card_id or quantity <= 0:
                     continue
 
-                card_id = self.tc_repo.resolve_card_id(
-                    tc_id=tc_id, tc_version_id=ver_id
-                )
-                if not card_id:
+                # Проверяем существование карточки
+                if not self.tc_repo.card_exists(card_id):
                     continue
 
+                # Получаем последнюю опубликованную версию
                 tc_version = self.tc_repo.get_latest_published_version(card_id)
-
                 if not tc_version:
                     continue
 

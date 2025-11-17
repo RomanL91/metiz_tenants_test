@@ -28,6 +28,8 @@ from app_outlay.exceptions import (
 )
 from app_outlay.views.estimate_calc_view.serializers import (
     ErrorResponseSerializer,
+    EstimateBatchCalcRequestSerializer,
+    EstimateBatchCalcResponseSerializer,
     EstimateCalcQuerySerializer,
     EstimateCalcResponseSerializer,
 )
@@ -45,7 +47,7 @@ class EstimateCalcAPIView(APIView):
     - qty (required): Количество (поддерживает запятую и точку)
 
     **Response Format:**
-    ```json
+```json
     {
         "ok": true,
         "calc": {
@@ -62,7 +64,7 @@ class EstimateCalcAPIView(APIView):
             ...
         ]
     }
-    ```
+```
 
     **Use Case:**
     Используется для динамического пересчёта строк сметы при изменении
@@ -213,3 +215,184 @@ class EstimateCalcAPIView(APIView):
             },
             status=status_code,
         )
+
+
+class EstimateBatchCalcAPIView(APIView):
+    """
+    Batch API для расчёта множества ТК за один запрос.
+
+    **Endpoint:** POST /api/estimate/{estimate_id}/calc-batch/
+
+    **Request Format:**
+```json
+    {
+        "items": [
+            {"tc_id": 123, "quantity": 10.5, "row_index": 0},
+            {"tc_id": 456, "quantity": 20.0, "row_index": 1}
+        ]
+    }
+```
+
+    **Response Format:**
+```json
+    {
+        "ok": true,
+        "results": [
+            {
+                "tc_id": 123,
+                "quantity": 10.5,
+                "row_index": 0,
+                "calc": {...},
+                "error": null
+            }
+        ],
+        "order": ["UNIT_PRICE_OF_MATERIAL", ...]
+    }
+```
+
+    **Performance:**
+    - Контекст НР рассчитывается один раз для всей сметы
+    - Bulk prefetch всех версий ТК одним SQL запросом
+    - Максимум 1000 элементов за запрос
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.calc_facade = EstimateCalculationFacade()
+
+    @extend_schema(
+        summary="Batch расчёт показателей ТК",
+        description=(
+            "Рассчитывает показатели множества ТК за один запрос. "
+            "Оптимизирован для загрузки больших смет (до 1000 строк). "
+            "Использует bulk prefetch для минимизации SQL запросов."
+        ),
+        request=EstimateBatchCalcRequestSerializer,
+        responses={
+            200: EstimateBatchCalcResponseSerializer,
+            400: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+            500: ErrorResponseSerializer,
+        },
+        tags=["Estimate Calculations"],
+    )
+    def post(self, request, estimate_id: int):
+        """
+        Обработка batch запроса расчётов.
+
+        Алгоритм:
+        1. Валидация входных данных
+        2. Получение контекста НР один раз
+        3. Bulk prefetch всех версий ТК одним запросом
+        4. Расчёт всех элементов с предзагруженными данными
+        5. Формирование ответа
+
+        Args:
+            request: DRF Request объект
+            estimate_id: ID сметы из URL path
+
+        Returns:
+            Response с массивом результатов
+        """
+        try:
+            # Шаг 1: Валидация
+            serializer = EstimateBatchCalcRequestSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+
+            items = serializer.validated_data["items"]
+
+            # Шаг 2: Получаем смету и контекст НР один раз
+            estimate = self.calc_facade.estimate_repo.get_by_id_or_raise(estimate_id)
+            overhead_context = self.calc_facade.overhead_service.calculate_context(
+                estimate
+            )
+
+            # Шаг 3: Bulk prefetch всех версий ТК одним SQL запросом
+            card_ids = list({item["tc_id"] for item in items})
+            versions_map = self.calc_facade.tc_calc_service.tc_repo.bulk_get_latest_published_versions(
+                card_ids
+            )
+
+            # Шаг 4: Рассчитываем все элементы с предзагруженными версиями
+            results = []
+            order = None
+
+            for item in items:
+                tc_id = item["tc_id"]
+                quantity = item["quantity"]
+                row_index = item.get("row_index")
+
+                # Получаем предзагруженную версию из кеша
+                version = versions_map.get(tc_id)
+
+                if not version:
+                    results.append(
+                        {
+                            "tc_id": tc_id,
+                            "quantity": quantity,
+                            "row_index": row_index,
+                            "calc": {},
+                            "error": f"Технические карта с ID {tc_id} не найдена",
+                        }
+                    )
+                    continue
+
+                try:
+                    # Передаём предзагруженную версию напрямую
+                    calc, item_order = self.calc_facade.tc_calc_service.calculate(
+                        tc_id=tc_id,
+                        quantity=quantity,
+                        overhead_context=overhead_context,
+                        version=version,  # ← предзагруженная версия
+                    )
+
+                    # Конвертируем Decimal -> float
+                    calc_float = {k: float(v) for k, v in calc.items()}
+
+                    if order is None:
+                        order = item_order
+
+                    results.append(
+                        {
+                            "tc_id": tc_id,
+                            "quantity": quantity,
+                            "row_index": row_index,
+                            "calc": calc_float,
+                            "error": None,
+                        }
+                    )
+
+                except Exception as e:
+                    results.append(
+                        {
+                            "tc_id": tc_id,
+                            "quantity": quantity,
+                            "row_index": row_index,
+                            "calc": {},
+                            "error": f"Ошибка расчёта: {str(e)}",
+                        }
+                    )
+
+            # Шаг 5: Формирование ответа
+            return Response(
+                {
+                    "ok": True,
+                    "results": results,
+                    "order": order or [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except EstimateNotFoundError as e:
+            return Response(
+                {"ok": False, "error": str(e)},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        except Exception as e:
+            return Response(
+                {"ok": False, "error": "Внутренняя ошибка сервера"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
