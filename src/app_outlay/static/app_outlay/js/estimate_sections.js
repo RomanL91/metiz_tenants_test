@@ -235,7 +235,7 @@
                 <td>${this._escapeHtml(item.name || '')}</td>
                 <td>${this._escapeHtml(item.unit || '')}</td>
                 <td>
-                    <input type="number" step="0.0001" class="qty-input" value="${item.qty || ''}" placeholder="0">
+                    <input type="number" step="0.01" class="qty-input" value="${item.qty || ''}" placeholder="0">
                 </td>
                 <td>
                     <input type="text" class="tc-input js-tc-autocomplete" placeholder="Найти ТК…" data-id="" data-text="">

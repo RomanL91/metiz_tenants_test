@@ -9,6 +9,8 @@
 
 from typing import Any, List, Protocol
 
+from core.utils.numbers import format_number_to_string
+
 
 class CellNormalizerStrategy(Protocol):
     """Протокол стратегии нормализации ячейки."""
@@ -57,7 +59,7 @@ class DefaultCellNormalizer:
         """
         if value is None:
             return ""
-        return str(value).strip()
+        return format_number_to_string(value)
 
 
 class StrictCellNormalizer:

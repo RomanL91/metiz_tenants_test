@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Color
 
 from app_estimate_imports.models import ImportedEstimateFile, ParseResult
+from core.utils.numbers import format_number_to_string
 
 
 def compute_sha256(fobj: BinaryIO) -> str:
@@ -231,7 +232,11 @@ def parse_excel_to_json(path: str) -> dict:
 
             for cell in row:
                 # Значение ячейки
-                value = str(cell.value) if cell.value is not None else ""
+                value = (
+                    format_number_to_string(cell.value)
+                    if cell.value is not None
+                    else ""
+                )
                 cells.append(value)
 
                 # Цвет фона ячейки (ИСПРАВЛЕНО с поддержкой theme+tint)

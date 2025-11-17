@@ -13,6 +13,7 @@ from app_works.views.import_view.exceptions import (
     InvalidFileFormatException,
     InvalidFileStructureException,
 )
+from core.utils.numbers import round_decimal_value
 
 
 class WorkImportResult:
@@ -161,7 +162,7 @@ class WorkDataValidator:
             return False, _("Цена не может быть пустой")
 
         try:
-            price_decimal = Decimal(str(price))
+            price_decimal = round_decimal_value(price)
             if price_decimal <= 0:
                 return False, _("Цена должна быть больше нуля")
         except (InvalidOperation, ValueError):
@@ -234,7 +235,7 @@ class WorkImportProcessor:
     def _prepare_row_data(self, row: Dict[str, Any]) -> Dict[str, Any]:
         name = str(row.get("Наименование")).strip()
         unit_symbol = str(row.get("Единица измерения")).strip()
-        price = Decimal(str(row.get("Цена")))
+        price = round_decimal_value(row.get("Цена"))
 
         unit = self._get_unit(unit_symbol)
 

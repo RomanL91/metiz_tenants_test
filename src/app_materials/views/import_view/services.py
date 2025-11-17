@@ -10,6 +10,7 @@ from django.utils.translation import gettext as _
 from app_materials.models import Material
 from app_suppliers.models import Supplier
 from app_units.models import Unit
+from core.utils.numbers import round_decimal_value
 
 from .exceptions import (
     FileProcessingException,
@@ -181,7 +182,7 @@ class MaterialDataValidator:
             return False, _("Цена не может быть пустой")
 
         try:
-            price_decimal = Decimal(str(price))
+            price_decimal = round_decimal_value(price)
             if price_decimal <= 0:
                 return False, _("Цена должна быть больше нуля")
         except (InvalidOperation, ValueError):
@@ -190,7 +191,7 @@ class MaterialDataValidator:
         vat = row.get("НДС %")
         if vat is not None and str(vat).strip() != "":
             try:
-                vat_decimal = Decimal(str(vat))
+                vat_decimal = round_decimal_value(vat)
                 if vat_decimal < 0 or vat_decimal > 100:
                     return False, _("НДС должен быть в диапазоне от 0 до 100")
             except (InvalidOperation, ValueError):
@@ -303,7 +304,7 @@ class MaterialImportProcessor:
         """Подготовка данных строки"""
         name = str(row.get("Наименование")).strip()
         unit_symbol = str(row.get("Единица измерения")).strip()
-        price = Decimal(str(row.get("Цена")))
+        price = round_decimal_value(row.get("Цена"))
 
         unit = self._get_unit(unit_symbol, row.get("_row", 0))
 
@@ -317,7 +318,7 @@ class MaterialImportProcessor:
         vat_percent = None
         vat_value = row.get("НДС %")
         if vat_value is not None and str(vat_value).strip() != "":
-            vat_percent = Decimal(str(vat_value))
+            vat_percent = round_decimal_value(vat_value)
 
         return {
             "name": name,
