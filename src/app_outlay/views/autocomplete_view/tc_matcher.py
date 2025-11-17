@@ -2,6 +2,9 @@ import re
 from difflib import SequenceMatcher
 from typing import Dict, List
 
+from django.contrib.postgres.search import TrigramSimilarity
+from django.db.models import Value
+
 from app_outlay.estimate_mapping_utils import UnitNormalizer
 from app_technical_cards.models import TechnicalCard, TechnicalCardVersion
 
@@ -19,6 +22,8 @@ class TCMatcher:
     DEFAULT_PENALTY_FOR_UNITS = 0.5
     DEFAULT_WEIGHT_FOR_WORD_SIMILARITY = 0.7
     DEFAULT_WEIGHT_FOR_SIMILARITY_OF_SYMBOLS = 0.3
+    DEFAULT_TRIGRAM_THRESHOLD = 0.1
+    DEFAULT_MAX_DB_CANDIDATES = 10
 
     def __init__(
         self,
@@ -28,6 +33,8 @@ class TCMatcher:
         weight_for_word_similarity: float = None,
         weight_for_similarity_of_symbols: float = None,
         unit_normalizer: UnitNormalizer = None,
+        trigram_similarity_threshold: float | None = None,
+        max_db_candidates: int | None = None,
     ):
         """
         Инициализация matcher'а с конфигурируемыми параметрами.
@@ -75,6 +82,16 @@ class TCMatcher:
             else self.DEFAULT_WEIGHT_FOR_SIMILARITY_OF_SYMBOLS
         )
         self.unit_normalizer = unit_normalizer or UnitNormalizer()
+        self.trigram_similarity_threshold = (
+            trigram_similarity_threshold
+            if trigram_similarity_threshold is not None
+            else self.DEFAULT_TRIGRAM_THRESHOLD
+        )
+        self.max_db_candidates = (
+            max_db_candidates
+            if max_db_candidates is not None
+            else self.DEFAULT_MAX_DB_CANDIDATES
+        )
 
     def normalize_unit(self, unit: str) -> str:
         return self.unit_normalizer.normalize(unit)
@@ -147,15 +164,12 @@ class TCMatcher:
         self, search_name: str, normalized_unit: str
     ) -> tuple[TechnicalCardVersion | None, float]:
         """Нечёткий поиск с строгой проверкой ключевых слов."""
-        # Оптимизация: загружаем только нужные поля
-        all_cards = TechnicalCard.objects.select_related("unit_ref").only(
-            "id", "name", "unit_ref__symbol"
-        )
+        candidate_cards = self._get_candidates(search_name)
 
-        best_match_id = None
+        best_card: TechnicalCard | None = None
         best_score = 0.0
 
-        for card in all_cards:
+        for card in candidate_cards:
             card_unit_norm = self.normalize_unit(card.unit_ref.symbol)
             card_name_lower = card.name.lower()
 
@@ -187,16 +201,38 @@ class TCMatcher:
 
             if combined_similarity > best_score:
                 best_score = combined_similarity
-                best_match_id = card.id
+                best_card = card
 
-        if best_match_id and best_score >= self.similarity_threshold:
-            card = TechnicalCard.objects.get(id=best_match_id)
+        if best_card and best_score >= self.similarity_threshold:
             version = (
-                card.versions.filter(is_published=True).order_by("-created_at").first()
+                best_card.versions.filter(is_published=True)
+                .order_by("-created_at")
+                .first()
             )
             return version, best_score
 
         return None, 0.0
+    
+    def _get_candidates(self, search_name: str) -> list[TechnicalCard]:
+        """Сузить набор карточек с помощью триграммного поиска в БД."""
+
+        base_qs = TechnicalCard.objects.select_related("unit_ref").only(
+            "id", "name", "unit_ref__symbol"
+        )
+        annotated_qs = base_qs.annotate(
+            trigram_similarity=TrigramSimilarity("name", Value(search_name))
+        ).order_by("-trigram_similarity")
+
+        if self.trigram_similarity_threshold is not None:
+            filtered_qs = annotated_qs.filter(
+                trigram_similarity__gte=self.trigram_similarity_threshold
+            )
+            candidates = list(filtered_qs[: self.max_db_candidates])
+            if candidates:
+                return candidates
+
+        return list(annotated_qs[: self.max_db_candidates])
+
 
     def batch_match(self, items: list[dict]) -> list[dict]:
         """

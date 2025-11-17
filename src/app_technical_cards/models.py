@@ -1,5 +1,6 @@
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.contrib.postgres.indexes import GinIndex
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -72,6 +73,13 @@ class TechnicalCard(models.Model):
     class Meta:
         verbose_name = _("Техкарта")
         verbose_name_plural = _("Техкарты")
+        indexes = [
+            GinIndex(
+                fields=["name"],
+                name="technicalcard_name_trgm",
+                opclasses=["gin_trgm_ops"],
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} [{self.unit_ref}]"

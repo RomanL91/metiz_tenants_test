@@ -122,6 +122,7 @@ TENANT_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.admin",  # админка внутри каждого арендатора
+    "django.contrib.postgres",
     "app_users",  # кастомная пользовательская модель (AUTH_USER_MODEL указывает сюда)
     "app_outlay",
     "app_technical_cards",
