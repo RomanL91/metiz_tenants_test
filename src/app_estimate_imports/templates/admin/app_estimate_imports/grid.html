@@ -88,6 +88,7 @@
 
     <!-- Группы -->
     <a class="button" id="btn-group-tree">Дерево групп</a>
+    <a class="button" id="btn-auto-groups">Автогруппы по цветам</a>
 
     <span style="margin-left:auto;display:flex;gap:12px;align-items:center;">
       <label style="display:flex;gap:6px;align-items:center">
@@ -212,6 +213,12 @@ document.addEventListener('DOMContentLoaded', function () {
     window.location.assign(qs ? (base + '?' + qs) : base);
   }
 
+  function getSheetIndex() {
+    const sheetParam = new URLSearchParams(location.search).get('sheet') || '0';
+    const sheetIndex = parseInt(sheetParam, 10);
+    return Number.isNaN(sheetIndex) ? 0 : sheetIndex;
+  }
+
   // endpoints
   const SAVE_URL      = window.location.pathname.replace(/\/grid\/?$/, "/api/save-schema/");
   const MATERIALIZE_URL = window.location.pathname.replace(/\/grid\/?$/, "/materialize/");
@@ -237,20 +244,26 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   /**
-   * Сохраняет текущее состояние скрытых элементов
+   * Текущее состояние скрытых элементов (строки/колонки)
    */
-  function saveHiddenState() {
+  function collectHiddenState() {
     const hiddenRows = Array.from(document.querySelectorAll('.hidden-row'))
       .map(tr => parseInt(tr.dataset.row, 10))
       .filter(n => !isNaN(n));
-    
+
     const hiddenCols = Array.from(document.querySelectorAll('#grid thead th.hidden-col'))
       .map(th => parseInt(th.dataset.col, 10))
       .filter(n => !isNaN(n));
+      return { hiddenRows, hiddenCols };
+    }
+  
+    /**
+    * Сохраняет текущее состояние скрытых элементов
+     */
+    function saveHiddenState() {
     
     const state = {
-      hiddenRows,
-      hiddenCols,
+      ...collectHiddenState(),
       timestamp: Date.now()
     };
     
@@ -356,7 +369,9 @@ document.addEventListener('DOMContentLoaded', function () {
         body: JSON.stringify({
           sheet_index: parseInt(sheet, 10) || 0,
           name_of_work_col: nameColIndex,
-          force: force
+          force: force,
+          hidden_rows: collectHiddenState().hiddenRows,
+          hidden_cols: collectHiddenState().hiddenCols,
         })
       });
       
@@ -530,53 +545,14 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // init: цвет шапок + подсказки
-  function refreshUI(){
+  function refreshUI() {
     applyHeaderColors();
     applyRowHints();
   }
 
-  // ВАЖНО: События селекторов/параметров с проверкой роли NAME_OF_WORK
-  document.querySelectorAll('.role-select').forEach(sel => {
-    sel.addEventListener('change', async (e) => {
-      const newRole = e.target.value;
-      const colIndex = parseInt(e.target.dataset.col, 10);
-      
-      // Если назначена роль NAME_OF_WORK
-      if (newRole === 'NAME_OF_WORK') {
-        // Спрашиваем у пользователя
-        const shouldAuto = confirm(
-          'Обнаружена колонка "НАИМЕНОВАНИЕ РАБОТ/ТК".\n\n' +
-          'Запустить автоматическое создание групп на основе цветовой разметки?\n' +
-          '(Требуются назначенные роли UNIT и QTY для фильтрации)'
-        );
-        
-        if (shouldAuto) {
-          // ВАЖНО: Сначала сохраняем схему с текущими ролями
-          const col_roles = collectRoles();
-          const sheet = new URLSearchParams(location.search).get('sheet') || '0';
-          
-          const saveResp = await fetch(SAVE_URL, {
-            method:'POST',
-            headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-            body: JSON.stringify({
-              col_roles,
-              sheet_index: parseInt(sheet,10)||0,
-              unit_allow_raw: getUnitAllowRaw(),
-              require_qty: getRequireQty(),
-            })
-          });
-          
-          const saveData = await saveResp.json();
-          if (!saveData.ok) {
-            alert('Ошибка сохранения схемы: '+(saveData.error||'unknown'));
-            return;
-          }
-          
-          // Теперь запускаем автосоздание групп
-          await autoCreateGroupsFromColors(colIndex);
-        }
-      }
-      
+  // навешиваем обработчики на селекты ролей
+  document.querySelectorAll('.role-select').forEach((sel) => {
+    sel.addEventListener('change', () => {
       refreshUI();
     });
   });
@@ -584,25 +560,62 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('unit-allow')?.addEventListener('input', applyRowHints);
   document.getElementById('require-qty')?.addEventListener('change', applyRowHints);
 
+  document.getElementById('unit-allow')?.addEventListener('input', applyRowHints);
+  document.getElementById('require-qty')?.addEventListener('change', applyRowHints);
+
   function getUnitAllowRaw(){ return document.getElementById('unit-allow')?.value || ""; }
   function getRequireQty(){ return !!document.getElementById('require-qty')?.checked; }
 
+  async function saveSchemaConfig() {
+  const col_roles = collectRoles();
+    const sheetIndex = getSheetIndex();
+
+    try {
+      const resp = await fetch(SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+        body: JSON.stringify({
+          col_roles,
+          sheet_index: sheetIndex,
+          unit_allow_raw: getUnitAllowRaw(),
+          require_qty: getRequireQty(),
+        }),
+      });
+
+      if (!resp.ok) {
+        return { ok: false, error: `HTTP ${resp.status}` };
+      }
+
+      return await resp.json();
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err || 'unknown error');
+      return { ok: false, error: message };
+    }
+  }
+
   // save schema
   document.getElementById('btn-save').onclick = async ()=>{
-    const col_roles = collectRoles();
-    const sheet = new URLSearchParams(location.search).get('sheet') || '0';
-    const resp = await fetch(SAVE_URL, {
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body: JSON.stringify({
-        col_roles,
-        sheet_index: parseInt(sheet,10)||0,
-        unit_allow_raw: getUnitAllowRaw(),
-        require_qty: getRequireQty(),
-      })
-    });
-    const data = await resp.json();
-    if (!data.ok) alert('Ошибка сохранения: '+(data.error||'unknown')); else alert('Схема сохранена');
+    const result = await saveSchemaConfig();
+    if (!result.ok) alert('Ошибка сохранения: '+(result.error||'unknown')); else alert('Схема сохранена');
+  };
+
+  document.getElementById('btn-auto-groups').onclick = async (e) => {
+    e.preventDefault();
+
+    const nameCols = getColsByRole('NAME_OF_WORK');
+    if (!nameCols.length) {
+      alert('Назначьте колонке роль "НАИМЕНОВАНИЕ РАБОТ/ТК" перед автосозданием групп.');
+      return;
+    }
+
+    const saveResult = await saveSchemaConfig();
+    if (!saveResult.ok) {
+      alert('Не удалось сохранить схему перед автосозданием групп: ' + (saveResult.error || 'unknown'));
+      return;
+    }
+
+    const nameColIndex = nameCols[0];
+    await autoCreateGroupsFromColors(nameColIndex);
   };
 
   // Создать смету
@@ -614,35 +627,11 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    const sheetParam = new URLSearchParams(location.search).get('sheet') || '0';
-    const sheetIndex = parseInt(sheetParam, 10);
-    const normalizedSheet = Number.isNaN(sheetIndex) ? 0 : sheetIndex;
+    const normalizedSheet = getSheetIndex();
 
-    const col_roles = collectRoles();
-    try {
-      const saveResp = await fetch(SAVE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
-        body: JSON.stringify({
-          col_roles,
-          sheet_index: normalizedSheet,
-          unit_allow_raw: getUnitAllowRaw(),
-          require_qty: getRequireQty(),
-        }),
-      });
-
-      if (!saveResp.ok) {
-        throw new Error(`HTTP ${saveResp.status}`);
-      }
-
-      const saveData = await saveResp.json();
-      if (!saveData.ok) {
-        alert('Ошибка сохранения схемы: ' + (saveData.error || 'unknown'));
-        return;
-      }
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err || 'unknown error');
-      alert('Не удалось автоматически сохранить схему: ' + message);
+    const saveResult = await saveSchemaConfig();
+    if (!saveResult.ok) {
+      alert('Не удалось автоматически сохранить схему: ' + (saveResult.error || 'unknown'));
       return;
     }
 
@@ -805,7 +794,11 @@ document.addEventListener('DOMContentLoaded', function () {
   // Собрать выделенные строки -> склеить в диапазоны
   function selectedRanges(){
     const rows = Array.from(document.querySelectorAll('.row-check'))
-      .map(cb => cb.checked ? parseInt(cb.closest('tr').dataset.row, 10) : null)
+      .map(cb => {
+      const tr = cb.closest('tr');
+      if (!tr || tr.classList.contains('hidden-row')) return null;
+      return cb.checked ? parseInt(tr.dataset.row, 10) : null;
+    })
       .filter(Boolean).sort((a,b)=>a-b);
     const out = [];
     let start = null, prev = null;

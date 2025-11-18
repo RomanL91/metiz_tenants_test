@@ -235,6 +235,8 @@ class ApiHandler(BaseHandler):
             sheet_index = payload.get("sheet_index", 0)
             name_col = payload.get("name_of_work_col")
             force = payload.get("force", False)
+            hidden_rows = payload.get("hidden_rows") or []
+            hidden_cols = payload.get("hidden_cols") or []
 
             if name_col is None:
                 return self._error_response("Не указана колонка NAME_OF_WORK", 400)
@@ -249,6 +251,8 @@ class ApiHandler(BaseHandler):
                 sheet_index=sheet_index,
                 name_of_work_col_index=name_col,
                 warn_if_groups_exist=not force,
+                hidden_rows=hidden_rows,
+                hidden_cols=hidden_cols,
             )
 
             # Если требуется подтверждение

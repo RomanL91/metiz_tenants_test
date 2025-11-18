@@ -47,6 +47,8 @@ class ColorGroupService(BaseService):
         sheet_index: int,
         name_of_work_col_index: int,
         warn_if_groups_exist: bool = True,
+        hidden_rows: Optional[List[int]] | None = None,
+        hidden_cols: Optional[List[int]] | None = None,
     ) -> Dict:
         """
         Анализирует цвета и создаёт иерархическую структуру групп.
@@ -104,6 +106,15 @@ class ColorGroupService(BaseService):
             sheet = sheets[sheet_index]
             rows = sheet.get("rows", [])
 
+            hidden_rows_set = {int(r) for r in (hidden_rows or [])}
+            if hidden_rows_set:
+                rows = [
+                    row
+                    for idx, row in enumerate(rows, start=1)
+                    if row.get("row_index", idx) not in hidden_rows_set
+                ]
+
+
             if not rows:
                 return {
                     "ok": True,
@@ -114,7 +125,17 @@ class ColorGroupService(BaseService):
             logger.info(f"📊 Всего строк в листе: {len(rows)}")
 
             # 3. Определение колонок UNIT и QTY из схемы
+            hidden_cols_set = {int(c) for c in (hidden_cols or [])}
+
+            if name_of_work_col_index in hidden_cols_set:
+                return {
+                    "ok": False,
+                    "error": "Колонка NAME_OF_WORK скрыта, создание групп невозможно",
+                }
+
             unit_cols, qty_cols = self._get_validation_columns(markup, sheet_index)
+            unit_cols = self._filter_hidden_columns(unit_cols, hidden_cols_set)
+            qty_cols = self._filter_hidden_columns(qty_cols, hidden_cols_set)
             logger.info(f"📋 Колонки UNIT: {unit_cols}, колонки QTY: {qty_cols}")
 
             # 4. Анализ строк и построение групп
@@ -123,6 +144,7 @@ class ColorGroupService(BaseService):
                 name_col=name_of_work_col_index,
                 unit_cols=unit_cols,
                 qty_cols=qty_cols,
+                hidden_cols=hidden_cols_set,
             )
 
             if not groups_to_create:
@@ -212,6 +234,7 @@ class ColorGroupService(BaseService):
         name_col: int,
         unit_cols: List[int],
         qty_cols: List[int],
+        hidden_cols: set[int],
     ) -> List[Dict]:
         """
         Главный алгоритм: проход по строкам и построение структуры групп.
@@ -230,10 +253,13 @@ class ColorGroupService(BaseService):
         # Статистика для отладки
         total_colored_rows = 0
         filtered_by_unit_qty = 0
+        filtered_by_empty_name = 0
         skipped_headers = 0
 
         # Определяем начало данных (пропускаем заголовки)
-        data_start_idx = self._find_data_start(rows, name_col, unit_cols, qty_cols)
+        data_start_idx = self._find_data_start(
+            rows, name_col, unit_cols, qty_cols, hidden_cols
+        )
         logger.info(
             f"🔍 Начало данных определено на строке с индексом: {data_start_idx}"
         )
@@ -261,17 +287,20 @@ class ColorGroupService(BaseService):
             actual_row_index = row_data.get("row_index", row_idx + 1)
 
             # Получаем данные текущей строки
-            name = self._get_cell_value(cells, name_col)
-            raw_color = self._get_cell_value(colors, name_col)
+            name = self._get_cell_value(cells, name_col, hidden_cols)
+            raw_color = self._get_cell_value(colors, name_col, hidden_cols)
             color = self._normalize_color(raw_color)
 
             # Получаем значения UNIT и QTY для отладки
-            unit_values = [self._get_cell_value(cells, c) for c in unit_cols]
-            qty_values = [self._get_cell_value(cells, c) for c in qty_cols]
+            unit_values = [self._get_cell_value(cells, c, hidden_cols) for c in unit_cols]
+            qty_values = [self._get_cell_value(cells, c, hidden_cols) for c in qty_cols]
 
             # Строгая проверка UNIT/QTY: пустая строка, None, или только пробелы = пусто
-            has_unit = self._has_meaningful_value_in_columns(cells, unit_cols)
-            has_qty = self._has_meaningful_value_in_columns(cells, qty_cols)
+            has_unit = self._has_meaningful_value_in_columns(cells, unit_cols, hidden_cols)
+            has_qty = self._has_meaningful_value_in_columns(cells, qty_cols, hidden_cols)
+
+            # Проверяем, есть ли осмысленный текст в NAME_OF_WORK
+            has_meaningful_name = name and len(name.strip()) > 0
 
             # Детальный лог первых 20 строк данных
             if row_idx < data_start_idx + 20:
@@ -283,6 +312,7 @@ class ColorGroupService(BaseService):
                 logger.info(f"\nСтрока {actual_row_index:3d} (idx={row_idx}):")
                 logger.info(f"  📝 Название: '{name_short}'")
                 logger.info(f"  🎨 Цвет: {raw_color} → {color or 'нет'}")
+                logger.info(f"  ✍️  Текст: {'ЕСТЬ' if has_meaningful_name else 'ПУСТОЙ'}")
                 logger.info(
                     f"  📏 UNIT: {unit_values} → {'ЕСТЬ' if has_unit else 'нет'}"
                 )
@@ -297,6 +327,15 @@ class ColorGroupService(BaseService):
                     filtered_by_unit_qty += 1
                     if row_idx < data_start_idx + 20:
                         logger.info(f"  ⚠️ ПРОПУЩЕНО: имеет UNIT/QTY → не группа")
+                    continue
+
+                # НОВАЯ ПРОВЕРКА: пустая ячейка NAME_OF_WORK?
+                if not has_meaningful_name:
+                    filtered_by_empty_name += 1
+                    if row_idx < data_start_idx + 20:
+                        logger.info(
+                            f"  ⚠️ ПРОПУЩЕНО: пустая ячейка NAME_OF_WORK → не группа"
+                        )
                     continue
 
                 # Это группа!
@@ -387,6 +426,7 @@ class ColorGroupService(BaseService):
         logger.info(f"Обработано строк: {len(rows) - skipped_headers}")
         logger.info(f"Строк с цветом: {total_colored_rows}")
         logger.info(f"Отфильтровано (имеют UNIT/QTY): {filtered_by_unit_qty}")
+        logger.info(f"Отфильтровано (пустое NAME_OF_WORK): {filtered_by_empty_name}")
         logger.info(f"Создано групп: {len(completed_groups)}")
 
         if completed_groups:
@@ -396,7 +436,12 @@ class ColorGroupService(BaseService):
         return completed_groups
 
     def _find_data_start(
-        self, rows: List[Dict], name_col: int, unit_cols: List[int], qty_cols: List[int]
+        self,
+        rows: List[Dict],
+        name_col: int,
+        unit_cols: List[int],
+        qty_cols: List[int],
+        hidden_cols: set[int],
     ) -> int:
         """
         Определяет индекс строки, с которой начинаются данные (после заголовков).
@@ -413,9 +458,17 @@ class ColorGroupService(BaseService):
             cells = row_data.get("cells", [])
 
             # Проверяем, есть ли ключевые слова заголовков
-            name_value = self._get_cell_value(cells, name_col)
-            unit_value = self._get_cell_value(cells, unit_cols[0]) if unit_cols else ""
-            qty_value = self._get_cell_value(cells, qty_cols[0]) if qty_cols else ""
+            name_value = self._get_cell_value(cells, name_col, hidden_cols)
+            unit_value = (
+                self._get_cell_value(cells, unit_cols[0], hidden_cols)
+                if unit_cols
+                else ""
+            )
+            qty_value = (
+                self._get_cell_value(cells, qty_cols[0], hidden_cols)
+                if qty_cols
+                else ""
+            )
 
             # Объединяем все значения для проверки
             all_text = " ".join(
@@ -542,15 +595,17 @@ class ColorGroupService(BaseService):
 
     # === Вспомогательные методы ===
 
-    def _get_cell_value(self, array: List, index: int) -> Optional[str]:
-        """Безопасно получает значение из массива по индексу"""
-        if index < 0 or index >= len(array):
+    def _get_cell_value(
+        self, array: List, index: int, hidden_cols: Optional[set[int]] = None
+    ) -> Optional[str]:
+        """Безопасно получает значение из массива по индексу, учитывая скрытые колонки."""
+        if (hidden_cols and index in hidden_cols) or index < 0 or index >= len(array):
             return None
         value = array[index]
         return value.strip() if isinstance(value, str) and value else value
 
     def _has_meaningful_value_in_columns(
-        self, cells: List, col_indices: List[int]
+        self, cells: List, col_indices: List[int], hidden_cols: Optional[set[int]] = None
     ) -> bool:
         """
         Проверяет, есть ли ЗНАЧИМОЕ непустое значение в указанных колонках.
@@ -558,11 +613,19 @@ class ColorGroupService(BaseService):
         Значимое = не None, не пустая строка, не только пробелы.
         """
         for col_idx in col_indices:
-            value = self._get_cell_value(cells, col_idx)
+            value = self._get_cell_value(cells, col_idx, hidden_cols)
             # Проверяем: не None И не пустая строка после strip
             if value and len(value.strip()) > 0:
                 return True
         return False
+    
+    def _filter_hidden_columns(
+        self, col_indices: List[int], hidden_cols: set[int]
+    ) -> List[int]:
+        """Отбрасывает колонки, которые пользователь скрыл в гриде."""
+        if not hidden_cols:
+            return col_indices
+        return [idx for idx in col_indices if idx not in hidden_cols]
 
     def _format_stack(self, stack: List[Dict]) -> str:
         """Форматирует стек для вывода в лог"""
