@@ -325,6 +325,14 @@
         if (!btnAutoMatch) return;
 
         btnAutoMatch.addEventListener('click', async function () {
+            if (!window.EstimateCalc) {
+                console.warn('EstimateCalc недоступен, расчёт невозможен');
+                if (statusSpan) {
+                    statusSpan.textContent = '❌ Расчёт недоступен';
+                    statusSpan.style.color = '#721c24';
+                }
+                return;
+            }
             btnAutoMatch.disabled = true;
 
             if (statusSpan) {
@@ -373,7 +381,7 @@
 
             // Применяем результаты
             let matchedCount = 0;
-            const calcPromises = [];
+            const batchItems = [];
 
             response.results.forEach(result => {
                 const tr = document.querySelector(`tr[data-row="${result.row_index}"]`);
@@ -410,22 +418,34 @@
                     const clearBtn = tcInput.parentElement?.querySelector('.tc-clear-btn');
                     if (clearBtn) clearBtn.style.display = 'block';
 
-                    // Пересчитываем строку если есть количество
+                    // Пересчёт позже через batchCalc, собираем элементы с количеством
                     if (qtyInput && qtyInput.value && parseFloat(qtyInput.value) > 0) {
-                        calcPromises.push(triggerRowCalc(tr));
+                        batchItems.push({
+                            tc_id: result.matched_tc_id,
+                            quantity: parseFloat(qtyInput.value),
+                            row_index: result.row_index
+                        });
                     }
 
                     matchedCount++;
                 }
             });
 
-            // Ждём завершения всех пересчётов
-            if (calcPromises.length > 0) {
-                await Promise.all(calcPromises);
+            // Batch-расчёт и применение результатов
+            if (!window.EstimateCalc || typeof window.EstimateCalc.batchCalc !== 'function' || typeof window.EstimateCalc.applyBatchResults !== 'function') {
+                console.warn('EstimateCalc.batchCalc/applyBatchResults недоступны');
+                if (statusSpan) {
+                    statusSpan.textContent = '❌ Расчёт недоступен';
+                    statusSpan.style.color = '#721c24';
+                }
+                btnAutoMatch.disabled = false;
+                return;
             }
 
-            // Обновляем итоги
-            requestSummaryUpdate(500);
+            if (batchItems.length > 0) {
+                const batchResults = await window.EstimateCalc.batchCalc(batchItems);
+                window.EstimateCalc.applyBatchResults(batchResults);
+            }
 
             // Статус
             if (statusSpan) {
