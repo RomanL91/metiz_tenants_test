@@ -4,8 +4,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import openpyxl
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import Q
 from django.utils.translation import gettext as _
 
+from app_suppliers.models import Supplier
 from app_units.models import Unit
 from app_works.models import Work
 from app_works.views.import_view.exceptions import (
@@ -81,6 +83,8 @@ class ExcelParser:
     """Парсер Excel файлов для импорта работ"""
 
     REQUIRED_COLUMNS = ["Наименование", "Единица измерения", "Цена"]
+    OPTIONAL_COLUMNS = ["Поставщик", "Расценка за человеко-час", "Считать только по ЧЧ"]
+    ALL_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
 
     def parse(self, file: UploadedFile) -> List[Dict[str, Any]]:
         try:
@@ -111,7 +115,7 @@ class ExcelParser:
         for cell in sheet[1]:
             if cell.value:
                 header_name = str(cell.value).strip()
-                if header_name in self.REQUIRED_COLUMNS:
+                if header_name in self.ALL_COLUMNS:
                     headers[header_name] = cell.column - 1
         return headers
 
@@ -178,27 +182,48 @@ class WorkImportProcessor:
 
     def __init__(self) -> None:
         self.units_cache: Dict[str, Unit] = {}
-        self.existing_works: Dict[Tuple[str, int], Work] = {}
+        self.suppliers_cache: Dict[str, Supplier] = {}
+        self.existing_works: Dict[Tuple[str, int, Optional[int]], Work] = {}
         self._load_units()
+        self._load_suppliers()
 
     def _load_units(self) -> None:
         for unit in Unit.objects.all():
             self.units_cache[unit.symbol.strip().lower()] = unit
 
-    def _load_existing_works(self, keys: Set[Tuple[str, int]]) -> None:
+    def _load_suppliers(self) -> None:
+        """Кэширование поставщиков по name"""
+        for supplier in Supplier.objects.all():
+            self.suppliers_cache[supplier.name.strip().lower()] = supplier
+
+    def _load_existing_works(self, keys: Set[Tuple[str, int, Optional[int]]]) -> None:
         if not keys:
             self.existing_works = {}
             return
 
-        names = {name for name, _ in keys}
-        unit_ids = {unit_id for _, unit_id in keys}
+        names = {name for name, _, _ in keys}
+        unit_ids = {unit_id for _, unit_id, _ in keys}
+        supplier_ids = {
+            supplier_id for _, _, supplier_id in keys if supplier_id is not None
+        }
+        require_null_supplier = any(supplier_id is None for _, _, supplier_id in keys)
 
-        existing = Work.objects.filter(
-            name__in=names, unit_ref_id__in=unit_ids
-        ).select_related("unit_ref")
+        query = Work.objects.filter(name__in=names, unit_ref_id__in=unit_ids)
+
+        supplier_conditions = Q()
+        if supplier_ids:
+            supplier_conditions |= Q(supplier_ref_id__in=supplier_ids)
+        if require_null_supplier:
+            supplier_conditions |= Q(supplier_ref__isnull=True)
+
+        if supplier_conditions:
+            query = query.filter(supplier_conditions)
+
+        existing = query.select_related("unit_ref", "supplier_ref")
 
         self.existing_works = {
-            (work.name.strip(), work.unit_ref_id): work for work in existing
+            (work.name.strip(), work.unit_ref_id, work.supplier_ref_id): work
+            for work in existing
         }
 
     def process_data(
@@ -226,7 +251,12 @@ class WorkImportProcessor:
         if not valid_rows:
             return 0, 0, 0, errors
 
+        self._ensure_suppliers_exist(valid_rows)
+
+        self._attach_suppliers(valid_rows)
+
         existing_keys = {row["work_key"] for row in valid_rows}
+
         self._load_existing_works(existing_keys)
 
         created, updated, skipped = self._bulk_upsert_works(valid_rows)
@@ -239,26 +269,98 @@ class WorkImportProcessor:
 
         unit = self._get_unit(unit_symbol)
 
+        supplier_name = row.get("Поставщик")
+        supplier_key = None
+        supplier_name_clean = None
+        if supplier_name and str(supplier_name).strip():
+            supplier_name_clean = str(supplier_name).strip()
+            supplier_key = supplier_name_clean.lower()
+
+        price_per_labor_hour = None
+        labor_hour_value = row.get("Расценка за человеко-час")
+        if labor_hour_value is not None and str(labor_hour_value).strip() != "":
+            try:
+                price_per_labor_hour = round_decimal_value(labor_hour_value)
+            except (InvalidOperation, ValueError):
+                pass
+
+        calculate_only_by_labor = False
+        labor_flag = row.get("Считать только по ЧЧ")
+        if labor_flag:
+            labor_flag_str = str(labor_flag).strip().lower()
+            if labor_flag_str in ("да", "yes", "true", "1", "+"):
+                calculate_only_by_labor = True
+
         return {
             "name": name,
             "unit": unit,
             "price": price,
+            "supplier_key": supplier_key,
+            "supplier_name": supplier_name_clean,
             "row_number": row.get("_row", 0),
-            "work_key": (name, unit.id),
+            "price_per_labor_hour": price_per_labor_hour,
+            "calculate_only_by_labor": calculate_only_by_labor,
         }
+
+    def _ensure_suppliers_exist(self, valid_rows: List[Dict[str, Any]]) -> None:
+        """Создание новых поставщиков батчем с заполнением legal_name"""
+        new_supplier_names = {}
+        for row in valid_rows:
+            supplier_key = row.get("supplier_key")
+            supplier_name = row.get("supplier_name")
+            if supplier_key and supplier_key not in self.suppliers_cache:
+                new_supplier_names[supplier_key] = supplier_name
+
+        if not new_supplier_names:
+            return
+
+        new_suppliers = [
+            Supplier(
+                name=name,
+                legal_name=name,
+                supplier_type=Supplier.SupplierType.LEGAL,
+                vat_registered=True,
+                is_active=True,
+            )
+            for name in new_supplier_names.values()
+        ]
+
+        Supplier.objects.bulk_create(new_suppliers, ignore_conflicts=True)
+
+        created_or_existing = Supplier.objects.filter(
+            name__in=list(new_supplier_names.values())
+        )
+
+        for supplier in created_or_existing:
+            self.suppliers_cache[supplier.name.strip().lower()] = supplier
+
+    def _attach_suppliers(self, valid_rows: List[Dict[str, Any]]) -> None:
+        """Добавляет объекты поставщиков и ключи работ к строкам"""
+        for row in valid_rows:
+            supplier = None
+            supplier_key = row.get("supplier_key")
+            if supplier_key:
+                supplier = self.suppliers_cache.get(supplier_key)
+
+            supplier_id = supplier.id if supplier else None
+
+            row["supplier"] = supplier
+            row["supplier_id"] = supplier_id
+            row["work_key"] = (row["name"], row["unit"].id, supplier_id)
 
     def _bulk_upsert_works(
         self, valid_rows: List[Dict[str, Any]]
     ) -> Tuple[int, int, int]:
         works_to_create: List[Work] = []
         works_to_update: List[Work] = []
-        processed_keys: Set[Tuple[str, int]] = set()
+        processed_keys: Set[Tuple[str, int, Optional[int]]] = set()
         created = 0
         updated = 0
         skipped = 0
 
         for row in valid_rows:
             key = row["work_key"]
+
             if key in processed_keys:
                 skipped += 1
                 continue
@@ -267,6 +369,9 @@ class WorkImportProcessor:
 
             if existing:
                 existing.price_per_unit = row["price"]
+                existing.supplier_ref = row.get("supplier")
+                existing.price_per_labor_hour = row.get("price_per_labor_hour")
+                existing.calculate_only_by_labor = row.get("calculate_only_by_labor", False)
                 existing.is_active = True
                 works_to_update.append(existing)
                 processed_keys.add(key)
@@ -277,6 +382,9 @@ class WorkImportProcessor:
                 name=row["name"],
                 unit_ref=row["unit"],
                 price_per_unit=row["price"],
+                price_per_labor_hour=row.get("price_per_labor_hour"),
+                calculate_only_by_labor=row.get("calculate_only_by_labor", False),
+                supplier_ref=row.get("supplier"),
                 is_active=True,
             )
             works_to_create.append(work)
@@ -294,7 +402,11 @@ class WorkImportProcessor:
             )
 
         if works_to_update:
-            Work.objects.bulk_update(works_to_update, ["price_per_unit", "is_active"])
+            Work.objects.bulk_update(
+                works_to_update,
+                ["price_per_unit", "supplier_ref", "price_per_labor_hour",
+                 "calculate_only_by_labor", "is_active"]
+            )
 
         return created, updated, skipped
 

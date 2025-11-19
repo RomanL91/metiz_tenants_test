@@ -59,6 +59,15 @@ class Work(models.Model):
             "Если включено, работа всегда рассчитывается по тарифу за человеко-час."
         ),
     )
+    supplier_ref = models.ForeignKey(
+        "app_suppliers.Supplier",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="works",
+        verbose_name=_("Поставщик"),
+        help_text=_("Справочник поставщиков."),
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name=_("Активна"),
