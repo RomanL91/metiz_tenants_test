@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Metiz Tenants — вход</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap');
+
+      :root {
+        --pen-accent: #00a1e7;
+        --pen-accent-hover: #1eabe9;
+        --pen-secondary700: #29333d;
+        --pen-secondary800: #212932;
+        --pen-secondary900: #1d232a;
+        --pen-secondary1000: #171c22;
+        --pen-secondary50: #e1e5ea;
+        --pen-secondary300: #a7b4c4;
+        --pen-error: #ff645f;
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000;
+        font-family: 'Open Sans', sans-serif;
+        color: var(--pen-secondary50);
+        position: relative;
+      }
+
+      body::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, 
+          rgba(0, 161, 231, 0.1) 0%, 
+          transparent 50%,
+          rgba(111, 0, 221, 0.1) 100%
+        );
+        pointer-events: none;
+      }
+
+      .card {
+        width: min(90vw, 440px);
+        background: var(--pen-secondary700);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
+        padding: 40px 32px;
+        position: relative;
+        z-index: 1;
+      }
+
+      h1 {
+        margin: 0 0 32px;
+        font-size: 24px;
+        font-weight: 600;
+        text-align: center;
+        color: #fff;
+        letter-spacing: 0.2px;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--pen-secondary50);
+        margin-bottom: 4px;
+      }
+
+      input {
+        width: 100%;
+        padding: 12px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: var(--pen-secondary1000);
+        color: var(--pen-secondary50);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.2s, background 0.2s;
+      }
+
+      input:focus {
+        border-color: var(--pen-accent);
+        background: var(--pen-secondary900);
+      }
+
+      input::placeholder {
+        color: var(--pen-secondary300);
+        opacity: 0.6;
+      }
+
+      button {
+        border: none;
+        padding: 12px 16px;
+        border-radius: 6px;
+        background: var(--pen-accent);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.1s;
+        margin-top: 8px;
+      }
+
+      button:hover {
+        background: var(--pen-accent-hover);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+
+      .errorlist {
+        color: var(--pen-error);
+        margin: 6px 0 0;
+        padding: 0;
+        list-style: none;
+        font-size: 12px;
+      }
+
+      .errorlist li {
+        padding: 4px 0;
+      }
+
+      .messages {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 24px;
+      }
+
+      .messages li {
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        border-left: 3px solid;
+      }
+
+      .messages .error {
+        background: rgba(255, 100, 95, 0.15);
+        border-left-color: var(--pen-error);
+        color: #ffb3b0;
+      }
+
+      .messages .success {
+        background: rgba(108, 191, 69, 0.15);
+        border-left-color: #6cbf45;
+        color: #a8e88a;
+      }
+
+      .messages .info {
+        background: rgba(0, 161, 231, 0.15);
+        border-left-color: var(--pen-accent);
+        color: #7fcff5;
+      }
+
+      .field-wrapper {
+        position: relative;
+      }
+
+      @media (max-width: 480px) {
+        .card {
+          padding: 32px 24px;
+        }
+        
+        h1 {
+          font-size: 20px;
+          margin-bottom: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Вход в MetizOne</h1>
+      
+      {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+        <li class="{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+        
+        {% if form.non_field_errors %}
+        <ul class="errorlist">
+          {% for error in form.non_field_errors %}
+          <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <div class="field-wrapper">
+          <label for="id_login">Логин</label>
+          {{ form.login }}
+          {% if form.login.errors %}
+          <ul class="errorlist">
+            {% for error in form.login.errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+
+        <div class="field-wrapper">
+          <label for="id_password">Пароль</label>
+          {{ form.password }}
+          {% if form.password.errors %}
+          <ul class="errorlist">
+            {% for error in form.password.errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+
+        <button type="submit">Войти</button>
+      </form>
+    </div>
+  </body>
+</html>

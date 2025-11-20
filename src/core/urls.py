@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from core.settings import CustomAdminSite
+from core.views_tenant import tenant_sso_login_view
 
 # from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
@@ -14,6 +15,7 @@ from core.settings import CustomAdminSite
 
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
+    path("sso/login/", tenant_sso_login_view, name="tenant_sso_login"),
     # path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     # path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("api/v1/", include("app_outlay.urls")),
