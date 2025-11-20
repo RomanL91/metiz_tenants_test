@@ -159,6 +159,7 @@ MIDDLEWARE = [
 BASE_DOMAIN = "localhost"
 PUBLIC_SCHEMA_NAME = "public"
 AUTH_USER_MODEL = "app_users.User"
+SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 TENANT_MODEL = "app_tenants.Tenant"
 TENANT_DOMAIN_MODEL = "app_tenants.Domain"
 # TENANT_USERS_DOMAIN = BASE_DOMAIN
