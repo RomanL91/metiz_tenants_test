@@ -1,240 +1,167 @@
+{% load static %}
 <!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <title>Metiz Tenants — вход</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap');
+<html lang="ru" dir="ltr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>ERP - METISone</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="NONE,NOARCHIVE">
+  
+  <link rel="stylesheet" href="{% static 'admin/css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'admin/css/dark_mode.css' %}">
+  <link rel="stylesheet" href="{% static 'admin/css/login.css' %}">
+  <link rel="stylesheet" href="{% static 'admin/css/responsive.css' %}">
+  
+  <script src="{% static 'admin/js/theme.js' %}"></script>
+  
+  <style>
+    :root,
+    html,
+    html[data-theme="light"],
+    html[data-theme="dark"] {
+      --header-bg: #53565A;
+      --header-color: #ffffff;
+      --header-link-color: #E5E7EB;
+      --header-link-hover-color: #ffffff;
+      --primary: #2563EB;
+    }
 
-      :root {
-        --pen-accent: #00a1e7;
-        --pen-accent-hover: #1eabe9;
-        --pen-secondary700: #29333d;
-        --pen-secondary800: #212932;
-        --pen-secondary900: #1d232a;
-        --pen-secondary1000: #171c22;
-        --pen-secondary50: #e1e5ea;
-        --pen-secondary300: #a7b4c4;
-        --pen-error: #ff645f;
-        color-scheme: dark;
-      }
+    #header {
+      background: var(--header-bg) !important;
+      color: var(--header-color) !important;
+    }
+    
+    #branding a {
+      color: var(--header-link-color) !important;
+      text-decoration: none;
+    }
+    
+    #branding a:hover {
+      color: var(--header-link-hover-color) !important;
+    }
 
-      * {
-        box-sizing: border-box;
-      }
+    #branding .brand-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    #branding img.brand-logo {
+      height: 70px;
+      width: auto;
+      display: inline-block;
+    }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #000;
-        font-family: 'Open Sans', sans-serif;
-        color: var(--pen-secondary50);
-        position: relative;
-      }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
 
-      body::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(135deg, 
-          rgba(0, 161, 231, 0.1) 0%, 
-          transparent 50%,
-          rgba(111, 0, 221, 0.1) 100%
-        );
-        pointer-events: none;
-      }
+    #site-name {
+      margin: 0;
+    }
 
-      .card {
-        width: min(90vw, 440px);
-        background: var(--pen-secondary700);
-        backdrop-filter: blur(10px);
-        border-radius: 12px;
-        box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
-        padding: 40px 32px;
-        position: relative;
-        z-index: 1;
-      }
+    #login-form .form-row input[type="text"],
+    #login-form .form-row input[type="password"] {
+      width: 100% !important;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
 
-      h1 {
-        margin: 0 0 32px;
-        font-size: 24px;
-        font-weight: 600;
-        text-align: center;
-        color: #fff;
-        letter-spacing: 0.2px;
-      }
+<body class="login" data-admin-utc-offset="18000">
+  <a href="#content-start" class="skip-to-content-link">К основному</a>
+  
+  <div id="container">
+    <header id="header">
+      <div id="branding">
+        <h1 id="site-name">
+          <a href="/" class="brand-wrap">
+            <img src="{% static 'brand/logo.png' %}" alt="Logo" class="brand-logo">
+            <span class="sr-only">ERP - METISone</span>
+          </a>
+        </h1>
+      </div>
+    </header>
 
-      form {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-      }
+    <div class="main" id="main">
+      <main id="content-start" class="content" tabindex="-1">
+        <div id="content" class="colM">
+          <div id="content-main">
+            
+            {% if messages %}
+              {% for message in messages %}
+                <div class="messagelist">
+                  <div class="{{ message.tags }}">{{ message }}</div>
+                </div>
+              {% endfor %}
+            {% endif %}
 
-      label {
-        display: block;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--pen-secondary50);
-        margin-bottom: 4px;
-      }
+            <form action="" method="post" id="login-form">
+              {% csrf_token %}
+              
+              {% if form.non_field_errors %}
+                <div class="errornote">
+                  {% for error in form.non_field_errors %}
+                    {{ error }}
+                  {% endfor %}
+                </div>
+              {% endif %}
 
-      input {
-        width: 100%;
-        padding: 12px;
-        border-radius: 6px;
-        border: 1px solid transparent;
-        background: var(--pen-secondary1000);
-        color: var(--pen-secondary50);
-        font-size: 13px;
-        font-family: inherit;
-        outline: none;
-        transition: border-color 0.2s, background 0.2s;
-      }
+              <div class="form-row">
+                <label for="id_login" class="required">Логин:</label>
+                {{ form.login }}
+                {% if form.login.errors %}
+                  {% for error in form.login.errors %}
+                    <p class="errornote">{{ error }}</p>
+                  {% endfor %}
+                {% endif %}
+              </div>
 
-      input:focus {
-        border-color: var(--pen-accent);
-        background: var(--pen-secondary900);
-      }
+              <div class="form-row">
+                <label for="id_password" class="required">Пароль:</label>
+                {{ form.password }}
+                {% if form.password.errors %}
+                  {% for error in form.password.errors %}
+                    <p class="errornote">{{ error }}</p>
+                  {% endfor %}
+                {% endif %}
+              </div>
 
-      input::placeholder {
-        color: var(--pen-secondary300);
-        opacity: 0.6;
-      }
+              <div class="submit-row">
+                <input type="submit" value="Войти">
+              </div>
+            </form>
 
-      button {
-        border: none;
-        padding: 12px 16px;
-        border-radius: 6px;
-        background: var(--pen-accent);
-        color: #fff;
-        font-size: 14px;
-        font-weight: 600;
-        font-family: inherit;
-        cursor: pointer;
-        transition: background 0.2s, transform 0.1s;
-        margin-top: 8px;
-      }
-
-      button:hover {
-        background: var(--pen-accent-hover);
-      }
-
-      button:active {
-        transform: scale(0.98);
-      }
-
-      .errorlist {
-        color: var(--pen-error);
-        margin: 6px 0 0;
-        padding: 0;
-        list-style: none;
-        font-size: 12px;
-      }
-
-      .errorlist li {
-        padding: 4px 0;
-      }
-
-      .messages {
-        list-style: none;
-        padding: 0;
-        margin: 0 0 24px;
-      }
-
-      .messages li {
-        padding: 12px;
-        border-radius: 6px;
-        font-size: 13px;
-        border-left: 3px solid;
-      }
-
-      .messages .error {
-        background: rgba(255, 100, 95, 0.15);
-        border-left-color: var(--pen-error);
-        color: #ffb3b0;
-      }
-
-      .messages .success {
-        background: rgba(108, 191, 69, 0.15);
-        border-left-color: #6cbf45;
-        color: #a8e88a;
-      }
-
-      .messages .info {
-        background: rgba(0, 161, 231, 0.15);
-        border-left-color: var(--pen-accent);
-        color: #7fcff5;
-      }
-
-      .field-wrapper {
-        position: relative;
-      }
-
-      @media (max-width: 480px) {
-        .card {
-          padding: 32px 24px;
-        }
-        
-        h1 {
-          font-size: 20px;
-          margin-bottom: 24px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Вход в MetizOne</h1>
-      
-      {% if messages %}
-      <ul class="messages">
-        {% for message in messages %}
-        <li class="{{ message.tags }}">{{ message }}</li>
-        {% endfor %}
-      </ul>
-      {% endif %}
-
-      <form method="post" novalidate>
-        {% csrf_token %}
-        
-        {% if form.non_field_errors %}
-        <ul class="errorlist">
-          {% for error in form.non_field_errors %}
-          <li>{{ error }}</li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        <div class="field-wrapper">
-          <label for="id_login">Логин</label>
-          {{ form.login }}
-          {% if form.login.errors %}
-          <ul class="errorlist">
-            {% for error in form.login.errors %}
-            <li>{{ error }}</li>
-            {% endfor %}
-          </ul>
-          {% endif %}
+          </div>
+          <br class="clear">
         </div>
-
-        <div class="field-wrapper">
-          <label for="id_password">Пароль</label>
-          {{ form.password }}
-          {% if form.password.errors %}
-          <ul class="errorlist">
-            {% for error in form.password.errors %}
-            <li>{{ error }}</li>
-            {% endfor %}
-          </ul>
-          {% endif %}
-        </div>
-
-        <button type="submit">Войти</button>
-      </form>
+      </main>
     </div>
-  </body>
+    
+    <footer id="footer"></footer>
+  </div>
+
+  <svg xmlns="http://www.w3.org/2000/svg" class="base-svgs">
+    <symbol viewBox="0 0 24 24" width="1.5rem" height="1.5rem" id="icon-auto">
+      <path d="M0 0h24v24H0z" fill="currentColor"></path>
+      <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm0-2V4a8 8 0 1 0 0 16z"></path>
+    </symbol>
+    <symbol viewBox="0 0 24 24" width="1.5rem" height="1.5rem" id="icon-moon">
+      <path d="M0 0h24v24H0z" fill="currentColor"></path>
+      <path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"></path>
+    </symbol>
+    <symbol viewBox="0 0 24 24" width="1.5rem" height="1.5rem" id="icon-sun">
+      <path d="M0 0h24v24H0z" fill="currentColor"></path>
+      <path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"></path>
+    </symbol>
+  </svg>
+</body>
 </html>
