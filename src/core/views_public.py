@@ -82,12 +82,14 @@ def _lookup_tenant_by_scanning(login: str) -> TenantTarget | None:
 
 
 def _build_redirect_url(domain: str, request: HttpRequest, path: str) -> str:
-    scheme = "https" if request.is_secure() else "http"
-    port = request.get_port()
-    default_port = "443" if scheme == "https" else "80"
-    host = domain if port == default_port else f"{domain}:{port}"
+    # пока у тебя тенанты работают по http (без https), можно оставить так:
+    scheme = "http"
+
+    # если потом сделаешь HTTPS для demo2.metisone.com — поменяешь на "https"
+    # или вернёшь логику с is_secure(), но БЕЗ портов
+
     normalized_path = path if path.startswith("/") else f"/{path}"
-    return f"{scheme}://{host}{normalized_path}"
+    return f"{scheme}://{domain}{normalized_path}"
 
 
 @require_http_methods(["GET", "POST"])
