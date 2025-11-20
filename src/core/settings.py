@@ -178,7 +178,13 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "91.199.149.128",
 ]
-CSRF_TRUSTED_ORIGINS = ["http://*.91-199-149-128.sslip.io", "http://91.199.149.128"]
+CSRF_TRUSTED_ORIGINS = [
+    "https://metisone.com",
+    "https://www.metisone.com",
+    "https://*.metisone.com",
+    "http://*.91-199-149-128.sslip.io",
+    "http://91.199.149.128",
+]
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 SECURE_SSL_REDIRECT = False
