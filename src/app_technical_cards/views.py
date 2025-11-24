@@ -265,15 +265,29 @@ class TechnicalCardSearchWorksView(APIView):
         works = list(qs.order_by("name")[:limit])
 
         def _method_payload(work: Work, method_code: str) -> dict | None:
-            if not work.supports_calculation_method(method_code):
+            if method_code == Work.CostingMethod.SERVICE and work.calculate_only_by_labor:
                 return None
+
             unit = work.get_unit_for_method(method_code)
             price = work.get_price_for_method(method_code)
+            unit_label = _unit_label(unit)
+
+            if method_code == Work.CostingMethod.LABOR:
+                base_unit_label = _unit_label(work.unit_ref)
+                unit_label = f"ЧЧ/{base_unit_label}" if base_unit_label else "ЧЧ"
+                # Для подстановки количества ЧЧ передаем даже нулевую расценку.
+                price = work.price_per_labor_hour or price or 0
+            elif method_code == Work.CostingMethod.SERVICE:
+                price = work.price_per_unit or price or 0
+
             return {
                 "code": method_code,
                 "label": dict(Work.CostingMethod.choices).get(method_code, method_code),
-                "unit": _unit_label(unit),
+                "unit": unit_label,
                 "price": float(price) if price is not None else 0,
+                "default_qty": float(work.labor_hours or 0)
+                if method_code == Work.CostingMethod.LABOR
+                else None,
             }
 
         data = []
@@ -288,6 +302,9 @@ class TechnicalCardSearchWorksView(APIView):
                 default_method = Work.CostingMethod.LABOR
             else:
                 default_method = Work.CostingMethod.SERVICE
+
+            if not any(m["code"] == default_method for m in methods) and methods:
+                default_method = methods[0]["code"]
 
             default_unit = ""
             default_price = 0
@@ -455,13 +472,17 @@ class LiveCompositionApiView(APIView):
             work_live_sum += line_live
             work_ver_sum += line_ver
 
+            unit_label = _unit_label(getattr(row, "unit_ref", None))
+            if method == Work.CostingMethod.LABOR:
+                unit_label = f"ЧЧ/{unit_label}" if unit_label else "ЧЧ"
+
             works.append(
                 {
                     "id": getattr(row.work, "id", None),
                     "ref_id": getattr(row.work, "id", None),
                     "name": getattr(row, "work_name", None)
                     or getattr(row.work, "name", ""),
-                    "unit": _unit_label(getattr(row, "unit_ref", None)),
+                    "unit": unit_label,
                     "calculation_method": method,
                     "calculation_method_label": row.get_calculation_method_display(),
                     "qty_per_unit": float(qty),

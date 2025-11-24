@@ -548,6 +548,12 @@ class TechnicalCardVersionWork(models.Model):
             self.unit_ref = unit
             self.price_per_unit = price
 
+            if (
+                method == Work.CostingMethod.LABOR
+                and (self.qty_per_unit is None or Decimal(self.qty_per_unit) == 0)
+            ):
+                self.qty_per_unit = self.work.labor_hours
+
         super().save(*args, **kwargs)
 
     @property

@@ -21,6 +21,7 @@ class WorkAdmin(admin.ModelAdmin):
         "supplier_ref",
         "price_per_unit",
         "price_per_labor_hour",
+        "labor_hours",
         "calculate_only_by_labor",
         "is_active",
     )
@@ -59,7 +60,8 @@ class WorkAdmin(admin.ModelAdmin):
             _("Наименование"),
             _("Единица измерения"),
             _("Цена"),
-            _("Расценка за человеко-час"),
+            _("Предварительная расценка за человеко-час"),
+            _("Кол-во человеко-часов"),
             _("Поставщик"),
             _("Считать только по ЧЧ"),
         )
@@ -74,6 +76,7 @@ class WorkAdmin(admin.ModelAdmin):
                     str(work.unit_ref) if work.unit_ref else "",
                     work.price_per_unit,
                     work.price_per_labor_hour if work.price_per_labor_hour is not None else "",
+                    work.labor_hours,
                     work.supplier_ref.name if work.supplier_ref else "",
                     "Да" if work.calculate_only_by_labor else "Нет",
                 )

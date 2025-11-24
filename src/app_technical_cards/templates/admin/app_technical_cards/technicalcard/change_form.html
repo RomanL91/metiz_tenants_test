@@ -491,7 +491,10 @@
 
     // Утилита: определение единицы измерения для отображения
     const getDisplayUnit = (kind, methodCode, unit) => {
-      return (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (unit || '—');
+      if (kind === 'work' && methodCode === 'labor') {
+        return unit || 'ЧЧ';
+      }
+      return unit || '—';
     };
 
     function clearError(){ els.err.textContent=''; els.err.style.display='none'; }
@@ -610,7 +613,7 @@
         }
       }
 
-      const displayUnit = (kind === 'work' && methodCode === 'labor') ? 'Ч/Ч' : (item.unit || '—');
+      const displayUnit = getDisplayUnit(kind, methodCode, item.unit);
 
       tr.innerHTML = `
         <td><div class="tc-name"><span class="tc-label-wrap"><span class="tc-label">${item.name}</span>${methodBadge}</span>
@@ -821,11 +824,21 @@
 
       async function apply(chosen){
         if(!chosen) return;
-        const q=Number(qtyInput.value||1); const qty=Number.isFinite(q)&&q>=0 ? q:1;
+        const providedQty = toNum(qtyInput.value);
+        let qty = Number.isFinite(providedQty) && providedQty > 0 ? providedQty : null;
         let methodPayload = null;
         if (kind==='work'){
           methodPayload = await pickWorkMethod(chosen);
           if (!methodPayload) return;
+        }
+        if (qty === null && kind==='work' && methodPayload?.code === 'labor'){
+          const laborQty = toNum(methodPayload?.default_qty);
+          if (Number.isFinite(laborQty) && laborQty > 0){
+            qty = laborQty;
+          }
+        }
+        if (qty === null){
+          qty = 1;
         }
         const unit = methodPayload?.unit ?? chosen.unit ?? '';
         const price = Number(methodPayload?.price ?? chosen.price ?? 0);

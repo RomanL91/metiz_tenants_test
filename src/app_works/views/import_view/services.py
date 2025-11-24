@@ -83,8 +83,16 @@ class ExcelParser:
     """Парсер Excel файлов для импорта работ"""
 
     REQUIRED_COLUMNS = ["Наименование", "Единица измерения", "Цена"]
-    OPTIONAL_COLUMNS = ["Поставщик", "Расценка за человеко-час", "Считать только по ЧЧ"]
+    OPTIONAL_COLUMNS = [
+        "Поставщик",
+        "Предварительная расценка за человеко-час",
+        "Кол-во человеко-часов",
+        "Считать только по ЧЧ",
+    ]
     ALL_COLUMNS = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
+    HEADER_ALIASES = {
+        "Расценка за человеко-час": "Предварительная расценка за человеко-час",
+    }
 
     def parse(self, file: UploadedFile) -> List[Dict[str, Any]]:
         try:
@@ -115,8 +123,9 @@ class ExcelParser:
         for cell in sheet[1]:
             if cell.value:
                 header_name = str(cell.value).strip()
-                if header_name in self.ALL_COLUMNS:
-                    headers[header_name] = cell.column - 1
+                canonical_name = self.HEADER_ALIASES.get(header_name, header_name)
+                if canonical_name in self.ALL_COLUMNS:
+                    headers[canonical_name] = cell.column - 1
         return headers
 
     def _validate_headers(self, headers: Dict[str, int]) -> None:
@@ -161,16 +170,48 @@ class WorkDataValidator:
         if not name or str(name).strip() == "":
             return False, _("Наименование не может быть пустым")
 
-        price = row.get("Цена")
-        if price is None or str(price).strip() == "":
-            return False, _("Цена не может быть пустой")
+        price_raw = row.get("Цена")
+        labor_price_raw = row.get("Предварительная расценка за человеко-час")
 
-        try:
-            price_decimal = round_decimal_value(price)
-            if price_decimal <= 0:
-                return False, _("Цена должна быть больше нуля")
-        except (InvalidOperation, ValueError):
-            return False, _("Некорректное значение цены")
+        price_decimal: Decimal | None = None
+        labor_decimal: Decimal | None = None
+
+        if price_raw is not None and str(price_raw).strip() != "":
+            try:
+                price_decimal = round_decimal_value(price_raw)
+                if price_decimal < 0:
+                    return False, _("Цена не может быть отрицательной")
+            except (InvalidOperation, ValueError):
+                return False, _("Некорректное значение цены")
+
+        if labor_price_raw is not None and str(labor_price_raw).strip() != "":
+            try:
+                labor_decimal = round_decimal_value(labor_price_raw)
+                if labor_decimal < 0:
+                    return False, _("Стоимость человеко-часа не может быть отрицательной")
+            except (InvalidOperation, ValueError):
+                return False, _("Некорректное значение стоимости человеко-часа")
+
+        if (price_decimal is None or price_decimal == 0) and (
+            labor_decimal is None or labor_decimal == 0
+        ):
+            return (
+                False,
+                _(
+                    "Укажите цену за единицу или предварительную расценку за человеко-час"
+                ),
+            )
+
+        labor_flag = str(row.get("Считать только по ЧЧ") or "").strip().lower()
+        if labor_flag in ("да", "yes", "true", "1", "+") and (
+            labor_decimal is None or labor_decimal == 0
+        ):
+            return (
+                False,
+                _(
+                    "Для расчёта только по человеко-часам заполните предварительную расценку"
+                ),
+            )
 
         return True, None
 
@@ -265,7 +306,12 @@ class WorkImportProcessor:
     def _prepare_row_data(self, row: Dict[str, Any]) -> Dict[str, Any]:
         name = str(row.get("Наименование")).strip()
         unit_symbol = str(row.get("Единица измерения")).strip()
-        price = round_decimal_value(row.get("Цена"))
+        price_raw = row.get("Цена")
+        price = (
+            round_decimal_value(price_raw)
+            if price_raw is not None and str(price_raw).strip() != ""
+            else Decimal("0")
+        )
 
         unit = self._get_unit(unit_symbol)
 
@@ -277,10 +323,18 @@ class WorkImportProcessor:
             supplier_key = supplier_name_clean.lower()
 
         price_per_labor_hour = None
-        labor_hour_value = row.get("Расценка за человеко-час")
+        labor_hour_value = row.get("Предварительная расценка за человеко-час")
         if labor_hour_value is not None and str(labor_hour_value).strip() != "":
             try:
                 price_per_labor_hour = round_decimal_value(labor_hour_value)
+            except (InvalidOperation, ValueError):
+                pass
+
+        labor_hours = Decimal("0")
+        labor_hours_value = row.get("Кол-во человеко-часов")
+        if labor_hours_value is not None and str(labor_hours_value).strip() != "":
+            try:
+                labor_hours = round_decimal_value(labor_hours_value)
             except (InvalidOperation, ValueError):
                 pass
 
@@ -299,6 +353,7 @@ class WorkImportProcessor:
             "supplier_name": supplier_name_clean,
             "row_number": row.get("_row", 0),
             "price_per_labor_hour": price_per_labor_hour,
+            "labor_hours": labor_hours,
             "calculate_only_by_labor": calculate_only_by_labor,
         }
 
@@ -371,6 +426,7 @@ class WorkImportProcessor:
                 existing.price_per_unit = row["price"]
                 existing.supplier_ref = row.get("supplier")
                 existing.price_per_labor_hour = row.get("price_per_labor_hour")
+                existing.labor_hours = row.get("labor_hours")
                 existing.calculate_only_by_labor = row.get("calculate_only_by_labor", False)
                 existing.is_active = True
                 works_to_update.append(existing)
@@ -383,6 +439,7 @@ class WorkImportProcessor:
                 unit_ref=row["unit"],
                 price_per_unit=row["price"],
                 price_per_labor_hour=row.get("price_per_labor_hour"),
+                labor_hours=row.get("labor_hours"),
                 calculate_only_by_labor=row.get("calculate_only_by_labor", False),
                 supplier_ref=row.get("supplier"),
                 is_active=True,
@@ -404,8 +461,14 @@ class WorkImportProcessor:
         if works_to_update:
             Work.objects.bulk_update(
                 works_to_update,
-                ["price_per_unit", "supplier_ref", "price_per_labor_hour",
-                 "calculate_only_by_labor", "is_active"]
+                [
+                    "price_per_unit",
+                    "supplier_ref",
+                    "price_per_labor_hour",
+                    "labor_hours",
+                    "calculate_only_by_labor",
+                    "is_active",
+                ],
             )
 
         return created, updated, skipped
